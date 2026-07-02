@@ -31,7 +31,8 @@ var DEFAULTS = {
     afterPopupClose: 1200,   // 팝업 닫은 뒤 대기
     watchDurationMs: 5 * 60 * 1000,   // (once 모드) 초기 시청 시간
     scrollIntervalMs: 20000, // 영상 1개 시청 시간(뒤 다음 영상으로 스크롤)
-    afterAdWatch: 30000,     // (8단계) 광고 후 30초 대기
+    afterAdWatch: 30000,     // (8단계) 광고 기본 대기 30초
+    adExtraWaitMs: 45000,    // 광고가 더 길 때 닫기버튼을 추가로 기다리는 최대 시간
     betweenCycleMs: 20 * 60 * 1000,   // 타이머 수령 간격(=20분 시청)
     shortWait: 1500,         // 화면 전환 등 짧은 대기
     dailyAttendanceMs: 24 * 60 * 60 * 1000, // 출석체크 주기

@@ -1,8 +1,8 @@
 /**
- * TikTok Lite 포인트 파머 — 코어 엔진
+ * TikTok Lite 포인트 파머 — 코어 엔진 v1.1
  * ------------------------------------------------------------------
- * 자동화 흐름 + 오류 복구 + 무한 파밍 루프 + 좌표 캘리브레이션.
- * UI(main.js)에서 engine.start()/stop(), calibrate() 를 호출합니다.
+ * 자동화 흐름 + 화면 검증/재시도 + 오류 복구 + 무한 파밍 + 캘리브레이션.
+ * UI(main.js)에서 start()/stop()/calibrate()/stats() 를 호출합니다.
  */
 "use strict";
 
@@ -12,8 +12,8 @@ function cfg() { return C.get(); }
 var W = device.width;
 var H = device.height;
 
-// ── 로그 ─────────────────────────────────────────────────────
-// /sdcard 쓰기가 막힌 기기(Android 11+)면 스크립트 폴더로 폴백
+// ── 로그(로테이션 포함) ──────────────────────────────────────
+var LOG_MAX = 512 * 1024; // 512KB 넘으면 뒤쪽 100KB만 유지
 var LOG_PATH = (function () {
   var candidates = ["/sdcard/ttl_farmer.log"];
   try { candidates.push(files.join(files.cwd(), "ttl_farmer.log")); } catch (e) {}
@@ -22,6 +22,14 @@ var LOG_PATH = (function () {
   }
   return null;
 })();
+function rotateLog() {
+  if (!LOG_PATH) return;
+  try {
+    if (new java.io.File(LOG_PATH).length() > LOG_MAX) {
+      files.write(LOG_PATH, files.read(LOG_PATH).slice(-100 * 1024));
+    }
+  } catch (e) {}
+}
 var logSink = null;
 function setLogSink(fn) { logSink = fn; }
 function ts() {
@@ -37,10 +45,10 @@ function log(msg) {
 }
 function logPath() { return LOG_PATH || "(파일 로그 사용 불가)"; }
 
-// ── 대기(사람처럼 약간의 랜덤, 중단 가능) ────────────────────
+// ── 대기/랜덤(사람처럼, 중단 가능) ───────────────────────────
+function rnd(a, b) { return a + Math.random() * (b - a); }
 function jitter(ms) {
-  if (!cfg().humanize) return ms;
-  return Math.round(ms * (0.85 + Math.random() * 0.3));
+  return cfg().humanize ? Math.round(ms * rnd(0.85, 1.15)) : ms;
 }
 function napChunked(ms, isRunning) {
   var end = Date.now() + ms;
@@ -50,12 +58,20 @@ function napChunked(ms, isRunning) {
   }
 }
 
-// ── 저수준 탭/탐색 ───────────────────────────────────────────
-function tapRatio(ratio, label) {
-  var x = Math.round(ratio.x * W), y = Math.round(ratio.y * H);
-  log((label || "탭") + " → (" + x + ", " + y + ")");
-  click(x, y);
-  sleep(jitter(cfg().timing.shortWait));
+// ── 탐색: 전 후보 동시 폴링(논블로킹) ────────────────────────
+// 짧은 후보(≤2자)는 완전일치만 — textContains("X") 오탭 방지
+function findAny(list, timeoutMs) {
+  var end = Date.now() + timeoutMs;
+  do {
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      var n = text(t).findOnce() || desc(t).findOnce()
+           || (t.length > 2 ? textContains(t).findOnce() : null);
+      if (n) return { node: n, matched: t };
+    }
+    sleep(300);
+  } while (Date.now() < end);
+  return null;
 }
 function clickNode(node) {
   if (node.click()) return true;
@@ -64,19 +80,21 @@ function clickNode(node) {
   return true;
 }
 function tapText(list, label, timeoutMs) {
-  var t0 = (timeoutMs === undefined) ? cfg().retry.findTimeoutMs : timeoutMs;
-  for (var i = 0; i < list.length; i++) {
-    var t = list[i];
-    var node = text(t).findOne(t0) || textContains(t).findOne(300) || desc(t).findOne(300);
-    if (node) {
-      log((label || "텍스트") + " '" + t + "' 클릭");
-      clickNode(node);
-      sleep(jitter(cfg().timing.shortWait));
-      return true;
-    }
-    t0 = 300; // 첫 후보만 길게 대기
-  }
-  return false;
+  var f = findAny(list, timeoutMs === undefined ? cfg().retry.findTimeoutMs : timeoutMs);
+  if (!f) return false;
+  log((label || "텍스트") + " '" + f.matched + "' 클릭");
+  clickNode(f.node);
+  sleep(jitter(cfg().timing.shortWait));
+  return true;
+}
+function tapRatio(ratio, label) {
+  // humanize 시 ±5px 오프셋으로 매번 같은 픽셀을 누르지 않음
+  var ox = cfg().humanize ? rnd(-5, 5) : 0;
+  var oy = cfg().humanize ? rnd(-5, 5) : 0;
+  var x = Math.round(ratio.x * W + ox), y = Math.round(ratio.y * H + oy);
+  log((label || "탭") + " → (" + x + ", " + y + ")");
+  click(x, y);
+  sleep(jitter(cfg().timing.shortWait));
 }
 function tapTextOrCoord(list, coord, label) {
   if (list && tapText(list, label)) return true;
@@ -99,9 +117,13 @@ function checkAndClosePopup() {
   return false;
 }
 function swipeToNextVideo() {
-  var x = Math.round(W * 0.5);
-  swipe(x, Math.round(H * 0.75), x, Math.round(H * 0.25), 400);
-  sleep(800);
+  // 매번 궤적/속도를 조금씩 다르게(탐지 완화)
+  var x1 = Math.round(W * rnd(0.42, 0.58));
+  var x2 = x1 + Math.round(rnd(-25, 25));
+  var y1 = Math.round(H * rnd(0.70, 0.78));
+  var y2 = Math.round(H * rnd(0.20, 0.28));
+  swipe(x1, y1, x2, y2, Math.round(rnd(320, 600)));
+  sleep(Math.round(rnd(600, 1200)));
 }
 
 // ── 앱 상태/복구 ─────────────────────────────────────────────
@@ -128,15 +150,22 @@ function ensureForeground(forceLaunch) {
 function keepAwake() {
   if (cfg().keepScreenOn) { try { device.keepScreenOn(24 * 60 * 60 * 1000); } catch (e) {} }
 }
-function releaseAwake() {
-  try { device.cancelKeepingAwake(); } catch (e) {}
+function releaseAwake() { try { device.cancelKeepingAwake(); } catch (e) {} }
+
+// ── 통계(제어판 표시용) ──────────────────────────────────────
+var stat = { startedAt: 0, cycles: 0, lastError: "" };
+function stats() {
+  return {
+    cycles: stat.cycles,
+    uptimeMin: stat.startedAt ? Math.floor((Date.now() - stat.startedAt) / 60000) : 0,
+    lastError: stat.lastError,
+  };
 }
 
 // ── 단계별 동작 ──────────────────────────────────────────────
-function stepHeart()        { tapRatio(cfg().coords.heart, "우측중간 하트"); }
-function stepPointButton()  { tapRatio(cfg().coords.pointButton, "포인트 버튼"); }
-function stepAttendance()   { tapTextOrCoord(cfg().texts.attendance, cfg().coords.attendanceCheck, "출석체크"); }
-function stepCloseApp()     { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
+function stepHeart()      { tapRatio(cfg().coords.heart, "우측중간 하트"); }
+function stepAttendance() { tapTextOrCoord(cfg().texts.attendance, cfg().coords.attendanceCheck, "출석체크"); }
+function stepCloseApp()   { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
 
 function watchVideos(durationMs, isRunning) {
   log("영상 시청: " + Math.round(durationMs / 1000) + "초");
@@ -151,22 +180,50 @@ function watchVideos(durationMs, isRunning) {
   }
 }
 
-// 6~10: 포인트 적립(타이머 수령 → 광고 → p → 좋아요 수령 → 뒤로)
+// 4~5: 포인트 화면 진입 — 실제로 진입했는지 검증하고 최대 3회 재시도
+function openPointsVerified() {
+  var markers = cfg().texts.timer.concat(cfg().texts.receive, cfg().texts.watchAd);
+  for (var i = 1; i <= 3; i++) {
+    tapRatio(cfg().coords.pointButton, "포인트 버튼");        // 4
+    closePopup("포인트/이벤트");                              // 5
+    if (findAny(markers, 3000)) { log("포인트 화면 확인됨"); return true; }
+    log("포인트 화면 미확인 → 재시도 " + i + "/3");
+    back(); sleep(1000);
+    ensureForeground(false);
+  }
+  log("⚠ 포인트 화면 진입 실패(좌표설정 확인 필요)");
+  return false;
+}
+
+// 광고 시청: 기본 대기 후, 닫기/복귀를 최대 adExtraWaitMs 동안 폴링(가변 길이 광고 대응)
+function watchAdAndExit() {
+  log("광고 시청 " + Math.round(cfg().timing.afterAdWatch / 1000) + "초...");
+  napChunked(cfg().timing.afterAdWatch, isRunningFlag);
+  var extra = cfg().timing.adExtraWaitMs || 45000;
+  var end = Date.now() + extra;
+  while (Date.now() < end && running) {
+    if (tapText(cfg().texts.close, "광고 닫기", 300)) { sleep(1000); break; }
+    sleep(1000);
+  }
+  tapRatio(cfg().coords.topLeftP, "좌측상단 p");               // 8
+}
+
+// 6~10: 포인트 적립 사이클
 function claimCycle() {
   log("=== 적립 사이클 ===");
   tapTextOrCoord(cfg().texts.timer, cfg().coords.timer, "타이머"); // 6
   tapText(cfg().texts.receive, "받기");
-  if (!tapText(cfg().texts.watchAd, "광고보기")) {               // 7
-    log("광고보기 없음 → 스킵"); return;
+  if (tapText(cfg().texts.watchAd, "광고보기")) {                 // 7
+    watchAdAndExit();                                             // 8
+    tapRatio(cfg().coords.videoLike, "영상 좋아요");              // 9
+    sleep(jitter(cfg().timing.shortWait));
+    tapText(cfg().texts.receive, "받기");
+  } else {
+    log("광고보기 없음 → 스킵");
   }
-  log("광고 30초 대기...");
-  napChunked(cfg().timing.afterAdWatch, isRunningFlag);          // 8
-  tapRatio(cfg().coords.topLeftP, "좌측상단 p");
-  tapRatio(cfg().coords.videoLike, "영상 좋아요");               // 9
+  back();                                                         // 10
   sleep(jitter(cfg().timing.shortWait));
-  tapText(cfg().texts.receive, "받기");
-  back();                                                        // 10
-  sleep(jitter(cfg().timing.shortWait));
+  stat.cycles++;
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
@@ -175,8 +232,13 @@ var worker = null;
 
 function safe(name, fn) {
   try { fn(); }
-  catch (e) { log("⚠ " + name + " 오류: " + e); try { ensureForeground(false); } catch (e2) {} }
+  catch (e) {
+    stat.lastError = name + ": " + e;
+    log("⚠ " + name + " 오류: " + e);
+    try { ensureForeground(false); } catch (e2) {}
+  }
 }
+function isRunningFlag() { return running; }
 
 function runOnce() {
   log("[모드] 한 바퀴 실행");
@@ -184,8 +246,7 @@ function runOnce() {
   safe("팝업", function () { closePopup("출석/이벤트"); });       // 2
   safe("하트", stepHeart);                                        // 3a
   safe("시청", function () { watchVideos(cfg().timing.watchDurationMs, isRunningFlag); }); // 3b
-  safe("포인트", stepPointButton);                                // 4
-  safe("팝업", function () { closePopup("포인트/이벤트"); });     // 5
+  safe("포인트진입", openPointsVerified);                         // 4~5
   var n = Math.max(1, cfg().maxCycles);
   for (var i = 1; i <= n && running; i++) {
     log("사이클 " + i + "/" + n);
@@ -205,8 +266,7 @@ function runFarm() {
   var lastAtt = 0;
   while (running) {
     if (!ensureForeground(false)) { sleep(3000); continue; }
-    safe("포인트진입", stepPointButton);
-    safe("팝업", function () { closePopup("포인트/이벤트"); });
+    safe("포인트진입", openPointsVerified);
     safe("적립", claimCycle);
     if (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs) {
       safe("출석", stepAttendance); lastAtt = Date.now();
@@ -217,11 +277,11 @@ function runFarm() {
   log("파밍 정지");
 }
 
-function isRunningFlag() { return running; }
-
 function start() {
   if (running) { log("이미 실행 중"); return; }
   running = true;
+  stat.startedAt = Date.now(); stat.cycles = 0; stat.lastError = "";
+  rotateLog();
   keepAwake();
   log("▶ 시작 (" + cfg().mode + ") | 로그: " + logPath());
   worker = threads.start(function () {
@@ -292,13 +352,13 @@ function captureOneTap(msg) {
   });
   var t0 = Date.now();
   while (!result.done && Date.now() - t0 < 30000) sleep(100);
-  try { ui.run(function () { win.close(); }); } catch (e) {}
+  try { if (win) ui.run(function () { win.close(); }); } catch (e) {}
   return result.pt;
 }
 
 module.exports = {
   setLogSink: setLogSink,
   start: start, stop: stop, isRunning: isRunning,
-  calibrate: calibrate,
+  calibrate: calibrate, stats: stats,
   log: log, logPath: logPath,
 };

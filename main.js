@@ -113,11 +113,14 @@ try {
   core.log("볼륨키 감지 불가(무시해도 됨): " + e);
 }
 
-// ── 상태 주기 갱신 + 스크립트 유지 ───────────────────────────
+// ── 상태 주기 갱신(통계 표시) + 스크립트 유지 ────────────────
 setInterval(function () {
   try {
     if (!core.isRunning()) return;
-    ui.run(function () { win.status.setText("● 실행중"); });
+    var s = core.stats();
+    ui.run(function () {
+      win.status.setText("● 실행중 · " + s.cycles + "회 적립 · " + s.uptimeMin + "분");
+    });
   } catch (e) {}
 }, 5000);
 
