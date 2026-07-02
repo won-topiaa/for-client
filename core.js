@@ -13,7 +13,15 @@ var W = device.width;
 var H = device.height;
 
 // ── 로그 ─────────────────────────────────────────────────────
-var LOG_PATH = "/sdcard/ttl_farmer.log";
+// /sdcard 쓰기가 막힌 기기(Android 11+)면 스크립트 폴더로 폴백
+var LOG_PATH = (function () {
+  var candidates = ["/sdcard/ttl_farmer.log"];
+  try { candidates.push(files.join(files.cwd(), "ttl_farmer.log")); } catch (e) {}
+  for (var i = 0; i < candidates.length; i++) {
+    try { files.append(candidates[i], ""); return candidates[i]; } catch (e) {}
+  }
+  return null;
+})();
 var logSink = null;
 function setLogSink(fn) { logSink = fn; }
 function ts() {
@@ -25,8 +33,9 @@ function log(msg) {
   var line = "[" + ts() + "] " + msg;
   console.log(line);
   try { if (logSink) logSink(line); } catch (e) {}
-  try { files.append(LOG_PATH, line + "\n"); } catch (e) {}
+  if (LOG_PATH) { try { files.append(LOG_PATH, line + "\n"); } catch (e) {} }
 }
+function logPath() { return LOG_PATH || "(파일 로그 사용 불가)"; }
 
 // ── 대기(사람처럼 약간의 랜덤, 중단 가능) ────────────────────
 function jitter(ms) {
@@ -119,6 +128,9 @@ function ensureForeground(forceLaunch) {
 function keepAwake() {
   if (cfg().keepScreenOn) { try { device.keepScreenOn(24 * 60 * 60 * 1000); } catch (e) {} }
 }
+function releaseAwake() {
+  try { device.cancelKeepingAwake(); } catch (e) {}
+}
 
 // ── 단계별 동작 ──────────────────────────────────────────────
 function stepHeart()        { tapRatio(cfg().coords.heart, "우측중간 하트"); }
@@ -133,6 +145,7 @@ function watchVideos(durationMs, isRunning) {
     if (isRunning && !isRunning()) return;
     if (!ensureForeground(false)) { sleep(3000); continue; }
     napChunked(jitter(cfg().timing.scrollIntervalMs), isRunning);
+    if (isRunning && !isRunning()) return;
     checkAndClosePopup();
     swipeToNextVideo();
   }
@@ -147,7 +160,7 @@ function claimCycle() {
     log("광고보기 없음 → 스킵"); return;
   }
   log("광고 30초 대기...");
-  sleep(cfg().timing.afterAdWatch);                              // 8
+  napChunked(cfg().timing.afterAdWatch, isRunningFlag);          // 8
   tapRatio(cfg().coords.topLeftP, "좌측상단 p");
   tapRatio(cfg().coords.videoLike, "영상 좋아요");               // 9
   sleep(jitter(cfg().timing.shortWait));
@@ -186,7 +199,6 @@ function runOnce() {
 
 function runFarm() {
   log("[모드] 무한 파밍 시작");
-  keepAwake();
   safe("실행", function () { ensureForeground(true); });
   safe("팝업", function () { closePopup("출석/이벤트"); });
   safe("하트", stepHeart);
@@ -210,17 +222,20 @@ function isRunningFlag() { return running; }
 function start() {
   if (running) { log("이미 실행 중"); return; }
   running = true;
-  log("▶ 시작 (" + cfg().mode + ")");
+  keepAwake();
+  log("▶ 시작 (" + cfg().mode + ") | 로그: " + logPath());
   worker = threads.start(function () {
     try { (cfg().mode === "once") ? runOnce() : runFarm(); }
     catch (e) { log("치명적 오류: " + e); }
     running = false;
+    releaseAwake();
     log("■ 종료됨");
   });
 }
 function stop() {
   if (!running) return;
   running = false;
+  releaseAwake();
   log("정지 요청...");
   if (worker) { try { worker.interrupt(); } catch (e) {} }
 }
@@ -238,42 +253,46 @@ var CAL_TARGETS = [
 ];
 function calibrate() {
   threads.start(function () {
-    log("좌표설정 시작 — 안내대로 각 위치를 탭하세요");
+    log("좌표설정 시작 — 안내대로 각 위치를 탭하세요 (30초 무응답 시 취소)");
     for (var i = 0; i < CAL_TARGETS.length; i++) {
       var key = CAL_TARGETS[i][0], label = CAL_TARGETS[i][1];
-      var pt = captureOneTap("[" + (i + 1) + "/" + CAL_TARGETS.length + "] " + label + " 를 탭하세요");
+      var pt = captureOneTap("[" + (i + 1) + "/" + CAL_TARGETS.length + "]\n" + label + "\n위치를 탭하세요");
       if (!pt) { toast("좌표설정 취소"); log("좌표설정 취소"); return; }
-      cfg().coords[key] = { x: pt.x / W, y: pt.y / H };
+      cfg().coords[key] = {
+        x: Math.round(pt.x / W * 1000) / 1000,
+        y: Math.round(pt.y / H * 1000) / 1000,
+      };
       C.save();
-      log("저장: " + key + " = " + cfg().coords[key].x.toFixed(3) + ", " + cfg().coords[key].y.toFixed(3));
-      sleep(400);
+      log("저장: " + key + " = " + cfg().coords[key].x + ", " + cfg().coords[key].y);
+      sleep(500);
     }
     toast("좌표설정 완료!");
-    log("좌표설정 완료");
+    log("좌표설정 완료 — [시작]을 누르세요");
   });
 }
 // 전체화면 오버레이로 한 번의 탭 좌표를 잡음
 function captureOneTap(msg) {
   var result = { pt: null, done: false };
+  var win = null;
   ui.run(function () {
-    var win = floaty.rawWindow(
-      <frame w="*" h="*" bg="#88000000">
-        <text text={msg} textColor="#ffffff" textSize="16sp" gravity="center" padding="24"/>
+    win = floaty.rawWindow(
+      <frame id="cover" w="*" h="*" bg="#55000000">
+        <text id="hint" text={msg} textColor="#ffffff" textSize="16sp" gravity="center" padding="24"/>
       </frame>
     );
     win.setSize(-1, -1);
     win.setTouchable(true);
-    win.getRootView().setOnTouchListener(function (v, ev) {
+    win.cover.setOnTouchListener(function (v, ev) {
       if (ev.getAction() === ev.ACTION_DOWN) {
         result.pt = { x: Math.round(ev.getRawX()), y: Math.round(ev.getRawY()) };
-        try { win.close(); } catch (e) {}
         result.done = true;
       }
       return true;
     });
   });
   var t0 = Date.now();
-  while (!result.done && Date.now() - t0 < 30000) sleep(100); // 최대 30초 대기
+  while (!result.done && Date.now() - t0 < 30000) sleep(100);
+  try { ui.run(function () { win.close(); }); } catch (e) {}
   return result.pt;
 }
 
@@ -281,5 +300,5 @@ module.exports = {
   setLogSink: setLogSink,
   start: start, stop: stop, isRunning: isRunning,
   calibrate: calibrate,
-  log: log,
+  log: log, logPath: logPath,
 };
