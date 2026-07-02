@@ -5,19 +5,24 @@
  *   1) AutoX.js 앱 설치
  *   2) AutoX.js 접근성 서비스 ON (설정 > 접근성 > AutoX.js)
  *   3) config.js를 자기 폰에 맞게 보정
- *   4) 이 파일을 AutoX.js에서 실행
+ *   4) 이 파일을 AutoX.js에서 실행 (원클릭: 홈 화면 바로가기/위젯으로 등록 가능)
  *
- * 동작 흐름(요청 사항):
+ * 동작 흐름(의뢰인 요청 1~12):
  *   1. TikTok Lite 실행
- *   2. 영상 화면 팝업 종료
- *   3. 우측 중간 하트 누르기
- *   4. 15초 대기 후 좌측 하단 두번째 포인트 버튼 누르기
- *   5. 새 팝업 종료
- *   6. 20분마다: 타이머 → 받기
+ *   2. 영상 화면 팝업(출석체크/이벤트) 종료
+ *   3. 우측 중간 하트 누르기 → 지정 시간만큼 스크롤 시청(중간 팝업 자동 닫기)
+ *   4. 좌측 하단 두번째 포인트 버튼 누르기
+ *   5. 포인트 화면의 (이벤트)팝업 종료
+ *   6. 20분마다 타이머 → 받기
  *   7. 광고보기
- *   8. 30초 대기 후 우측 상단 p 누르기
+ *   8. 30초 대기 후 좌측 상단 p 누르기
  *   9. 상/하단 영상 좋아요 → 메뉴 받기
  *  10. 뒤로가기
+ *  11. 출석체크 누르기
+ *  12. 앱 종료
+ *
+ * 반복: config.maxCycles == 1 이면 1~12 한 바퀴. 2 이상이면 6~10을
+ *       20분 간격으로 반복한 뒤 11~12로 마무리.
  */
 
 "use strict";
@@ -48,15 +53,16 @@ function tapRatio(ratio, label) {
 
 /**
  * 텍스트 후보들 중 하나라도 화면에 보이면 눌러줌.
- * 성공하면 true, 못 찾으면 false.
+ * @param timeoutMs 첫 후보 탐색 대기(기본 config 값)
+ * @return 성공하면 true, 못 찾으면 false
  */
-function tapText(textList, label) {
+function tapText(textList, label, timeoutMs) {
+  var t0 = (timeoutMs === undefined) ? CONFIG.retry.findTimeoutMs : timeoutMs;
   for (var i = 0; i < textList.length; i++) {
     var t = textList[i];
-    // 완전일치 우선, 없으면 부분일치
-    var node = text(t).findOne(CONFIG.retry.findTimeoutMs)
-            || textContains(t).findOne(500)
-            || desc(t).findOne(500);
+    var node = text(t).findOne(t0)
+            || textContains(t).findOne(300)
+            || desc(t).findOne(300);
     if (node) {
       log((label || "텍스트") + " '" + t + "' 클릭");
       clickNode(node);
@@ -89,7 +95,7 @@ function tapTextOrCoord(textList, coordRatio, label) {
   return false;
 }
 
-/** 팝업 닫기: 닫기 텍스트 → 좌표 X → 뒤로가기 순으로 시도 */
+/** 확정적 팝업 닫기: 닫기 텍스트 → 좌표 X 순으로 시도 */
 function closePopup(label) {
   if (tapText(CONFIG.texts.close, (label || "팝업") + " 닫기")) {
     sleep(CONFIG.timing.afterPopupClose);
@@ -100,15 +106,34 @@ function closePopup(label) {
   return true;
 }
 
+/**
+ * 시청 중 팝업 처리: 오탭 방지를 위해 텍스트 기반으로만 닫음(좌표 폴백 없음).
+ * 팝업이 없으면 아무것도 안 함.
+ */
+function checkAndClosePopup() {
+  if (tapText(CONFIG.texts.close, "시청중 팝업", 300)) {
+    sleep(CONFIG.timing.afterPopupClose);
+    return true;
+  }
+  return false;
+}
+
+/** 화면을 위로 스와이프해 다음 영상으로 넘김 */
+function swipeToNextVideo() {
+  var x = Math.round(W * 0.5);
+  var y1 = Math.round(H * 0.75);
+  var y2 = Math.round(H * 0.25);
+  swipe(x, y1, x, y2, 400);
+  sleep(800);
+}
+
 // ── 단계별 동작 ──────────────────────────────────────────────
 
 /** 1. TikTok Lite 실행 */
 function launchTikTokLite() {
-  // 이름으로 먼저 시도
   if (app.launchApp(CONFIG.appName)) {
     log("이름으로 앱 실행: " + CONFIG.appName);
   } else {
-    // 패키지 후보로 시도
     var launched = false;
     for (var i = 0; i < CONFIG.packageCandidates.length; i++) {
       if (app.launchPackage(CONFIG.packageCandidates[i])) {
@@ -125,17 +150,33 @@ function launchTikTokLite() {
   sleep(CONFIG.timing.afterLaunch);
 }
 
-/** 2~5. 초기 세팅(팝업닫기 → 하트 → 15초 → 포인트버튼 → 팝업닫기) */
-function initialSetup() {
-  closePopup("영상화면");                              // 2
-  tapRatio(CONFIG.coords.heart, "우측중간 하트");        // 3
-  log("15초 대기...");
-  sleep(CONFIG.timing.beforePointBtn);                 // 4 대기
-  tapRatio(CONFIG.coords.pointButton, "포인트 버튼");    // 4
-  closePopup("포인트");                                 // 5
+/** 3. 지정 시간만큼 영상 스크롤 시청(중간 팝업 자동 닫기) */
+function watchVideos(durationMs) {
+  var secs = Math.round(durationMs / 1000);
+  log("영상 시청 시작: " + secs + "초 동안 스크롤 시청");
+  var start = Date.now();
+  while (Date.now() - start < durationMs) {
+    sleep(CONFIG.timing.scrollIntervalMs); // 현재 영상 시청
+    checkAndClosePopup();                   // 시청 중 팝업 처리
+    swipeToNextVideo();                     // 다음 영상으로
+  }
+  log("영상 시청 종료");
 }
 
-/** 6~10. 20분마다 반복하는 포인트 적립 사이클 */
+/** 2~3. 초기 세팅(팝업닫기 → 하트 → 시청) */
+function initialSetup() {
+  closePopup("영상화면(출석/이벤트)");                 // 2
+  tapRatio(CONFIG.coords.heart, "우측중간 하트");       // 3-a
+  watchVideos(CONFIG.timing.watchDurationMs);          // 3-b
+}
+
+/** 4~5. 포인트 버튼 → 포인트 화면 팝업 종료 */
+function openPointScreen() {
+  tapRatio(CONFIG.coords.pointButton, "포인트 버튼");   // 4
+  closePopup("포인트(이벤트)");                         // 5
+}
+
+/** 6~10. 포인트 적립 사이클 */
 function claimCycle() {
   log("=== 포인트 적립 사이클 시작 ===");
 
@@ -149,10 +190,10 @@ function claimCycle() {
     return;
   }
 
-  // 8. 30초 대기 후 우측 상단 p
+  // 8. 30초 대기 후 좌측 상단 p
   log("광고 재생 30초 대기...");
   sleep(CONFIG.timing.afterAdWatch);
-  tapRatio(CONFIG.coords.topRightP, "우측상단 p");
+  tapRatio(CONFIG.coords.topLeftP, "좌측상단 p");
 
   // 9. 영상 좋아요 → 받기
   tapRatio(CONFIG.coords.videoLike, "영상 좋아요");
@@ -165,20 +206,40 @@ function claimCycle() {
   log("=== 사이클 완료 ===");
 }
 
-// ── 메인 루프 ────────────────────────────────────────────────
+/** 11. 출석체크 */
+function attendanceCheck() {
+  tapTextOrCoord(CONFIG.texts.attendance, CONFIG.coords.attendanceCheck, "출석체크");
+}
+
+/** 12. 앱 종료(백그라운드로 내림; 완전 강제종료는 루팅 필요) */
+function closeApp() {
+  log("앱 종료(홈으로)");
+  home();
+  sleep(CONFIG.timing.shortWait);
+}
+
+// ── 메인 플로우 ──────────────────────────────────────────────
 function main() {
   log("TikTok Lite 자동화 시작 (화면: " + W + "x" + H + ")");
 
-  launchTikTokLite();  // 1
-  initialSetup();      // 2~5
+  launchTikTokLite();   // 1
+  initialSetup();       // 2~3
+  openPointScreen();    // 4~5
 
-  // 6~10을 20분마다 반복
-  while (true) {
-    claimCycle();
-    var mins = Math.round(CONFIG.timing.loopIntervalMs / 60000);
-    log(mins + "분 대기 후 다음 사이클...");
-    sleep(CONFIG.timing.loopIntervalMs);
+  var cycles = Math.max(1, CONFIG.maxCycles);
+  for (var c = 1; c <= cycles; c++) {
+    log("사이클 " + c + "/" + cycles);
+    claimCycle();       // 6~10
+    if (c < cycles) {
+      var mins = Math.round(CONFIG.timing.betweenCycleMs / 60000);
+      log(mins + "분 대기 후 다음 사이클...");
+      sleep(CONFIG.timing.betweenCycleMs);
+    }
   }
+
+  attendanceCheck();    // 11
+  closeApp();           // 12
+  log("전체 플로우 완료");
 }
 
 main();
