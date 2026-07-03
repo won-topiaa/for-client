@@ -59,14 +59,15 @@ function napChunked(ms, isRunning) {
 }
 
 // ── 탐색: 전 후보 동시 폴링(논블로킹) ────────────────────────
-// 짧은 후보(≤2자)는 완전일치만 — textContains("X") 오탭 방지
-function findAny(list, timeoutMs) {
+// exact=true 이면 완전일치만(부분일치 금지) — "탭하여 포인트 받기" 같은
+// 게임 진입 버튼을 "포인트 받기"로 오인식하는 것을 방지
+function findAny(list, timeoutMs, exact) {
   var end = Date.now() + timeoutMs;
   do {
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       var n = text(t).findOnce() || desc(t).findOnce()
-           || (t.length > 2 ? textContains(t).findOnce() : null);
+           || (!exact && t.length > 2 ? textContains(t).findOnce() : null);
       if (n) return { node: n, matched: t };
     }
     sleep(300);
@@ -79,8 +80,8 @@ function clickNode(node) {
   click(b.centerX(), b.centerY());
   return true;
 }
-function tapText(list, label, timeoutMs) {
-  var f = findAny(list, timeoutMs === undefined ? cfg().retry.findTimeoutMs : timeoutMs);
+function tapText(list, label, timeoutMs, exact) {
+  var f = findAny(list, timeoutMs === undefined ? cfg().retry.findTimeoutMs : timeoutMs, exact);
   if (!f) return false;
   log((label || "텍스트") + " '" + f.matched + "' 클릭");
   clickNode(f.node);
@@ -260,8 +261,8 @@ function ensureOnRewardsPage() {
 function collectPopup() {
   for (var i = 0; i < 3; i++) {
     var got = false;
-    if (tapText(cfg().texts.receive, "받기", 1200)) got = true;
-    if (tapText(cfg().texts.confirm, "확인", 1000)) got = true;
+    if (tapText(cfg().texts.receive, "받기", 1200, true)) got = true; // 완전일치
+    if (tapText(cfg().texts.confirm, "확인", 1000, true)) got = true;
     if (!got) break;
     sleep(cfg().timing.afterPopupClose);
   }
@@ -305,8 +306,8 @@ function harvestRewards(doAttendance, likedVideo) {
   clearAllPopups("초기 팝업");
   closeStickyBanner();
 
-  // 출석하기(하루 1회)
-  if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500)) {
+  // 출석하기(하루 1회) — 완전일치
+  if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     ensureOnRewardsPage(); closeStickyBanner();
@@ -320,8 +321,8 @@ function harvestRewards(doAttendance, likedVideo) {
     closeStickyBanner();
     var didSomething = false;
 
-    // 1) 준비된 수령 버튼(포인트 받기/받기)
-    if (tapText(cfg().texts.receive, "리워드 수령", 900)) {
+    // 1) 준비된 수령 버튼(포인트 받기/받기) — 완전일치로 게임 진입 방지
+    if (tapText(cfg().texts.receive, "리워드 수령", 900, true)) {
       collectPopup(); stat.cycles++;
       ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
       didSomething = true;
