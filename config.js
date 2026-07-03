@@ -13,9 +13,12 @@ var DEFAULTS = {
   // ── 앱 정보 ──
   appName: "TikTok Lite",
   packageCandidates: [
+    "com.ss.android.ugc.tiktok.lite",  // 실측(국내 기기)
     "com.ss.android.ugc.aweme.lite",
     "com.zhiliaoapp.musically.go",
   ],
+  // 부분매칭(지역/버전 변종 대응) — 현재 패키지에 이 조각이 들어있으면 '우리 앱'
+  packageFragments: ["tiktok.lite", "aweme.lite", "musically"],
 
   // ── 실행 모드 ──
   //  "farm" = 켜두면 무한 파밍(리워드 수확 → 20분 대기 반복)

@@ -119,7 +119,7 @@ function tapTextOrCoord(list, coord, label) {
  * @return true = 정상, false = CAPTCHA로 중단
  */
 function clearAllPopups(label) {
-  var rounds = Math.min(6, cfg().popup.maxRounds);
+  var rounds = Math.min(10, cfg().popup.maxRounds); // 초기 이벤트가 10개+ 라 넉넉히
   var gap = cfg().popup.roundGapMs;
   var lastMatched = null, sameCount = 0;
   for (var round = 0; round < rounds; round++) {
@@ -197,9 +197,16 @@ function isOurApp(pkg) {
   if (!pkg) return false;
   var c = cfg().packageCandidates || [];
   for (var i = 0; i < c.length; i++) if (pkg === c[i]) return true;
+  // 부분매칭(지역/버전 변종): 패키지에 'tiktok.lite' 등이 포함되면 우리 앱으로 인정
+  var f = cfg().packageFragments || [];
+  for (var j = 0; j < f.length; j++) if (pkg.indexOf(f[j]) >= 0) return true;
   return false;
 }
-function launchApp() {
+var lastLaunchAt = 0;
+function launchApp(force) {
+  // 재실행 쓰래싱 방지: 최근에 실행했으면 스킵(강제 force 제외)
+  if (!force && Date.now() - lastLaunchAt < 8000) return;
+  lastLaunchAt = Date.now();
   try {
     if (!app.launchApp(cfg().appName)) {
       var c = cfg().packageCandidates || [];
@@ -209,11 +216,11 @@ function launchApp() {
   sleep(cfg().timing.afterLaunch);
 }
 function ensureForeground(forceLaunch) {
-  if (forceLaunch) launchApp();
+  if (forceLaunch) { launchApp(true); }
   var pkg = currentPackage();
   if (isOurApp(pkg)) return true;
   log("포그라운드 아님(" + pkg + ") → 재실행");
-  launchApp();
+  launchApp(false);
   return isOurApp(currentPackage());
 }
 function keepAwake() {
@@ -298,8 +305,9 @@ function ensureOnRewardsPage() {
     }
     clearAllPopups("이벤트");
     if (findAny(cfg().texts.pageMarker, 1800)) { log("리워드 페이지 확인됨"); return true; }
-    log("리워드 페이지 미확인 → 재시도 " + i + "/3");
-    ensureForeground(false); sleep(700);
+    log("리워드 페이지 미확인 → 계획 밖 화면 탈출(뒤로가기) 후 재시도 " + i + "/3");
+    back(); sleep(700);           // 계획에 없는 화면이면 뒤로가기로 빠져나옴
+    ensureForeground(false); sleep(500);
   }
   log("⚠ 리워드 페이지 진입 실패");
   return false;
