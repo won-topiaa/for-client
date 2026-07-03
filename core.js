@@ -341,11 +341,39 @@ function harvestRewards(doAttendance, likedVideo) {
 
     if (!didSomething) {
       scrollRewardsDown();
-      if (++idlePasses >= 3) { log("더 받을 리워드 없음 → 수확 종료"); break; }
+      if (++idlePasses >= 3) { log("더 받을 리워드 없음"); break; }
     } else {
       idlePasses = 0;
     }
   }
+
+  // 매일 광고(최대 40개/일, 광고당 ~62P) — 사이클당 batch만큼만
+  if (running) watchDailyAdBatch();
+}
+
+// '매일 광고' 카드를 찾아 우측 '시청' 버튼을 눌러 광고를 batch개 시청
+function watchDailyAdBatch() {
+  var batch = cfg().dailyAdBatch || 0;
+  if (batch <= 0) return;
+  log("매일 광고 시청 시작(최대 " + batch + "개)");
+  for (var i = 0; i < batch && running; i++) {
+    if (!ensureOnRewardsPage()) break;
+    closeStickyBanner();
+    scrollRewardsTop();
+    // '매일 광고' 카드를 스크롤하며 찾음
+    var card = null;
+    for (var s = 0; s < 5 && !card; s++) {
+      card = findAny(cfg().texts.dailyAdCard, 700);
+      if (!card) scrollRewardsDown();
+    }
+    if (!card) { log("매일 광고 카드 없음 → 종료"); break; }
+    tapRightOf(card.node, "매일광고 '시청'"); // 카드 우측의 시청 버튼
+    sleep(cfg().timing.afterTapReward);
+    if (detectCaptcha()) return;
+    if (!inAdScreen()) { log("광고 안 열림(한도 소진/쿨다운) → 매일광고 종료"); break; }
+    if (watchAdThenClose()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
+  }
+  ensureOnRewardsPage();
 }
 
 // 20분 대기: '시청하기'로 피드에 가서 영상 시청(시청 게이지 충전) + 좋아요 1회
