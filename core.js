@@ -257,12 +257,22 @@ function ensureOnRewardsPage() {
   return false;
 }
 
-// 리워드 팝업 처리: 받기 → 확인(연속 팝업 대비 반복)
+// 리워드 팝업 처리: (하단 '광고보기' 있으면 그 광고도 시청) → 받기 → 확인
+// 연속 팝업/보너스 광고 대비 몇 번 반복
 function collectPopup() {
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 4; i++) {
+    if (detectCaptcha()) return;
     var got = false;
-    if (tapText(cfg().texts.receive, "받기", 1200, true)) got = true; // 완전일치
-    if (tapText(cfg().texts.confirm, "확인", 1000, true)) got = true;
+    // 팝업 하단 '광고 보기'(추가 보상) — 있으면 그 광고도 시청
+    if (tapText(cfg().texts.popupAd, "팝업 광고보기", 900)) {
+      sleep(cfg().timing.afterTapReward);
+      if (closeAd()) { stat.cycles++; log("팝업 보너스 광고 완료"); }
+      got = true;
+    } else if (tapText(cfg().texts.receive, "받기", 1000, true)) { // 완전일치
+      got = true;
+    } else if (tapText(cfg().texts.confirm, "확인", 900, true)) {
+      got = true;
+    }
     if (!got) break;
     sleep(cfg().timing.afterPopupClose);
   }
@@ -273,11 +283,11 @@ function inAdScreen() {
   return !!findAny(cfg().texts.adMarker, 500);
 }
 
-// 광고 시청 후 닫기: 광고 진입 확인 → 기본대기 → X(실측 우상단) 폴링 → 복귀
+// 광고를 시청하고 X로 닫기만 함(팝업 수령은 하지 않음 → collectPopup과 상호재귀 방지)
 // 주의: 광고 안의 "지금 쇼핑하기/다운로드" 등은 절대 누르지 않음(알려진 X만 누름)
-function watchAdThenClose() {
+function closeAd() {
   if (!inAdScreen()) {
-    log("광고 화면 미진입(이미 소진되었거나 카운트다운 중) → 스킵");
+    log("광고 화면 미진입(소진/쿨다운) → 스킵");
     return false;
   }
   log("광고 시청 " + Math.round(cfg().timing.adBaseWaitMs / 1000) + "초 대기...");
@@ -290,7 +300,13 @@ function watchAdThenClose() {
     sleep(1500);
     if (!inAdScreen()) { back(); sleep(800); } // X 눌렀는데 랜딩페이지로 갔으면 뒤로
   }
-  collectPopup(); // 광고 후 리워드 수령 팝업
+  return true;
+}
+
+// 광고 시청 후 리워드 수령 팝업까지 처리
+function watchAdThenClose() {
+  if (!closeAd()) return false;
+  collectPopup();
   return true;
 }
 
