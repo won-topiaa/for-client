@@ -201,10 +201,8 @@ function stats() {
   };
 }
 
-// ── 단계별 동작 ──────────────────────────────────────────────
-function stepHeart()      { tapRatio(cfg().coords.heart, "우측중간 하트"); }
-function stepAttendance() { tapTextOrCoord(cfg().texts.attendance, cfg().coords.attendanceCheck, "출석체크"); }
-function stepCloseApp()   { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
+// ── 리워드(초록) 페이지 동작 — 텍스트 우선 ───────────────────
+function stepCloseApp() { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
 
 function watchVideos(durationMs, isRunning) {
   log("영상 시청: " + Math.round(durationMs / 1000) + "초");
@@ -219,50 +217,81 @@ function watchVideos(durationMs, isRunning) {
   }
 }
 
-// 4~5: 포인트 화면 진입 — 실제로 진입했는지 검증하고 최대 3회 재시도
-function openPointsVerified() {
-  var markers = cfg().texts.timer.concat(cfg().texts.receive, cfg().texts.watchAd);
+// 리워드 페이지에 있는지 확인. 없으면 포인트 탭을 눌러 진입(최대 3회)
+function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
-    tapRatio(cfg().coords.pointButton, "포인트 버튼");        // 4
-    clearAllPopups("포인트/이벤트");                          // 5
-    if (findAny(markers, 3000)) { log("포인트 화면 확인됨"); return true; }
-    log("포인트 화면 미확인 → 재시도 " + i + "/3");
-    back(); sleep(1000);
-    ensureForeground(false);
+    if (findAny(cfg().texts.pageMarker, 1500)) return true;
+    tapRatio(cfg().coords.pointButton, "포인트 탭 열기");
+    clearAllPopups("이벤트");
+    if (findAny(cfg().texts.pageMarker, 2500)) { log("리워드 페이지 확인됨"); return true; }
+    log("리워드 페이지 미확인 → 재시도 " + i + "/3");
+    ensureForeground(false); sleep(1000);
   }
-  log("⚠ 포인트 화면 진입 실패(좌표설정 확인 필요)");
+  log("⚠ 리워드 페이지 진입 실패 — [좌표설정]에서 '포인트 탭' 위치를 확인하세요");
   return false;
 }
 
-// 광고 시청: 기본 대기 후, 닫기/복귀를 최대 adExtraWaitMs 동안 폴링(가변 길이 광고 대응)
-function watchAdAndExit() {
-  log("광고 시청 " + Math.round(cfg().timing.afterAdWatch / 1000) + "초...");
-  napChunked(cfg().timing.afterAdWatch, isRunningFlag);
-  var extra = cfg().timing.adExtraWaitMs || 45000;
-  var end = Date.now() + extra;
-  while (Date.now() < end && running) {
-    if (tapText(cfg().texts.close, "광고 닫기", 300)) { sleep(1000); break; }
-    sleep(1000);
+// 리워드 팝업 처리: 받기 → 확인(연속 팝업 대비 반복)
+function collectPopup() {
+  for (var i = 0; i < 3; i++) {
+    var got = false;
+    if (tapText(cfg().texts.receive, "받기", 1200)) got = true;
+    if (tapText(cfg().texts.confirm, "확인", 1000)) got = true;
+    if (!got) break;
+    sleep(cfg().timing.afterPopupClose);
   }
-  tapRatio(cfg().coords.topLeftP, "좌측상단 p");               // 8
 }
 
-// 6~10: 포인트 적립 사이클
-function claimCycle() {
-  log("=== 적립 사이클 ===");
-  tapTextOrCoord(cfg().texts.timer, cfg().coords.timer, "타이머"); // 6
-  tapText(cfg().texts.receive, "받기");
-  if (tapText(cfg().texts.watchAd, "광고보기")) {                 // 7
-    watchAdAndExit();                                             // 8
-    tapRatio(cfg().coords.videoLike, "영상 좋아요");              // 9
-    sleep(jitter(cfg().timing.shortWait));
-    tapText(cfg().texts.receive, "받기");
-  } else {
-    log("광고보기 없음 → 스킵");
+// 광고 시청 후 닫기: 시작 버튼 → 기본대기 → 닫기(X) 폴링 → 리워드 페이지 복귀
+function watchAdThenClose() {
+  tapText(cfg().texts.adStart, "광고 시작", 2500); // 광고 시작 버튼이 있으면 누름
+  log("광고 시청 " + Math.round(cfg().timing.adBaseWaitMs / 1000) + "초 대기...");
+  napChunked(cfg().timing.adBaseWaitMs, isRunningFlag);
+  var end = Date.now() + cfg().timing.adExtraWaitMs;
+  while (Date.now() < end && running) {
+    if (detectCaptcha()) return;
+    if (findAny(cfg().texts.pageMarker, 500)) { log("광고 종료(페이지 복귀)"); break; }
+    if (tapText(cfg().texts.close, "광고 닫기", 400)) { sleep(1200); continue; }
+    tapRatio(cfg().coords.adClose, "광고 X(우상단)");
+    sleep(1500);
   }
-  back();                                                         // 10
-  sleep(jitter(cfg().timing.shortWait));
-  stat.cycles++;
+  collectPopup(); // 광고 후 리워드 수령 팝업
+}
+
+// 리워드 페이지에서 받을 수 있는 것들을 순서대로 수확
+function harvestRewards(doAttendance) {
+  if (!ensureOnRewardsPage()) return;
+  clearAllPopups("이벤트");
+
+  // 1) 출석하기(하루 1회) → 확인
+  if (doAttendance && tapText(cfg().texts.attendance, "출석하기")) {
+    sleep(cfg().timing.afterTapReward);
+    collectPopup(); stat.cycles++;
+    ensureOnRewardsPage();
+  }
+  // 2) 20분 타이머 → 받기 → 확인
+  if (running && tapText(cfg().texts.timerCard, "타이머 리워드")) {
+    sleep(cfg().timing.afterTapReward);
+    collectPopup(); stat.cycles++;
+    ensureOnRewardsPage();
+  }
+  // 3) 광고 보고 추가 보상 → 광고 시청 → 닫기 → 수령
+  if (running && tapText(cfg().texts.adReward, "광고 보상")) {
+    sleep(cfg().timing.afterTapReward);
+    if (detectCaptcha()) return;
+    watchAdThenClose(); stat.cycles++;
+    ensureOnRewardsPage();
+  }
+}
+
+// 20분 대기: 옵션에 따라 영상 시청으로 타이머 충전하며 대기
+function waitNextCycle() {
+  if (cfg().watchVideosForTimer) {
+    back(); sleep(1500); // 리워드 페이지 → 영상 피드로
+    watchVideos(cfg().timing.betweenCycleMs, isRunningFlag);
+  } else {
+    napChunked(cfg().timing.betweenCycleMs, isRunningFlag);
+  }
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
@@ -280,38 +309,26 @@ function safe(name, fn) {
 function isRunningFlag() { return running; }
 
 function runOnce() {
-  log("[모드] 한 바퀴 실행");
-  safe("실행", function () { ensureForeground(true); });          // 1
-  safe("팝업", function () { clearAllPopups("출석/이벤트"); });       // 2
-  safe("하트", stepHeart);                                        // 3a
-  safe("시청", function () { watchVideos(cfg().timing.watchDurationMs, isRunningFlag); }); // 3b
-  safe("포인트진입", openPointsVerified);                         // 4~5
-  var n = Math.max(1, cfg().maxCycles);
-  for (var i = 1; i <= n && running; i++) {
-    log("사이클 " + i + "/" + n);
-    safe("적립", claimCycle);                                     // 6~10
-    if (i < n) napChunked(cfg().timing.betweenCycleMs, isRunningFlag);
-  }
-  safe("출석", stepAttendance);                                   // 11
-  safe("종료", stepCloseApp);                                     // 12
+  log("[모드] 한 바퀴 수확");
+  safe("실행", function () { ensureForeground(true); });
+  safe("팝업", function () { clearAllPopups("초기 이벤트"); });
+  safe("수확", function () { harvestRewards(true); });
+  safe("종료", stepCloseApp);
   log("한 바퀴 완료");
 }
 
 function runFarm() {
   log("[모드] 무한 파밍 시작");
   safe("실행", function () { ensureForeground(true); });
-  safe("팝업", function () { clearAllPopups("출석/이벤트"); });
-  safe("하트", stepHeart);
+  safe("팝업", function () { clearAllPopups("초기 이벤트"); });
   var lastAtt = 0;
   while (running) {
     if (!ensureForeground(false)) { sleep(3000); continue; }
-    safe("포인트진입", openPointsVerified);
-    safe("적립", claimCycle);
-    if (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs) {
-      safe("출석", stepAttendance); lastAtt = Date.now();
-    }
-    // 다음 타이머까지 영상 시청하며 대기(타이머가 시청으로 충전됨)
-    safe("시청대기", function () { watchVideos(cfg().timing.betweenCycleMs, isRunningFlag); });
+    var doAtt = (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs);
+    safe("수확", function () { harvestRewards(doAtt); });
+    if (doAtt) lastAtt = Date.now();
+    if (!running) break;
+    safe("대기", waitNextCycle); // 20분(영상 시청으로 타이머 충전)
   }
   log("파밍 정지");
 }
@@ -342,14 +359,10 @@ function stop() {
 function isRunning() { return running; }
 
 // ── 좌표 캘리브레이션(화면을 탭해서 좌표 저장) ───────────────
+// v2: 대부분 텍스트로 처리하므로 좌표는 2곳만 잡으면 됨
 var CAL_TARGETS = [
-  ["popupClose", "팝업 닫기(X) 위치"],
-  ["heart", "우측 중간 하트"],
-  ["pointButton", "좌측 하단 포인트 버튼"],
-  ["timer", "타이머 버튼"],
-  ["topLeftP", "좌측 상단 p"],
-  ["videoLike", "영상 좋아요"],
-  ["attendanceCheck", "출석체크 버튼"],
+  ["pointButton", "리워드(포인트) 페이지 여는 탭 — 보통 좌측 하단"],
+  ["adClose", "광고 화면 닫기 X — 보통 우측 상단"],
 ];
 function calibrate() {
   threads.start(function () {
