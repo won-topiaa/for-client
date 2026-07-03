@@ -28,6 +28,19 @@ try {
 
 var core = require("./core.js");
 
+// ── 중복 실행 방지: 이전에 떠 있던 제어판(다른 실행 인스턴스)을 정리 ──
+try {
+  var me = engines.myEngine();
+  engines.all().forEach(function (e) {
+    if (e.id !== me.id) {
+      var src = "";
+      try { src = String(e.getSource()); } catch (x) {}
+      if (src.indexOf("main.js") >= 0) { try { e.forceStop(); } catch (x) {} }
+    }
+  });
+  sleep(300); // 이전 창이 닫힐 시간
+} catch (e) {}
+
 // ── 플로팅 제어판 ────────────────────────────────────────────
 var collapsed = false;
 
@@ -35,6 +48,7 @@ var win = floaty.window(
   <vertical id="panel" bg="#e61c1c1e" padding="10" w="190">
     <horizontal>
       <text id="title" text="≡ TTL 포인트 파머" textColor="#ffffff" textSize="13sp" textStyle="bold" layout_weight="1"/>
+      <text id="closebtn" text="✕" textColor="#ff8888" textSize="15sp" paddingLeft="10" paddingRight="4"/>
     </horizontal>
     <text id="status" text="● 대기중" textColor="#ffcc66" textSize="11sp" marginTop="4"/>
     <horizontal marginTop="6">
@@ -64,7 +78,20 @@ core.setLogSink(function (line) {
   try { ui.run(function () { win.log.setText(line); }); } catch (e) {}
 });
 
+// 창 정리 함수(중복 호출 안전)
+var closed = false;
+function shutdown() {
+  if (closed) return;
+  closed = true;
+  try { core.stop(); } catch (e) {}
+  try { win.close(); } catch (e) {}
+  try { exit(); } catch (e) {}
+}
+// 스크립트가 어떤 이유로든 종료되면 제어판도 함께 닫음(유령 창 방지)
+try { events.on("exit", function () { try { win.close(); } catch (e) {} }); } catch (e) {}
+
 // ── 버튼 동작 ────────────────────────────────────────────────
+win.closebtn.click(function () { shutdown(); }); // ✕ = 제어판 완전 종료
 win.start.click(function () {
   core.start();
   setStatus("● 실행중", "#66dd66");
