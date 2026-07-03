@@ -313,9 +313,11 @@ function harvestRewards(doAttendance, likedVideo) {
     ensureOnRewardsPage(); closeStickyBanner();
   }
 
-  // 페이지를 위에서부터 훑으며 '포인트 받기/받기'와 '광고 보상'을 처리
+  // 페이지를 위에서부터 훑으며 '포인트 받기/받기'와 '광고 보상'만 처리
+  // (캔디/킥오프/스핀/검색/게시/친구초대 등 게임·이벤트는 절대 누르지 않음)
   scrollRewardsTop();
   var idlePasses = 0;
+  var adDone = false; // 광고는 사이클당 1회만(쿨다운 반복 진입 방지)
   for (var pass = 0; pass < 8 && running; pass++) {
     if (detectCaptcha()) return;
     closeStickyBanner();
@@ -327,8 +329,9 @@ function harvestRewards(doAttendance, likedVideo) {
       ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
       didSomething = true;
     }
-    // 2) 광고 보면 추가 보상
-    else if (tapText(cfg().texts.adReward, "광고 보상", 900)) {
+    // 2) 광고 보면 추가 보상(사이클당 1회)
+    else if (!adDone && tapText(cfg().texts.adReward, "광고 보상", 900)) {
+      adDone = true;
       sleep(cfg().timing.afterTapReward);
       if (detectCaptcha()) return;
       if (watchAdThenClose()) stat.cycles++;
