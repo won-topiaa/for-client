@@ -217,17 +217,28 @@ function watchVideos(durationMs, isRunning) {
   }
 }
 
-// 리워드 페이지에 있는지 확인. 없으면 포인트 탭을 눌러 진입(최대 3회)
+// 노드의 오른쪽(같은 카드의 버튼 영역)을 탭 — 타이머 카드처럼 버튼이 우측에 있을 때
+function tapRightOf(node, label) {
+  var b = node.bounds();
+  var x = Math.round(W * 0.80), y = b.centerY();
+  log(label + " 우측 버튼 → (" + x + ", " + y + ")");
+  click(x, y);
+  sleep(jitter(cfg().timing.shortWait));
+}
+
+// 리워드 페이지에 있는지 확인. 없으면 하단 "포인트" 탭(텍스트→좌표)으로 진입(최대 3회)
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
     if (findAny(cfg().texts.pageMarker, 1500)) return true;
-    tapRatio(cfg().coords.pointButton, "포인트 탭 열기");
+    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 1500)) {
+      tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+    }
     clearAllPopups("이벤트");
     if (findAny(cfg().texts.pageMarker, 2500)) { log("리워드 페이지 확인됨"); return true; }
     log("리워드 페이지 미확인 → 재시도 " + i + "/3");
     ensureForeground(false); sleep(1000);
   }
-  log("⚠ 리워드 페이지 진입 실패 — [좌표설정]에서 '포인트 탭' 위치를 확인하세요");
+  log("⚠ 리워드 페이지 진입 실패");
   return false;
 }
 
@@ -242,56 +253,86 @@ function collectPopup() {
   }
 }
 
-// 광고 시청 후 닫기: 시작 버튼 → 기본대기 → 닫기(X) 폴링 → 리워드 페이지 복귀
+// 광고 화면인지 확인(상단 "15초 시청하고 30포인트 받기")
+function inAdScreen() {
+  return !!findAny(cfg().texts.adMarker, 500);
+}
+
+// 광고 시청 후 닫기: 광고 진입 확인 → 기본대기 → X(실측 우상단) 폴링 → 복귀
+// 주의: 광고 안의 "지금 쇼핑하기/다운로드" 등은 절대 누르지 않음(알려진 X만 누름)
 function watchAdThenClose() {
-  tapText(cfg().texts.adStart, "광고 시작", 2500); // 광고 시작 버튼이 있으면 누름
+  if (!inAdScreen()) {
+    log("광고 화면 미진입(이미 소진되었거나 카운트다운 중) → 스킵");
+    return false;
+  }
   log("광고 시청 " + Math.round(cfg().timing.adBaseWaitMs / 1000) + "초 대기...");
   napChunked(cfg().timing.adBaseWaitMs, isRunningFlag);
   var end = Date.now() + cfg().timing.adExtraWaitMs;
   while (Date.now() < end && running) {
-    if (detectCaptcha()) return;
+    if (detectCaptcha()) return false;
     if (findAny(cfg().texts.pageMarker, 500)) { log("광고 종료(페이지 복귀)"); break; }
-    if (tapText(cfg().texts.close, "광고 닫기", 400)) { sleep(1200); continue; }
     tapRatio(cfg().coords.adClose, "광고 X(우상단)");
     sleep(1500);
+    if (!inAdScreen()) { back(); sleep(800); } // X 눌렀는데 랜딩페이지로 갔으면 뒤로
   }
   collectPopup(); // 광고 후 리워드 수령 팝업
+  return true;
 }
 
 // 리워드 페이지에서 받을 수 있는 것들을 순서대로 수확
-function harvestRewards(doAttendance) {
+function harvestRewards(doAttendance, likedVideo) {
   if (!ensureOnRewardsPage()) return;
   clearAllPopups("이벤트");
 
-  // 1) 출석하기(하루 1회) → 확인
+  // 1) 출석하기(하루 1회)
   if (doAttendance && tapText(cfg().texts.attendance, "출석하기")) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     ensureOnRewardsPage();
   }
-  // 2) 20분 타이머 → 받기 → 확인
-  if (running && tapText(cfg().texts.timerCard, "타이머 리워드")) {
-    sleep(cfg().timing.afterTapReward);
-    collectPopup(); stat.cycles++;
-    ensureOnRewardsPage();
+  // 2) 20분 타이머: 준비되면 "받기" 버튼이 노출됨(미준비 시 카운트다운이라 무해)
+  if (running) {
+    if (tapText(cfg().texts.receive, "타이머 받기", 1500)) {
+      collectPopup(); stat.cycles++;
+      ensureOnRewardsPage();
+    } else {
+      var card = findAny(cfg().texts.timerCard, 1200);
+      if (card) { tapRightOf(card.node, "타이머 카드"); collectPopup(); ensureOnRewardsPage(); }
+      else log("타이머 카드 없음(스크롤 필요할 수 있음)");
+    }
   }
-  // 3) 광고 보고 추가 보상 → 광고 시청 → 닫기 → 수령
+  // 3) 좋아요 미션: 피드에서 좋아요를 눌렀다면 '포인트 받기' 수령
+  if (running && likedVideo && !findAny(cfg().texts.likeDone, 800)) {
+    if (tapText(cfg().texts.likeClaim, "좋아요 미션 수령", 1500)) {
+      collectPopup(); stat.cycles++;
+      ensureOnRewardsPage();
+    }
+  }
+  // 4) 광고 보면 추가 보상 → 광고 시청 → X 닫기 → 수령
   if (running && tapText(cfg().texts.adReward, "광고 보상")) {
     sleep(cfg().timing.afterTapReward);
     if (detectCaptcha()) return;
-    watchAdThenClose(); stat.cycles++;
+    if (watchAdThenClose()) stat.cycles++;
     ensureOnRewardsPage();
   }
 }
 
-// 20분 대기: 옵션에 따라 영상 시청으로 타이머 충전하며 대기
+// 20분 대기: '시청하기'로 피드에 가서 영상 시청(시청 게이지 충전) + 좋아요 1회
+// @return 좋아요를 눌렀으면 true
 function waitNextCycle() {
+  var liked = false;
   if (cfg().watchVideosForTimer) {
-    back(); sleep(1500); // 리워드 페이지 → 영상 피드로
+    // '시청하기' 버튼으로 피드 진입(없으면 뒤로가기로)
+    if (!tapText(cfg().texts.videoStart, "시청하기", 2000)) { back(); sleep(1500); }
+    // 시청 시작 직후 좋아요 1회(좋아요 미션용)
+    sleep(3000);
+    tapRatio(cfg().coords.feedLike, "피드 좋아요(미션)");
+    liked = true;
     watchVideos(cfg().timing.betweenCycleMs, isRunningFlag);
   } else {
     napChunked(cfg().timing.betweenCycleMs, isRunningFlag);
   }
+  return liked;
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
@@ -312,7 +353,7 @@ function runOnce() {
   log("[모드] 한 바퀴 수확");
   safe("실행", function () { ensureForeground(true); });
   safe("팝업", function () { clearAllPopups("초기 이벤트"); });
-  safe("수확", function () { harvestRewards(true); });
+  safe("수확", function () { harvestRewards(true, false); });
   safe("종료", stepCloseApp);
   log("한 바퀴 완료");
 }
@@ -322,13 +363,17 @@ function runFarm() {
   safe("실행", function () { ensureForeground(true); });
   safe("팝업", function () { clearAllPopups("초기 이벤트"); });
   var lastAtt = 0;
+  var liked = false;
   while (running) {
     if (!ensureForeground(false)) { sleep(3000); continue; }
     var doAtt = (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs);
-    safe("수확", function () { harvestRewards(doAtt); });
+    (function (att, lk) {
+      safe("수확", function () { harvestRewards(att, lk); });
+    })(doAtt, liked);
     if (doAtt) lastAtt = Date.now();
     if (!running) break;
-    safe("대기", waitNextCycle); // 20분(영상 시청으로 타이머 충전)
+    liked = false;
+    safe("대기", function () { liked = waitNextCycle(); }); // 20분 시청+좋아요
   }
   log("파밍 정지");
 }
@@ -359,10 +404,11 @@ function stop() {
 function isRunning() { return running; }
 
 // ── 좌표 캘리브레이션(화면을 탭해서 좌표 저장) ───────────────
-// v2: 대부분 텍스트로 처리하므로 좌표는 2곳만 잡으면 됨
+// v2: 대부분 텍스트로 처리. 좌표는 3곳만(기본값도 실측이라 대개 그대로 OK)
 var CAL_TARGETS = [
-  ["pointButton", "리워드(포인트) 페이지 여는 탭 — 보통 좌측 하단"],
-  ["adClose", "광고 화면 닫기 X — 보통 우측 상단"],
+  ["pointButton", "하단 '포인트' 탭 (좌측 두번째)"],
+  ["adClose", "광고 화면 닫기 X (우측 상단)"],
+  ["feedLike", "영상 피드의 하트(좋아요)"],
 ];
 function calibrate() {
   threads.start(function () {
