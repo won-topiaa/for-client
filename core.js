@@ -313,23 +313,39 @@ function ensureOnRewardsPage() {
   return false;
 }
 
-// 리워드 팝업 처리: (하단 '광고보기' 있으면 그 광고도 시청) → 받기 → 확인
-// 연속 팝업/보너스 광고 대비 몇 번 반복
+// 버튼 위치 기반 키(같은 자리 버튼 중복 클릭 방지용)
+function nodeKey(f) {
+  try {
+    var b = f.node.bounds();
+    return f.matched + "@" + Math.round(b.centerX() / 20) + "," + Math.round(b.centerY() / 20);
+  } catch (e) { return f.matched; }
+}
+
+// 리워드 팝업 처리: (하단 '광고보기' 있으면 그 광고도 시청) → 확인/받기로 닫기.
+// 같은 위치 버튼이 다시 잡히면(안 닫힘) 즉시 탈출 → 무한클릭 방지
 function collectPopup() {
-  var adTried = false; // 보너스 광고보기는 딱 1번만(안 열려도 재시도 안 함 → 무한루프 방지)
-  for (var i = 0; i < 5; i++) {
+  var seen = {}, adTried = false;
+  for (var i = 0; i < 6; i++) {
     if (detectCaptcha()) return;
-    // 1) 팝업 하단 '광고 보기'(추가 보상) — 한 번만 시도
-    if (!adTried && tapText(cfg().texts.popupAd, "팝업 광고보기", 700)) {
-      adTried = true;
-      sleep(cfg().timing.afterTapReward);
-      if (closeAd()) { stat.cycles++; log("팝업 보너스 광고 완료"); }
-      sleep(cfg().timing.afterPopupClose); continue;
+    // 1) 팝업 하단 '광고 보기'(추가 보상) — 한 번만
+    if (!adTried) {
+      var fa = findAny(cfg().texts.popupAd, 400);
+      if (fa) {
+        adTried = true;
+        log("팝업 광고보기 '" + fa.matched + "'");
+        clickNode(fa.node); sleep(cfg().timing.afterTapReward);
+        if (closeAd()) { stat.cycles++; log("팝업 보너스 광고 완료"); }
+        sleep(cfg().timing.afterPopupClose); continue;
+      }
     }
-    // 2) 받기/확인으로 팝업을 닫음(우선)
-    if (tapText(cfg().texts.receive, "받기", 800, true)) { sleep(cfg().timing.afterPopupClose); continue; }
-    if (tapText(cfg().texts.confirm, "확인", 700, true)) { sleep(cfg().timing.afterPopupClose); continue; }
-    break; // 더 처리할 팝업 없음
+    // 2) 확인 우선(닫기) → 없으면 받기
+    var f = findAny(cfg().texts.confirm, 350, true) || findAny(cfg().texts.receive, 350, true);
+    if (!f) break;
+    var k = nodeKey(f);
+    if (seen[k]) break; // 같은 자리 버튼 재출현 = 안 닫힘 → 탈출
+    seen[k] = 1;
+    log("팝업 처리 '" + f.matched + "'");
+    clickNode(f.node); sleep(cfg().timing.afterPopupClose);
   }
 }
 
@@ -370,9 +386,32 @@ function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math
 function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.30), 220); sleep(320); }
 function scrollRewardsTop()  { for (var i=0;i<3;i++) scrollRewardsUp(); }
 
-// 리워드 페이지 풀 스윕: 위→아래로 훑으며 '확실히 되는 것만' 순서대로 수확.
-// 처리: 출석하기 → 준비된 수령(포인트받기/받기) → 광고 추가보상 → 매일광고 배치
-// 절대 안 함: 게시/검색/보류/친구초대/게임(캔디·킥오프·스핀)
+// 스크롤 내리며 '포인트 받기'만 수확. 매 패스 반드시 한 칸 스크롤(진행 보장),
+// 같은 위치 버튼 중복 클릭 차단, 4번 연속 못 찾으면 바닥으로 보고 종료.
+function harvestClaimSweep() {
+  scrollRewardsTop();
+  var seen = {}, noFind = 0;
+  for (var pass = 0; pass < 16 && running; pass++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
+    if (detectCaptcha()) return;
+    if (!findAny(cfg().texts.pageMarker, 250)) ensureOnRewardsPage();
+    closeStickyBanner();
+    var f = findAny(cfg().texts.pageClaim, 400, true); // "포인트 받기"만
+    if (f && !seen[nodeKey(f)]) {
+      seen[nodeKey(f)] = 1;
+      log("리워드 수령 '" + f.matched + "'");
+      clickNode(f.node); sleep(cfg().timing.afterTapReward);
+      collectPopup(); stat.cycles++;
+      noFind = 0;
+    } else {
+      if (++noFind >= 4) { log("바닥 도달 — 더 받을 것 없음"); break; }
+    }
+    scrollRewardsDown(); // 항상 한 칸 내려감
+  }
+}
+
+// 리워드 페이지 수확(순서): 출석 → 타이머(먼저) → 스크롤 스윕(포인트받기)
+// → 광고 추가보상 → 매일광고 배치. 게시/검색/보류/친구초대/게임은 절대 안 함.
 function harvestRewards(doAttendance) {
   if (!ensureOnRewardsPage()) return;
   harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
@@ -386,22 +425,23 @@ function harvestRewards(doAttendance) {
     ensureOnRewardsPage(); closeStickyBanner();
   }
 
-  // 2) 준비된 수령 버튼 전부 — '한 번에 아래로 훑기'(빠름): 각 위치에서 보이는
-  //    수령 버튼을 모두 처리한 뒤 아래로 스크롤. 맨 위로 리셋하지 않음.
-  scrollRewardsTop();
-  for (var pass = 0; pass < 8 && running; pass++) {
-    if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
-    if (detectCaptcha()) return;
-    if (!findAny(cfg().texts.pageMarker, 300)) { ensureOnRewardsPage(); scrollRewardsTop(); }
-    closeStickyBanner();
-    var guard = 0;
-    while (running && guard++ < 6 && tapText(cfg().texts.receive, "리워드 수령", 450, true)) {
-      collectPopup(); stat.cycles++;
+  // 2) 타이머(20분마다) 먼저 — 카드 지정으로 그 카드의 '포인트 받기'만
+  if (running) {
+    scrollRewardsTop();
+    var tc = findCard(cfg().texts.timerTitle, 4);
+    if (tc) {
+      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기")) {
+        sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
+      }
+      ensureOnRewardsPage(); closeStickyBanner();
     }
-    scrollRewardsDown();
   }
 
-  // 3) 광고 보면 추가 보상(쿨다운 끝났을 때만 실제로 광고가 열림) — 카드 지정
+  // 3) 스크롤 내리며 '포인트 받기' 수확 — 매 패스 무조건 한 칸 스크롤(진행 보장),
+  //    같은 위치 중복 클릭 차단, 4번 연속 못 찾으면 바닥으로 보고 종료
+  if (running) harvestClaimSweep();
+
+  // 4) 광고 보면 추가 보상(쿨다운 끝났을 때만 실제로 광고가 열림) — 카드 지정
   if (running) {
     ensureOnRewardsPage(); scrollRewardsTop();
     var adCard = findCard(cfg().texts.adRewardTitle, 6);
@@ -415,7 +455,7 @@ function harvestRewards(doAttendance) {
     }
   }
 
-  // 4) 매일 광고(하루 40개) — 사이클당 batch개
+  // 5) 매일 광고(하루 40개) — 사이클당 batch개
   if (running) watchDailyAdBatch();
 }
 
