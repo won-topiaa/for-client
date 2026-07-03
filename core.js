@@ -158,9 +158,9 @@ function clearAllPopups(label) {
 
 // 하단 스티키 배너(야시장 챌린지 등)를 감지됐을 때만 ✕로 닫음
 function closeStickyBanner() {
-  if (findAny(cfg().texts.banner, 300)) {
+  if (findAny(cfg().texts.banner, 250)) {
     tapRatio(cfg().coords.bannerClose, "스티키 배너 ✕");
-    sleep(500);
+    sleep(300);
   }
 }
 function checkAndClosePopup() {
@@ -292,14 +292,14 @@ function findCard(titleList, maxScroll) {
 // 리워드 페이지에 있는지 확인. 없으면 하단 "포인트" 탭(텍스트→좌표)으로 진입(최대 3회)
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
-    if (findAny(cfg().texts.pageMarker, 1500)) return true;
-    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 1500)) {
+    if (findAny(cfg().texts.pageMarker, 1000)) return true;
+    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 1000)) {
       tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
     }
     clearAllPopups("이벤트");
-    if (findAny(cfg().texts.pageMarker, 2500)) { log("리워드 페이지 확인됨"); return true; }
+    if (findAny(cfg().texts.pageMarker, 1800)) { log("리워드 페이지 확인됨"); return true; }
     log("리워드 페이지 미확인 → 재시도 " + i + "/3");
-    ensureForeground(false); sleep(1000);
+    ensureForeground(false); sleep(700);
   }
   log("⚠ 리워드 페이지 진입 실패");
   return false;
@@ -342,10 +342,10 @@ function closeAd() {
   var end = Date.now() + cfg().timing.adExtraWaitMs;
   while (Date.now() < end && running) {
     if (detectCaptcha()) return false;
-    if (findAny(cfg().texts.pageMarker, 500)) { log("광고 종료(페이지 복귀)"); break; }
+    if (findAny(cfg().texts.pageMarker, 400)) { log("광고 종료(페이지 복귀)"); break; }
     tapRatio(cfg().coords.adClose, "광고 X(우상단)");
-    sleep(1500);
-    if (!inAdScreen()) { back(); sleep(800); } // X 눌렀는데 랜딩페이지로 갔으면 뒤로
+    sleep(900);
+    if (!inAdScreen()) { back(); sleep(500); } // X 눌렀는데 랜딩페이지로 갔으면 뒤로
   }
   return true;
 }
@@ -357,10 +357,10 @@ function watchAdThenClose() {
   return true;
 }
 
-// 리워드 페이지 스크롤(위로 올리기 / 아래로 내리기) — 페이지 안에서만 스와이프
-function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math.round(W*0.5), Math.round(H*0.75), 500); sleep(700); }
-function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.32), 500); sleep(700); }
-function scrollRewardsTop()  { for (var i=0;i<5;i++) scrollRewardsUp(); }
+// 리워드 페이지 스크롤 — 빠르게(스와이프 짧고, 대기 최소)
+function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math.round(W*0.5), Math.round(H*0.75), 220); sleep(320); }
+function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.30), 220); sleep(320); }
+function scrollRewardsTop()  { for (var i=0;i<3;i++) scrollRewardsUp(); }
 
 // 리워드 페이지 풀 스윕: 위→아래로 훑으며 '확실히 되는 것만' 순서대로 수확.
 // 처리: 출석하기 → 준비된 수령(포인트받기/받기) → 광고 추가보상 → 매일광고 배치
@@ -378,20 +378,19 @@ function harvestRewards(doAttendance) {
     ensureOnRewardsPage(); closeStickyBanner();
   }
 
-  // 2) 준비된 수령 버튼 전부(포인트받기/받기) — 타이머·좋아요완료 등. 완전일치로 게임 차단
+  // 2) 준비된 수령 버튼 전부 — '한 번에 아래로 훑기'(빠름): 각 위치에서 보이는
+  //    수령 버튼을 모두 처리한 뒤 아래로 스크롤. 맨 위로 리셋하지 않음.
   scrollRewardsTop();
-  var idle = 0;
-  for (var pass = 0; pass < 10 && running; pass++) {
+  for (var pass = 0; pass < 8 && running; pass++) {
     if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
     if (detectCaptcha()) return;
+    if (!findAny(cfg().texts.pageMarker, 300)) { ensureOnRewardsPage(); scrollRewardsTop(); }
     closeStickyBanner();
-    if (tapText(cfg().texts.receive, "리워드 수령", 800, true)) {
+    var guard = 0;
+    while (running && guard++ < 6 && tapText(cfg().texts.receive, "리워드 수령", 450, true)) {
       collectPopup(); stat.cycles++;
-      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop(); idle = 0;
-    } else {
-      scrollRewardsDown();
-      if (++idle >= 3) break;
     }
+    scrollRewardsDown();
   }
 
   // 3) 광고 보면 추가 보상(쿨다운 끝났을 때만 실제로 광고가 열림) — 카드 지정
@@ -461,7 +460,7 @@ function runOnce() {
 function gotoFeed() {
   for (var i = 0; i < 3; i++) {
     if (!findAny(cfg().texts.pageMarker, 400)) return; // 이미 피드
-    back(); sleep(1200);
+    back(); sleep(700);
   }
 }
 

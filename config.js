@@ -27,24 +27,25 @@ var DEFAULTS = {
   dailyAdBatch: 6,  // '매일 광고'(하루 40개)를 사이클당 몇 개씩 볼지(0=끄기)
                     // 몰아보면 봇 티가 나므로 나눠서 보는 게 안전
 
-  // ── 대기 시간(ms) ──
+  // ── 대기 시간(ms) ── (UI 전환 대기는 최대한 짧게, 광고/영상 시청 시간만 유지)
   timing: {
-    afterLaunch: 6000,
-    afterPopupClose: 1000,
-    afterTapReward: 2500,    // 리워드 버튼 누른 뒤 팝업/광고 뜨는 시간
-    adBaseWaitMs: 20000,     // 광고 기본 시청 대기(실측: 15초 광고 + 여유)
-    adExtraWaitMs: 45000,    // 광고가 더 길 때 닫기(X)를 추가로 기다리는 최대 시간
-    betweenCycleMs: 20 * 60 * 1000, // 타이머 수령 간격(20분)
-    harvestBudgetMs: 8 * 60 * 1000, // 한 번의 수확에 쓰는 최대 시간(넘으면 피드로 탈출)
-    scrollIntervalMs: 18000, // 영상 1개 시청 시간
-    shortWait: 1200,
+    afterLaunch: 5000,
+    afterPopupClose: 400,    // 팝업 닫은 뒤(짧게)
+    afterTapReward: 1200,    // 리워드 버튼 누른 뒤 팝업/광고 뜨는 시간
+    adBaseWaitMs: 20000,     // 광고 기본 시청 대기(광고 크레딧 위해 유지)
+    adExtraWaitMs: 25000,    // 광고가 더 길 때 닫기(X)를 추가로 기다리는 최대 시간
+    betweenCycleMs: 20 * 60 * 1000, // 타이머 수령 간격(20분, TikTok 고정)
+    harvestBudgetMs: 8 * 60 * 1000, // 한 번의 수확 최대 시간(넘으면 피드로 탈출)
+    scrollIntervalMs: 18000, // 영상 1개 시청 시간(게이지 충전용 — 유지)
+    shortWait: 450,          // 탭 후 대기(짧게 — 화면 렌더링 최소치)
+    tapGap: 250,             // 연속 클릭 사이 최소 간격
     dailyAttendanceMs: 24 * 60 * 60 * 1000,
   },
 
   // ── 팝업/캡차 처리 ──
   popup: {
     maxRounds: 12,       // 첫 진입 시 팝업을 최대 몇 번 반복해 닫을지(이벤트 10개+)
-    roundGapMs: 800,
+    roundGapMs: 450,
     closeSpots: [        // 텍스트로 못 닫을 때 눌러볼 닫기(X) 후보 좌표
       { x: 0.905, y: 0.83 }, // 하단 스티키 배너 ✕(야시장 챌린지 등, 실측)
       { x: 0.90, y: 0.06 },  // 우측 상단
