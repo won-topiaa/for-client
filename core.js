@@ -240,13 +240,37 @@ function watchVideos(durationMs, isRunning) {
   }
 }
 
-// 노드의 오른쪽(같은 카드의 버튼 영역)을 탭 — 타이머 카드처럼 버튼이 우측에 있을 때
-function tapRightOf(node, label) {
-  var b = node.bounds();
-  var x = Math.round(W * 0.80), y = b.centerY();
-  log(label + " 우측 버튼 → (" + x + ", " + y + ")");
-  click(x, y);
-  sleep(jitter(cfg().timing.shortWait));
+// 제목 노드가 속한 '카드'의 버튼을 누름.
+// 같은 행(비슷한 Y, 제목보다 오른쪽)에서 btnList 텍스트 버튼을 찾아 누르고,
+// 없으면 제목 우측 좌표를 누름(카드 버튼은 대개 우측에 있음).
+// → "시청/시작하기"가 여러 카드에 있어도 '이 카드의' 버튼만 정확히 누름
+function tapCardButton(titleNode, btnList, label) {
+  var tb = titleNode.bounds();
+  var rowTol = Math.max(tb.height() * 3, 240);
+  for (var i = 0; btnList && i < btnList.length; i++) {
+    var col = text(btnList[i]).find();
+    for (var j = 0; col && j < col.size(); j++) {
+      var n = col.get(j), b = n.bounds();
+      if (Math.abs(b.centerY() - tb.centerY()) < rowTol && b.centerX() > tb.centerX()) {
+        log(label + " '" + btnList[i] + "' 클릭");
+        clickNode(n); sleep(jitter(cfg().timing.shortWait)); return true;
+      }
+    }
+  }
+  var x = Math.round(W * 0.80), y = tb.centerY();
+  log(label + " 우측버튼(좌표) → (" + x + ", " + y + ")");
+  click(x, y); sleep(jitter(cfg().timing.shortWait)); return true;
+}
+
+// 스크롤하며 특정 제목 카드를 찾음(찾으면 {node,matched}, 없으면 null)
+function findCard(titleList, maxScroll) {
+  var m = (maxScroll === undefined) ? 6 : maxScroll;
+  for (var s = 0; s <= m && running; s++) {
+    var c = findAny(titleList, 700);
+    if (c) return c;
+    scrollRewardsDown();
+  }
+  return null;
 }
 
 // 리워드 페이지에 있는지 확인. 없으면 하단 "포인트" 탭(텍스트→좌표)으로 진입(최대 3회)
@@ -322,61 +346,57 @@ function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math
 function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.32), 500); sleep(700); }
 function scrollRewardsTop()  { for (var i=0;i<5;i++) scrollRewardsUp(); }
 
-// 리워드 페이지를 위→아래로 훑으며 준비된 리워드를 모두 수확
-// 텍스트로만 누르므로(포인트받기/받기/출석하기/광고보상) 오탭·헤맴 없음
-function harvestRewards(doAttendance, likedVideo) {
+// 리워드 페이지 풀 스윕: 위→아래로 훑으며 '확실히 되는 것만' 순서대로 수확.
+// 처리: 출석하기 → 준비된 수령(포인트받기/받기) → 광고 추가보상 → 매일광고 배치
+// 절대 안 함: 게시/검색/보류/친구초대/게임(캔디·킥오프·스핀)
+function harvestRewards(doAttendance) {
   if (!ensureOnRewardsPage()) return;
   harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
   clearAllPopups("초기 팝업");
   closeStickyBanner();
 
-  // 출석하기(하루 1회) — 완전일치
+  // 1) 출석하기(하루 1회)
   if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     ensureOnRewardsPage(); closeStickyBanner();
   }
 
-  // 페이지를 위에서부터 훑으며 '포인트 받기/받기'와 '광고 보상'만 처리
-  // (캔디/킥오프/스핀/검색/게시/친구초대 등 게임·이벤트는 절대 누르지 않음)
+  // 2) 준비된 수령 버튼 전부(포인트받기/받기) — 타이머·좋아요완료 등. 완전일치로 게임 차단
   scrollRewardsTop();
-  var idlePasses = 0;
-  var adDone = false; // 광고는 사이클당 1회만(쿨다운 반복 진입 방지)
-  for (var pass = 0; pass < 8 && running; pass++) {
-    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 종료"); break; }
+  var idle = 0;
+  for (var pass = 0; pass < 10 && running; pass++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
     if (detectCaptcha()) return;
     closeStickyBanner();
-    var didSomething = false;
-
-    // 1) 준비된 수령 버튼(포인트 받기/받기) — 완전일치로 게임 진입 방지
-    if (tapText(cfg().texts.receive, "리워드 수령", 900, true)) {
+    if (tapText(cfg().texts.receive, "리워드 수령", 800, true)) {
       collectPopup(); stat.cycles++;
-      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
-      didSomething = true;
-    }
-    // 2) 광고 보면 추가 보상(사이클당 1회)
-    else if (!adDone && tapText(cfg().texts.adReward, "광고 보상", 900)) {
-      adDone = true;
-      sleep(cfg().timing.afterTapReward);
-      if (detectCaptcha()) return;
-      if (watchAdThenClose()) stat.cycles++;
-      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
-      didSomething = true;
-    }
-
-    if (!didSomething) {
-      scrollRewardsDown();
-      if (++idlePasses >= 3) { log("더 받을 리워드 없음"); break; }
+      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop(); idle = 0;
     } else {
-      idlePasses = 0;
+      scrollRewardsDown();
+      if (++idle >= 3) break;
     }
   }
 
-  // 매일 광고(최대 40개/일, 광고당 ~62P) — 사이클당 batch만큼만
+  // 3) 광고 보면 추가 보상(쿨다운 끝났을 때만 실제로 광고가 열림) — 카드 지정
+  if (running) {
+    ensureOnRewardsPage(); scrollRewardsTop();
+    var adCard = findCard(cfg().texts.adRewardTitle, 6);
+    if (adCard) {
+      tapCardButton(adCard.node, null, "광고 추가보상"); // 카드 우측(>) 탭
+      sleep(cfg().timing.afterTapReward);
+      if (detectCaptcha()) return;
+      if (inAdScreen()) { if (closeAd()) stat.cycles++; collectPopup(); }
+      else log("광고 추가보상 쿨다운/미준비 → 스킵");
+      ensureOnRewardsPage(); closeStickyBanner();
+    }
+  }
+
+  // 4) 매일 광고(하루 40개) — 사이클당 batch개
   if (running) watchDailyAdBatch();
 }
 
-// '매일 광고' 카드를 찾아 우측 '시청' 버튼을 눌러 광고를 batch개 시청
+// '매일 광고' 카드를 찾아 그 카드의 '시청' 버튼만 눌러 광고를 batch개 시청
 function watchDailyAdBatch() {
   var batch = cfg().dailyAdBatch || 0;
   if (batch <= 0) return;
@@ -384,40 +404,17 @@ function watchDailyAdBatch() {
   for (var i = 0; i < batch && running; i++) {
     if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 매일광고 종료"); break; }
     if (!ensureOnRewardsPage()) break;
-    closeStickyBanner();
-    scrollRewardsTop();
-    // '매일 광고' 카드를 스크롤하며 찾음
-    var card = null;
-    for (var s = 0; s < 5 && !card; s++) {
-      card = findAny(cfg().texts.dailyAdCard, 700);
-      if (!card) scrollRewardsDown();
-    }
+    closeStickyBanner(); scrollRewardsTop();
+    var card = findCard(cfg().texts.dailyAdCard, 6);
     if (!card) { log("매일 광고 카드 없음 → 종료"); break; }
-    tapRightOf(card.node, "매일광고 '시청'"); // 카드 우측의 시청 버튼
+    tapCardButton(card.node, cfg().texts.watchBtn, "매일광고 '시청'");
     sleep(cfg().timing.afterTapReward);
     if (detectCaptcha()) return;
     if (!inAdScreen()) { log("광고 안 열림(한도 소진/쿨다운) → 매일광고 종료"); break; }
-    if (watchAdThenClose()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
+    if (closeAd()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
+    collectPopup();
   }
   ensureOnRewardsPage();
-}
-
-// 20분 대기: '시청하기'로 피드에 가서 영상 시청(시청 게이지 충전) + 좋아요 1회
-// @return 좋아요를 눌렀으면 true
-function waitNextCycle() {
-  var liked = false;
-  if (cfg().watchVideosForTimer) {
-    // '시청하기' 버튼으로 피드 진입(없으면 뒤로가기로)
-    if (!tapText(cfg().texts.videoStart, "시청하기", 2000)) { back(); sleep(1500); }
-    // 시청 시작 직후 좋아요 1회(좋아요 미션용)
-    sleep(3000);
-    tapRatio(cfg().coords.feedLike, "피드 좋아요(미션)");
-    liked = true;
-    watchVideos(cfg().timing.betweenCycleMs, isRunningFlag);
-  } else {
-    napChunked(cfg().timing.betweenCycleMs, isRunningFlag);
-  }
-  return liked;
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
@@ -439,7 +436,7 @@ function runOnce() {
   log("[모드] 한 바퀴 수확");
   safe("실행", function () { ensureForeground(true); });
   safe("팝업", function () { clearAllPopups("초기 이벤트"); });
-  safe("수확", function () { harvestRewards(true, false); });
+  safe("수확", function () { harvestRewards(true); });
   safe("종료", stepCloseApp);
   log("한 바퀴 완료");
 }
@@ -476,7 +473,7 @@ function runFarm() {
 
   var lastAtt = 0;
   // (1) 시작 즉시 받을 수 있는 리워드 한번 걷기 → 적립 카운터 바로 반응
-  safe("첫수확", function () { harvestRewards(true, false); });
+  safe("첫수확", function () { harvestRewards(true); });
   lastAtt = Date.now();
 
   // (2) 피드 스크롤(눈에 보이는 활동) ↔ 20분마다 리워드 수확 반복
@@ -493,7 +490,7 @@ function runFarm() {
     (function (att) {
       safe("수확", function () {
         log("⏰ 리워드 수확 타임");
-        harvestRewards(att, true);
+        harvestRewards(att);
       });
     })(doAtt);
     if (doAtt) lastAtt = Date.now();
