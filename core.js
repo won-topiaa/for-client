@@ -62,31 +62,37 @@ function napChunked(ms, isRunning) {
 // exact=true 이면 완전일치만(부분일치 금지) — "탭하여 포인트 받기" 같은
 // 게임 진입 버튼을 "포인트 받기"로 오인식하는 것을 방지
 function findAny(list, timeoutMs, exact) {
+  if (!list || !list.length) return null;
   var end = Date.now() + timeoutMs;
-  do {
+  for (;;) {
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
-      var n = text(t).findOnce() || desc(t).findOnce()
-           || (!exact && t.length > 2 ? textContains(t).findOnce() : null);
-      if (n) return { node: n, matched: t };
+      try {
+        var n = text(t).findOnce() || desc(t).findOnce()
+             || (!exact && t.length > 2 ? textContains(t).findOnce() : null);
+        if (n) return { node: n, matched: t };
+      } catch (e) { /* 접근성 노드 조회 순간 오류는 무시하고 재시도 */ }
     }
-    sleep(300);
-  } while (Date.now() < end);
-  return null;
+    var remain = end - Date.now();
+    if (remain <= 0) return null;
+    sleep(Math.min(250, remain));
+  }
 }
 function clickNode(node) {
-  if (node.click()) return true;
-  var b = node.bounds();
-  click(b.centerX(), b.centerY());
-  return true;
+  try {
+    if (node.click()) return true;
+    var b = node.bounds();
+    if (b) { click(b.centerX(), b.centerY()); return true; }
+  } catch (e) { log("클릭 실패: " + e); }
+  return false;
 }
 function tapText(list, label, timeoutMs, exact) {
   var f = findAny(list, timeoutMs === undefined ? cfg().retry.findTimeoutMs : timeoutMs, exact);
   if (!f) return false;
   log((label || "텍스트") + " '" + f.matched + "' 클릭");
-  clickNode(f.node);
+  var ok = clickNode(f.node);
   sleep(jitter(cfg().timing.shortWait));
-  return true;
+  return ok;
 }
 function tapRatio(ratio, label) {
   // humanize 시 ±5px 오프셋으로 매번 같은 픽셀을 누르지 않음
@@ -167,7 +173,7 @@ function checkAndClosePopup() {
 }
 // CAPTCHA/보안인증/이상행동 화면 감지 — 있으면 파밍을 안전 정지시킴
 function detectCaptcha() {
-  var f = findAny(cfg().texts.captcha, 200);
+  var f = findAny(cfg().texts.captcha, 0); // 1회 스캔(캡차는 화면에 계속 떠 있음) — 타이트 루프 최적화
   if (!f) return false;
   log("🛑 보안인증/CAPTCHA 감지('" + f.matched + "') → 자동화 정지. 사람이 직접 처리 필요");
   captchaHit = true;
@@ -194,16 +200,19 @@ function isOurApp(pkg) {
   return false;
 }
 function launchApp() {
-  if (!app.launchApp(cfg().appName)) {
-    var c = cfg().packageCandidates;
-    for (var i = 0; i < c.length; i++) if (app.launchPackage(c[i])) break;
-  }
+  try {
+    if (!app.launchApp(cfg().appName)) {
+      var c = cfg().packageCandidates || [];
+      for (var i = 0; i < c.length; i++) if (app.launchPackage(c[i])) break;
+    }
+  } catch (e) { log("앱 실행 오류: " + e); }
   sleep(cfg().timing.afterLaunch);
 }
 function ensureForeground(forceLaunch) {
   if (forceLaunch) launchApp();
-  if (isOurApp(currentPackage())) return true;
-  log("포그라운드 아님(" + currentPackage() + ") → 재실행");
+  var pkg = currentPackage();
+  if (isOurApp(pkg)) return true;
+  log("포그라운드 아님(" + pkg + ") → 재실행");
   launchApp();
   return isOurApp(currentPackage());
 }
@@ -245,21 +254,28 @@ function watchVideos(durationMs, isRunning) {
 // 없으면 제목 우측 좌표를 누름(카드 버튼은 대개 우측에 있음).
 // → "시청/시작하기"가 여러 카드에 있어도 '이 카드의' 버튼만 정확히 누름
 function tapCardButton(titleNode, btnList, label) {
-  var tb = titleNode.bounds();
-  var rowTol = Math.max(tb.height() * 3, 240);
-  for (var i = 0; btnList && i < btnList.length; i++) {
-    var col = text(btnList[i]).find();
-    for (var j = 0; col && j < col.size(); j++) {
-      var n = col.get(j), b = n.bounds();
-      if (Math.abs(b.centerY() - tb.centerY()) < rowTol && b.centerX() > tb.centerX()) {
-        log(label + " '" + btnList[i] + "' 클릭");
-        clickNode(n); sleep(jitter(cfg().timing.shortWait)); return true;
-      }
+  try {
+    var tb = titleNode.bounds();
+    if (!tb) return false;
+    var rowTol = Math.max(tb.height() * 3, 240);
+    for (var i = 0; btnList && i < btnList.length; i++) {
+      var col = text(btnList[i]).find();
+      try {
+        for (var j = 0; col && j < col.size(); j++) {
+          var n = col.get(j), b = n.bounds();
+          if (b && Math.abs(b.centerY() - tb.centerY()) < rowTol && b.centerX() > tb.centerX()) {
+            log(label + " '" + btnList[i] + "' 클릭");
+            if (clickNode(n)) { sleep(jitter(cfg().timing.shortWait)); return true; }
+          }
+        }
+      } finally { try { col.recycle(); } catch (e) {} }
     }
+    var x = Math.round(W * 0.80), y = tb.centerY();
+    log(label + " 우측버튼(좌표) → (" + x + ", " + y + ")");
+    click(x, y); sleep(jitter(cfg().timing.shortWait)); return true;
+  } catch (e) {
+    log(label + " 카드버튼 탭 실패: " + e); return false;
   }
-  var x = Math.round(W * 0.80), y = tb.centerY();
-  log(label + " 우측버튼(좌표) → (" + x + ", " + y + ")");
-  click(x, y); sleep(jitter(cfg().timing.shortWait)); return true;
 }
 
 // 스크롤하며 특정 제목 카드를 찾음(찾으면 {node,matched}, 없으면 null)
