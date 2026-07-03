@@ -38,6 +38,20 @@ var DEFAULTS = {
     dailyAttendanceMs: 24 * 60 * 60 * 1000, // 출석체크 주기
   },
 
+  // ── 팝업/캡차 처리 ──
+  popup: {
+    maxRounds: 12,       // 첫 진입 시 팝업을 최대 몇 번 반복해서 닫을지(10개+ 이벤트 대응)
+    roundGapMs: 800,     // 팝업 하나 닫고 다음 팝업 뜰 때까지 대기
+    // 텍스트로 못 닫을 때 눌러볼 닫기(X) 후보 좌표들(팝업마다 X 위치가 다름)
+    closeSpots: [
+      { x: 0.90, y: 0.12 }, // 우측 상단
+      { x: 0.90, y: 0.08 },
+      { x: 0.50, y: 0.90 }, // 하단 중앙(닫기 바)
+      { x: 0.93, y: 0.06 },
+      { x: 0.07, y: 0.06 }, // 좌측 상단
+    ],
+  },
+
   // ── 버튼 텍스트(접근성으로 우선 탐색) ──
   texts: {
     receive:    ["받기", "受け取る", "Collect", "Claim", "Receive"],
@@ -45,7 +59,12 @@ var DEFAULTS = {
     timer:      ["타이머", "Timer"],
     attendance: ["출석체크", "출석 체크", "출석", "Check-in", "Attendance", "Daily"],
     close:      ["닫기", "×", "✕", "✖", "X", "Close", "취소", "取消", "Skip",
-                 "건너뛰기", "나중에", "Later", "No thanks"],
+                 "건너뛰기", "나중에", "Later", "No thanks", "확인", "OK", "동의", "Got it"],
+    // CAPTCHA/보안인증 감지용 — 이 문구가 보이면 자동화를 멈추고 사람에게 알림
+    captcha:    ["인증", "보안 인증", "확인해 주세요", "퍼즐", "슬라이드", "드래그",
+                 "captcha", "verify", "verification", "Slide", "Drag", "puzzle",
+                 "비정상", "이상 행동", "이상행동", "abnormal", "unusual activity",
+                 "로봇이 아닙니다", "본인 확인"],
   },
 
   // ── 좌표(화면 비율). [좌표설정]으로 잡으면 덮어써집니다 ──

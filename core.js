@@ -102,19 +102,56 @@ function tapTextOrCoord(list, coord, label) {
   log(label + " 실패: 대상 못 찾음");
   return false;
 }
-function closePopup(label) {
-  if (tapText(cfg().texts.close, (label || "팝업") + " 닫기")) {
+// 한 번의 팝업 닫기 시도(텍스트 우선 → 좌표 후보들 순차). 닫았으면 true
+function closeOnce(label) {
+  if (tapText(cfg().texts.close, (label || "팝업") + " 닫기", 600)) {
     sleep(jitter(cfg().timing.afterPopupClose)); return true;
   }
-  tapRatio(cfg().coords.popupClose, (label || "팝업") + " X버튼");
-  sleep(jitter(cfg().timing.afterPopupClose)); return true;
+  return false;
+}
+/**
+ * 첫 진입 팝업(매번 다른 10개+ 이벤트)을 확실히 처리.
+ *  1) CAPTCHA/보안인증이면 즉시 중단(사람 개입 필요) → 파밍 정지
+ *  2) 텍스트 닫기 반복 → 안 되면 좌표 후보 X들을 순차로 눌러봄
+ *  3) 더 이상 닫을 팝업이 없을 때까지(최대 maxRounds회) 반복
+ * @return true = 정상 처리, false = CAPTCHA로 중단됨
+ */
+function clearAllPopups(label) {
+  var p = cfg().popup;
+  for (var round = 0; round < p.maxRounds; round++) {
+    if (detectCaptcha()) return false;               // 보안인증이면 즉시 멈춤
+    if (closeOnce(label)) { sleep(p.roundGapMs); continue; } // 텍스트로 닫힘 → 다음 팝업 확인
+    // 텍스트로 못 닫음 → 좌표 후보 X를 하나씩 눌러봄
+    var closedBySpot = false;
+    for (var s = 0; s < p.closeSpots.length; s++) {
+      tapRatio(p.closeSpots[s], (label || "팝업") + " X후보" + (s + 1));
+      sleep(p.roundGapMs);
+      if (detectCaptcha()) return false;
+      // 닫기 텍스트가 사라졌으면 성공으로 보고 다음 라운드
+      if (!findAny(cfg().texts.close, 400)) { closedBySpot = true; break; }
+    }
+    if (!closedBySpot) { log("남은 팝업 없음(또는 미확인) → 팝업 처리 종료"); break; }
+  }
+  return true;
 }
 function checkAndClosePopup() {
   // 시청 중 팝업: 오탭 방지를 위해 텍스트로만 닫음
+  if (detectCaptcha()) return false;
   if (tapText(cfg().texts.close, "시청중 팝업", 300)) {
     sleep(jitter(cfg().timing.afterPopupClose)); return true;
   }
   return false;
+}
+// CAPTCHA/보안인증/이상행동 화면 감지 — 있으면 파밍을 안전 정지시킴
+function detectCaptcha() {
+  var f = findAny(cfg().texts.captcha, 200);
+  if (!f) return false;
+  log("🛑 보안인증/CAPTCHA 감지('" + f.matched + "') → 자동화 정지. 사람이 직접 처리 필요");
+  captchaHit = true;
+  running = false; // 루프 즉시 종료
+  try { device.vibrate(800); } catch (e) {}
+  toast("보안인증 감지! 직접 인증 후 다시 시작하세요");
+  return true;
 }
 function swipeToNextVideo() {
   // 매번 궤적/속도를 조금씩 다르게(탐지 완화)
@@ -154,11 +191,13 @@ function releaseAwake() { try { device.cancelKeepingAwake(); } catch (e) {} }
 
 // ── 통계(제어판 표시용) ──────────────────────────────────────
 var stat = { startedAt: 0, cycles: 0, lastError: "" };
+var captchaHit = false;
 function stats() {
   return {
     cycles: stat.cycles,
     uptimeMin: stat.startedAt ? Math.floor((Date.now() - stat.startedAt) / 60000) : 0,
     lastError: stat.lastError,
+    captcha: captchaHit,
   };
 }
 
@@ -185,7 +224,7 @@ function openPointsVerified() {
   var markers = cfg().texts.timer.concat(cfg().texts.receive, cfg().texts.watchAd);
   for (var i = 1; i <= 3; i++) {
     tapRatio(cfg().coords.pointButton, "포인트 버튼");        // 4
-    closePopup("포인트/이벤트");                              // 5
+    clearAllPopups("포인트/이벤트");                          // 5
     if (findAny(markers, 3000)) { log("포인트 화면 확인됨"); return true; }
     log("포인트 화면 미확인 → 재시도 " + i + "/3");
     back(); sleep(1000);
@@ -243,7 +282,7 @@ function isRunningFlag() { return running; }
 function runOnce() {
   log("[모드] 한 바퀴 실행");
   safe("실행", function () { ensureForeground(true); });          // 1
-  safe("팝업", function () { closePopup("출석/이벤트"); });       // 2
+  safe("팝업", function () { clearAllPopups("출석/이벤트"); });       // 2
   safe("하트", stepHeart);                                        // 3a
   safe("시청", function () { watchVideos(cfg().timing.watchDurationMs, isRunningFlag); }); // 3b
   safe("포인트진입", openPointsVerified);                         // 4~5
@@ -261,7 +300,7 @@ function runOnce() {
 function runFarm() {
   log("[모드] 무한 파밍 시작");
   safe("실행", function () { ensureForeground(true); });
-  safe("팝업", function () { closePopup("출석/이벤트"); });
+  safe("팝업", function () { clearAllPopups("출석/이벤트"); });
   safe("하트", stepHeart);
   var lastAtt = 0;
   while (running) {
@@ -280,6 +319,7 @@ function runFarm() {
 function start() {
   if (running) { log("이미 실행 중"); return; }
   running = true;
+  captchaHit = false;
   stat.startedAt = Date.now(); stat.cycles = 0; stat.lastError = "";
   rotateLog();
   keepAwake();

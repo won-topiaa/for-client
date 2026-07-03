@@ -116,8 +116,15 @@ try {
 // ── 상태 주기 갱신(통계 표시) + 스크립트 유지 ────────────────
 setInterval(function () {
   try {
-    if (!core.isRunning()) return;
     var s = core.stats();
+    if (s.captcha) {
+      ui.run(function () {
+        win.status.setText("🛑 보안인증 감지 — 직접 인증 후 재시작");
+        win.status.setTextColor(colors.parseColor("#ff6666"));
+      });
+      return;
+    }
+    if (!core.isRunning()) return;
     ui.run(function () {
       win.status.setText("● 실행중 · " + s.cycles + "회 적립 · " + s.uptimeMin + "분");
     });
