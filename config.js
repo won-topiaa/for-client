@@ -35,6 +35,7 @@ var DEFAULTS = {
     adBaseWaitMs: 20000,     // 광고 기본 시청 대기(실측: 15초 광고 + 여유)
     adExtraWaitMs: 45000,    // 광고가 더 길 때 닫기(X)를 추가로 기다리는 최대 시간
     betweenCycleMs: 20 * 60 * 1000, // 타이머 수령 간격(20분)
+    harvestBudgetMs: 8 * 60 * 1000, // 한 번의 수확에 쓰는 최대 시간(넘으면 피드로 탈출)
     scrollIntervalMs: 18000, // 영상 1개 시청 시간
     shortWait: 1200,
     dailyAttendanceMs: 24 * 60 * 60 * 1000,

@@ -113,13 +113,21 @@ function tapTextOrCoord(list, coord, label) {
  * @return true = 정상, false = CAPTCHA로 중단
  */
 function clearAllPopups(label) {
-  var rounds = cfg().popup.maxRounds;
+  var rounds = Math.min(6, cfg().popup.maxRounds);
   var gap = cfg().popup.roundGapMs;
+  var lastMatched = null, sameCount = 0;
   for (var round = 0; round < rounds; round++) {
     if (detectCaptcha()) return false;
-    // 1) 안전한 텍스트/desc 닫기
-    if (tapText(cfg().texts.close, (label || "팝업") + " 닫기", 600)) {
-      sleep(gap); continue;
+    // 1) 안전한 텍스트/desc 닫기 — 단, 같은 팝업이 계속 재출현하면 탈출
+    var f = findAny(cfg().texts.close, 500);
+    if (f) {
+      if (f.matched === lastMatched) sameCount++; else { sameCount = 0; lastMatched = f.matched; }
+      if (sameCount >= 3) { // 같은 닫기 버튼이 계속 다시 뜸 = 무한반복 → 탈출
+        log("팝업 재출현 감지('" + f.matched + "') → 뒤로가기로 탈출");
+        back(); sleep(1000); break;
+      }
+      log((label || "팝업") + " 닫기 '" + f.matched + "'");
+      clickNode(f.node); sleep(gap); continue;
     }
     // 2) 리워드 페이지가 아니고, 모달 이벤트 팝업만 떠 있는 경우에만 좌표 사용
     var onPage = !!findAny(cfg().texts.pageMarker, 300);
@@ -133,7 +141,7 @@ function clearAllPopups(label) {
         if (detectCaptcha()) return false;
         if (!findAny(cfg().texts.eventPopup, 400)) { closed = true; break; }
       }
-      if (!closed) { back(); sleep(800); } // 좌표로 못 닫으면 뒤로가기로
+      if (!closed) { back(); sleep(800); }
       continue;
     }
     // 3) 더 닫을 것 없음 → 종료(헤매지 않기)
@@ -260,21 +268,20 @@ function ensureOnRewardsPage() {
 // 리워드 팝업 처리: (하단 '광고보기' 있으면 그 광고도 시청) → 받기 → 확인
 // 연속 팝업/보너스 광고 대비 몇 번 반복
 function collectPopup() {
-  for (var i = 0; i < 4; i++) {
+  var adTried = false; // 보너스 광고보기는 딱 1번만(안 열려도 재시도 안 함 → 무한루프 방지)
+  for (var i = 0; i < 5; i++) {
     if (detectCaptcha()) return;
-    var got = false;
-    // 팝업 하단 '광고 보기'(추가 보상) — 있으면 그 광고도 시청
-    if (tapText(cfg().texts.popupAd, "팝업 광고보기", 900)) {
+    // 1) 팝업 하단 '광고 보기'(추가 보상) — 한 번만 시도
+    if (!adTried && tapText(cfg().texts.popupAd, "팝업 광고보기", 700)) {
+      adTried = true;
       sleep(cfg().timing.afterTapReward);
       if (closeAd()) { stat.cycles++; log("팝업 보너스 광고 완료"); }
-      got = true;
-    } else if (tapText(cfg().texts.receive, "받기", 1000, true)) { // 완전일치
-      got = true;
-    } else if (tapText(cfg().texts.confirm, "확인", 900, true)) {
-      got = true;
+      sleep(cfg().timing.afterPopupClose); continue;
     }
-    if (!got) break;
-    sleep(cfg().timing.afterPopupClose);
+    // 2) 받기/확인으로 팝업을 닫음(우선)
+    if (tapText(cfg().texts.receive, "받기", 800, true)) { sleep(cfg().timing.afterPopupClose); continue; }
+    if (tapText(cfg().texts.confirm, "확인", 700, true)) { sleep(cfg().timing.afterPopupClose); continue; }
+    break; // 더 처리할 팝업 없음
   }
 }
 
@@ -319,6 +326,7 @@ function scrollRewardsTop()  { for (var i=0;i<5;i++) scrollRewardsUp(); }
 // 텍스트로만 누르므로(포인트받기/받기/출석하기/광고보상) 오탭·헤맴 없음
 function harvestRewards(doAttendance, likedVideo) {
   if (!ensureOnRewardsPage()) return;
+  harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
   clearAllPopups("초기 팝업");
   closeStickyBanner();
 
@@ -335,6 +343,7 @@ function harvestRewards(doAttendance, likedVideo) {
   var idlePasses = 0;
   var adDone = false; // 광고는 사이클당 1회만(쿨다운 반복 진입 방지)
   for (var pass = 0; pass < 8 && running; pass++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 종료"); break; }
     if (detectCaptcha()) return;
     closeStickyBanner();
     var didSomething = false;
@@ -373,6 +382,7 @@ function watchDailyAdBatch() {
   if (batch <= 0) return;
   log("매일 광고 시청 시작(최대 " + batch + "개)");
   for (var i = 0; i < batch && running; i++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 매일광고 종료"); break; }
     if (!ensureOnRewardsPage()) break;
     closeStickyBanner();
     scrollRewardsTop();
@@ -413,6 +423,7 @@ function waitNextCycle() {
 // ── 엔진(스레드) ─────────────────────────────────────────────
 var running = false;
 var worker = null;
+var harvestDeadline = 0; // 한 번의 수확 시간 상한(무한루프 backstop)
 
 function safe(name, fn) {
   try { fn(); }
