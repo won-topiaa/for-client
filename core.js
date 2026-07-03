@@ -102,37 +102,51 @@ function tapTextOrCoord(list, coord, label) {
   log(label + " 실패: 대상 못 찾음");
   return false;
 }
-// 한 번의 팝업 닫기 시도(텍스트 우선 → 좌표 후보들 순차). 닫았으면 true
-function closeOnce(label) {
-  if (tapText(cfg().texts.close, (label || "팝업") + " 닫기", 600)) {
-    sleep(jitter(cfg().timing.afterPopupClose)); return true;
-  }
-  return false;
-}
 /**
- * 첫 진입 팝업(매번 다른 10개+ 이벤트)을 확실히 처리.
- *  1) CAPTCHA/보안인증이면 즉시 중단(사람 개입 필요) → 파밍 정지
- *  2) 텍스트 닫기 반복 → 안 되면 좌표 후보 X들을 순차로 눌러봄
- *  3) 더 이상 닫을 팝업이 없을 때까지(최대 maxRounds회) 반복
- * @return true = 정상 처리, false = CAPTCHA로 중단됨
+ * 팝업 정리 — "헤매지 않는" 안전 버전.
+ * 규칙: 팝업이 확실할 때만 손댄다. 애매하면 아무것도 안 누른다(오탭 방지).
+ *  1) 텍스트/desc 닫기(닫기/✕/취소/건너뛰기/확인) — 항상 안전
+ *  2) '리워드 페이지 표식'이 없고 '모달 이벤트 팝업 표식'만 있을 때에 한해
+ *     → 이벤트 팝업 ✕ 좌표를 눌러 닫음(리워드 페이지에선 절대 좌표 안 누름)
+ *  3) 닫을 게 없으면 즉시 종료(무한 blind 탭 금지)
+ * @return true = 정상, false = CAPTCHA로 중단
  */
 function clearAllPopups(label) {
-  var p = cfg().popup;
-  for (var round = 0; round < p.maxRounds; round++) {
-    if (detectCaptcha()) return false;               // 보안인증이면 즉시 멈춤
-    if (closeOnce(label)) { sleep(p.roundGapMs); continue; } // 텍스트로 닫힘 → 다음 팝업 확인
-    // 텍스트로 못 닫음 → 좌표 후보 X를 하나씩 눌러봄
-    var closedBySpot = false;
-    for (var s = 0; s < p.closeSpots.length; s++) {
-      tapRatio(p.closeSpots[s], (label || "팝업") + " X후보" + (s + 1));
-      sleep(p.roundGapMs);
-      if (detectCaptcha()) return false;
-      // 닫기 텍스트가 사라졌으면 성공으로 보고 다음 라운드
-      if (!findAny(cfg().texts.close, 400)) { closedBySpot = true; break; }
+  var rounds = cfg().popup.maxRounds;
+  var gap = cfg().popup.roundGapMs;
+  for (var round = 0; round < rounds; round++) {
+    if (detectCaptcha()) return false;
+    // 1) 안전한 텍스트/desc 닫기
+    if (tapText(cfg().texts.close, (label || "팝업") + " 닫기", 600)) {
+      sleep(gap); continue;
     }
-    if (!closedBySpot) { log("남은 팝업 없음(또는 미확인) → 팝업 처리 종료"); break; }
+    // 2) 리워드 페이지가 아니고, 모달 이벤트 팝업만 떠 있는 경우에만 좌표 사용
+    var onPage = !!findAny(cfg().texts.pageMarker, 300);
+    var eventOnly = !onPage && !!findAny(cfg().texts.eventPopup, 300);
+    if (eventOnly) {
+      var spots = cfg().coords.eventCloseSpots || [];
+      var closed = false;
+      for (var s = 0; s < spots.length; s++) {
+        tapRatio(spots[s], "이벤트팝업 ✕후보" + (s + 1));
+        sleep(gap);
+        if (detectCaptcha()) return false;
+        if (!findAny(cfg().texts.eventPopup, 400)) { closed = true; break; }
+      }
+      if (!closed) { back(); sleep(800); } // 좌표로 못 닫으면 뒤로가기로
+      continue;
+    }
+    // 3) 더 닫을 것 없음 → 종료(헤매지 않기)
+    break;
   }
   return true;
+}
+
+// 하단 스티키 배너(야시장 챌린지 등)를 감지됐을 때만 ✕로 닫음
+function closeStickyBanner() {
+  if (findAny(cfg().texts.banner, 300)) {
+    tapRatio(cfg().coords.bannerClose, "스티키 배너 ✕");
+    sleep(500);
+  }
 }
 function checkAndClosePopup() {
   // 시청 중 팝업: 오탭 방지를 위해 텍스트로만 닫음
@@ -279,41 +293,54 @@ function watchAdThenClose() {
   return true;
 }
 
-// 리워드 페이지에서 받을 수 있는 것들을 순서대로 수확
+// 리워드 페이지 스크롤(위로 올리기 / 아래로 내리기) — 페이지 안에서만 스와이프
+function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math.round(W*0.5), Math.round(H*0.75), 500); sleep(700); }
+function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.32), 500); sleep(700); }
+function scrollRewardsTop()  { for (var i=0;i<5;i++) scrollRewardsUp(); }
+
+// 리워드 페이지를 위→아래로 훑으며 준비된 리워드를 모두 수확
+// 텍스트로만 누르므로(포인트받기/받기/출석하기/광고보상) 오탭·헤맴 없음
 function harvestRewards(doAttendance, likedVideo) {
   if (!ensureOnRewardsPage()) return;
-  clearAllPopups("이벤트");
+  clearAllPopups("초기 팝업");
+  closeStickyBanner();
 
-  // 1) 출석하기(하루 1회)
-  if (doAttendance && tapText(cfg().texts.attendance, "출석하기")) {
+  // 출석하기(하루 1회)
+  if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
-    ensureOnRewardsPage();
+    ensureOnRewardsPage(); closeStickyBanner();
   }
-  // 2) 20분 타이머: 준비되면 "받기" 버튼이 노출됨(미준비 시 카운트다운이라 무해)
-  if (running) {
-    if (tapText(cfg().texts.receive, "타이머 받기", 1500)) {
-      collectPopup(); stat.cycles++;
-      ensureOnRewardsPage();
-    } else {
-      var card = findAny(cfg().texts.timerCard, 1200);
-      if (card) { tapRightOf(card.node, "타이머 카드"); collectPopup(); ensureOnRewardsPage(); }
-      else log("타이머 카드 없음(스크롤 필요할 수 있음)");
-    }
-  }
-  // 3) 좋아요 미션: 피드에서 좋아요를 눌렀다면 '포인트 받기' 수령
-  if (running && likedVideo && !findAny(cfg().texts.likeDone, 800)) {
-    if (tapText(cfg().texts.likeClaim, "좋아요 미션 수령", 1500)) {
-      collectPopup(); stat.cycles++;
-      ensureOnRewardsPage();
-    }
-  }
-  // 4) 광고 보면 추가 보상 → 광고 시청 → X 닫기 → 수령
-  if (running && tapText(cfg().texts.adReward, "광고 보상")) {
-    sleep(cfg().timing.afterTapReward);
+
+  // 페이지를 위에서부터 훑으며 '포인트 받기/받기'와 '광고 보상'을 처리
+  scrollRewardsTop();
+  var idlePasses = 0;
+  for (var pass = 0; pass < 8 && running; pass++) {
     if (detectCaptcha()) return;
-    if (watchAdThenClose()) stat.cycles++;
-    ensureOnRewardsPage();
+    closeStickyBanner();
+    var didSomething = false;
+
+    // 1) 준비된 수령 버튼(포인트 받기/받기)
+    if (tapText(cfg().texts.receive, "리워드 수령", 900)) {
+      collectPopup(); stat.cycles++;
+      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
+      didSomething = true;
+    }
+    // 2) 광고 보면 추가 보상
+    else if (tapText(cfg().texts.adReward, "광고 보상", 900)) {
+      sleep(cfg().timing.afterTapReward);
+      if (detectCaptcha()) return;
+      if (watchAdThenClose()) stat.cycles++;
+      ensureOnRewardsPage(); closeStickyBanner(); scrollRewardsTop();
+      didSomething = true;
+    }
+
+    if (!didSomething) {
+      scrollRewardsDown();
+      if (++idlePasses >= 3) { log("더 받을 리워드 없음 → 수확 종료"); break; }
+    } else {
+      idlePasses = 0;
+    }
   }
 }
 
