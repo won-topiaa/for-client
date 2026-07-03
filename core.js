@@ -385,22 +385,59 @@ function runOnce() {
   log("한 바퀴 완료");
 }
 
+// 영상 피드로 이동(리워드 페이지에서 빠져나옴)
+function gotoFeed() {
+  for (var i = 0; i < 3; i++) {
+    if (!findAny(cfg().texts.pageMarker, 400)) return; // 이미 피드
+    back(); sleep(1200);
+  }
+}
+
+// 피드를 지정 시간만큼 스크롤하며 시청(중간에 리워드 수확 타이밍이면 빠져나옴)
+// + 주기적으로 "다음 리워드까지 N분" 로그로 살아있음을 표시
+function scrollFeedUntil(untilMs) {
+  var nextTick = 0;
+  while (running && Date.now() < untilMs) {
+    if (!ensureForeground(false)) { sleep(3000); continue; }
+    checkAndClosePopup();
+    swipeToNextVideo();
+    if (Date.now() > nextTick) {
+      var leftMin = Math.max(0, Math.ceil((untilMs - Date.now()) / 60000));
+      log("영상 시청 중… 다음 리워드 수확까지 약 " + leftMin + "분");
+      nextTick = Date.now() + 30000;
+    }
+    napChunked(jitter(cfg().timing.scrollIntervalMs), isRunningFlag);
+  }
+}
+
 function runFarm() {
-  log("[모드] 무한 파밍 시작");
+  log("[모드] 무한 파밍 시작 — 시작 즉시 1차 수확 후 영상 시청 반복");
   safe("실행", function () { ensureForeground(true); });
   safe("팝업", function () { clearAllPopups("초기 이벤트"); });
+
   var lastAtt = 0;
-  var liked = false;
+  // (1) 시작 즉시 받을 수 있는 리워드 한번 걷기 → 적립 카운터 바로 반응
+  safe("첫수확", function () { harvestRewards(true, false); });
+  lastAtt = Date.now();
+
+  // (2) 피드 스크롤(눈에 보이는 활동) ↔ 20분마다 리워드 수확 반복
   while (running) {
-    if (!ensureForeground(false)) { sleep(3000); continue; }
-    var doAtt = (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs);
-    (function (att, lk) {
-      safe("수확", function () { harvestRewards(att, lk); });
-    })(doAtt, liked);
-    if (doAtt) lastAtt = Date.now();
+    safe("피드", function () {
+      gotoFeed();
+      // 시청 직후 좋아요 1회(좋아요 미션 충전)
+      sleep(2500);
+      tapRatio(cfg().coords.feedLike, "피드 좋아요(미션)");
+      scrollFeedUntil(Date.now() + cfg().timing.betweenCycleMs); // 20분 시청
+    });
     if (!running) break;
-    liked = false;
-    safe("대기", function () { liked = waitNextCycle(); }); // 20분 시청+좋아요
+    var doAtt = (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs);
+    (function (att) {
+      safe("수확", function () {
+        log("⏰ 리워드 수확 타임");
+        harvestRewards(att, true);
+      });
+    })(doAtt);
+    if (doAtt) lastAtt = Date.now();
   }
   log("파밍 정지");
 }
