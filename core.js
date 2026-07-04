@@ -183,13 +183,13 @@ function detectCaptcha() {
   return true;
 }
 function swipeToNextVideo() {
-  // 매번 궤적/속도를 조금씩 다르게(탐지 완화)
+  // 매번 궤적/속도를 조금씩 다르게(탐지 완화) — 빠르게 다음 영상으로
   var x1 = Math.round(W * rnd(0.42, 0.58));
   var x2 = x1 + Math.round(rnd(-25, 25));
   var y1 = Math.round(H * rnd(0.70, 0.78));
   var y2 = Math.round(H * rnd(0.20, 0.28));
-  swipe(x1, y1, x2, y2, Math.round(rnd(320, 600)));
-  sleep(Math.round(rnd(600, 1200)));
+  swipe(x1, y1, x2, y2, Math.round(rnd(180, 320)));
+  sleep(Math.round(rnd(300, 550)));
 }
 
 // ── 앱 상태/복구 ─────────────────────────────────────────────
@@ -299,15 +299,20 @@ function findCard(titleList, maxScroll) {
 // 리워드 페이지에 있는지 확인. 없으면 하단 "포인트" 탭(텍스트→좌표)으로 진입(최대 3회)
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
-    if (findAny(cfg().texts.pageMarker, 1000)) return true;
-    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 1000)) {
+    // 덮고 있는 팝업부터 닫고 표식 확인 → 이미 페이지면 탭을 다시 안 눌러
+    // 팝업이 재생성되는 걸 막음(추가 리워드 반복 원인 제거)
+    clearAllPopups("진입 팝업");
+    closeStickyBanner();
+    if (findAny(cfg().texts.pageMarker, 700)) return true;
+    // 아직 페이지 아님 → 포인트 탭으로 진입
+    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 700)) {
       tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
     }
-    clearAllPopups("이벤트");
-    if (findAny(cfg().texts.pageMarker, 1800)) { log("리워드 페이지 확인됨"); return true; }
-    log("리워드 페이지 미확인 → 계획 밖 화면 탈출(뒤로가기) 후 재시도 " + i + "/3");
-    back(); sleep(700);           // 계획에 없는 화면이면 뒤로가기로 빠져나옴
-    ensureForeground(false); sleep(500);
+    clearAllPopups("진입 팝업");
+    if (findAny(cfg().texts.pageMarker, 1200)) { log("리워드 페이지 확인됨"); return true; }
+    // 그래도 아니면 계획 밖 화면 → 뒤로가기(마지막 수단)
+    log("계획 밖 화면 → 뒤로가기 탈출 " + i + "/3");
+    back(); sleep(500);
   }
   log("⚠ 리워드 페이지 진입 실패");
   return false;
@@ -394,7 +399,7 @@ function harvestClaimSweep() {
   for (var pass = 0; pass < 16 && running; pass++) {
     if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
     if (detectCaptcha()) return;
-    if (!findAny(cfg().texts.pageMarker, 250)) ensureOnRewardsPage();
+    checkAndClosePopup();   // 덮은 팝업만 텍스트로 빠르게(재진입 안 함 → 팝업 반복 방지)
     closeStickyBanner();
     var f = findAny(cfg().texts.pageClaim, 400, true); // "포인트 받기"만
     if (f && !seen[nodeKey(f)]) {
@@ -543,9 +548,9 @@ function runFarm() {
   while (running) {
     safe("피드", function () {
       gotoFeed();
-      // 시청 직후 좋아요 1회(좋아요 미션 충전)
-      sleep(2500);
-      tapRatio(cfg().coords.feedLike, "피드 좋아요(미션)");
+      // 항상 '처음 틀어지는 영상'에서 좋아요 1회(좋아요 미션 충전)
+      sleep(1500);
+      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요(미션)");
       scrollFeedUntil(Date.now() + cfg().timing.betweenCycleMs); // 20분 시청
     });
     if (!running) break;
