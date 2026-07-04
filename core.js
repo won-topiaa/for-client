@@ -248,16 +248,34 @@ function stats() {
 // ── 리워드(초록) 페이지 동작 — 텍스트 우선 ───────────────────
 function stepCloseApp() { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
 
+// 문자열이 '게임 카드' 문구인지(원판/슈팅마블/돼지저금통/럭키스핀 등)
+function isGameText(s) {
+  if (!s) return false;
+  var g = cfg().texts.gameTitle || [];
+  for (var i = 0; i < g.length; i++) if (s.indexOf(g[i]) >= 0) return true;
+  var b = cfg().texts.gameButton || [];
+  for (var j = 0; j < b.length; j++) if (s === b[j]) return true; // 버튼은 완전일치만
+  return false;
+}
+// 현재 화면에 게임 카드가 보이면 true(= 스크롤이 하단 게임 구역에 닿음 → 멈춤 신호)
+function atGameZone() { return !!findAny(cfg().texts.gameTitle, 150); }
+
 // 제목 노드가 속한 '카드'의 버튼을 누름.
 // 같은 행(비슷한 Y, 제목보다 오른쪽)에서 btnList 텍스트 버튼을 찾아 누르고,
 // 없으면 제목 우측 좌표를 누름(카드 버튼은 대개 우측에 있음).
 // → "시청/시작하기"가 여러 카드에 있어도 '이 카드의' 버튼만 정확히 누름
 function tapCardButton(titleNode, btnList, label) {
   try {
+    // ★ 게임 카드면 절대 손대지 않음(제목 문구로 판별)
+    var ttext = "";
+    try { ttext = String(titleNode.text() || titleNode.desc() || ""); } catch (e) {}
+    if (isGameText(ttext)) { log("게임 카드 감지('" + ttext + "') → 탭 안 함"); return false; }
+
     var tb = titleNode.bounds();
     if (!tb) return false;
     var rowTol = Math.max(tb.height() * 3, 240);
     for (var i = 0; btnList && i < btnList.length; i++) {
+      if (isGameText(btnList[i])) continue; // 게임 버튼 문구는 건너뜀(방어)
       var col = text(btnList[i]).find();
       try {
         for (var j = 0; col && j < col.size(); j++) {
@@ -278,30 +296,41 @@ function tapCardButton(titleNode, btnList, label) {
 }
 
 // 스크롤하며 특정 제목 카드를 찾음(찾으면 {node,matched}, 없으면 null)
+// ★ 하단 게임 구역에 닿으면 즉시 중단(게임 화면 진입 사고 방지)
 function findCard(titleList, maxScroll) {
   var m = (maxScroll === undefined) ? 6 : maxScroll;
   for (var s = 0; s <= m && running; s++) {
     var c = findAny(titleList, 700);
     if (c) return c;
+    if (atGameZone()) { log("게임 구역 도달 → 카드 탐색 중단(안전)"); return null; }
     scrollRewardsDown();
   }
   return null;
 }
 
 // 리워드 페이지에 있는지 확인. 없으면 하단 "포인트" 탭(텍스트→좌표)으로 진입(최대 3회)
+// ★ 핵심 수정: 페이지 표식은 '상단'에만 있어, 아래로 스크롤된 상태면 표식이 안 보여
+//   '페이지 밖'으로 오판하던 버그가 있었음(하단 게임 구역에서 헤맴). 그래서
+//   판정 전에 항상 맨 위로 올려 확인한다. 게임 카드가 보이면 = 페이지 안에 있는 것.
+function onRewardsPageNow() {
+  if (findAny(cfg().texts.pageMarker, 400)) return true;
+  if (atGameZone()) return true; // 하단 게임 구역이 보임 = 리워드 페이지 맞음(스크롤됨)
+  scrollRewardsTop();            // 스크롤 때문에 표식이 안 보였을 수 있음 → 위로 올려 재확인
+  return !!findAny(cfg().texts.pageMarker, 500);
+}
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
     // 덮고 있는 팝업부터 닫고 표식 확인 → 이미 페이지면 탭을 다시 안 눌러
     // 팝업이 재생성되는 걸 막음(추가 리워드 반복 원인 제거)
     clearAllPopups("진입 팝업");
     closeStickyBanner();
-    if (findAny(cfg().texts.pageMarker, 700)) return true;
-    // 아직 페이지 아님 → 포인트 탭으로 진입
+    if (onRewardsPageNow()) return true;   // 스크롤 위치 무관하게 페이지 판정
+    // 정말 페이지 밖 → 포인트 탭으로 진입(텍스트 우선, 실패 시 좌표)
     if (!tapText(cfg().texts.pointsTab, "포인트 탭", 700)) {
       tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
     }
     clearAllPopups("진입 팝업");
-    if (findAny(cfg().texts.pageMarker, 1200)) { log("리워드 페이지 확인됨"); return true; }
+    if (onRewardsPageNow()) { log("리워드 페이지 확인됨"); return true; }
     // 그래도 아니면 계획 밖 화면 → 뒤로가기(마지막 수단)
     log("계획 밖 화면 → 뒤로가기 탈출 " + i + "/3");
     back(); sleep(500);
@@ -401,10 +430,13 @@ function harvestClaimSweep() {
       collectPopup(); stat.cycles++;
       noFind = 0;
     } else {
-      if (++noFind >= 4) { log("바닥 도달 — 더 받을 것 없음"); break; }
+      if (++noFind >= 4) { log("더 받을 것 없음 — 스윕 종료"); break; }
     }
+    // ★ 하단 게임 구역이 보이면 여기서 멈춤(게임 화면 진입/헤맴 방지)
+    if (atGameZone()) { log("게임 구역 도달 → 스윕 종료(안전)"); break; }
     scrollRewardsDown(); // 항상 한 칸 내려감
   }
+  scrollRewardsTop(); // ★ 끝나면 맨 위로 복귀(하단 게임 구역에 화면이 머물지 않게)
 }
 
 // 리워드 페이지 수확 — 사용자 지정 우선순위대로:
@@ -483,7 +515,7 @@ function watchDailyAdBatch() {
     if (closeAd()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
     collectPopup();
   }
-  ensureOnRewardsPage();
+  if (ensureOnRewardsPage()) scrollRewardsTop();
 }
 
 // '라이브 영상 시청' 카드를 찾아 '시청'을 눌러 라이브를 batch회 시청.
@@ -516,9 +548,12 @@ function watchLiveBatch() {
     // 라이브에서 빠져나와 리워드 페이지로 복귀
     for (var b = 0; b < 4 && !findAny(cfg().texts.pageMarker, 300); b++) { back(); sleep(700); }
     collectPopup();
-    if (ensureOnRewardsPage()) { stat.cycles++; log("라이브 " + (i + 1) + "회째 완료"); }
+    // ※ 라이브 보상 지급 여부를 화면상 확실히 확인할 수 없어 적립 카운트는 올리지 않음
+    //   (거짓 적립 표시 방지). 복귀만 확인하고 다음 회차 진행.
+    if (!ensureOnRewardsPage()) break;
+    log("라이브 " + (i + 1) + "회째 시청 완료(적립은 앱에서 확인)");
   }
-  ensureOnRewardsPage();
+  scrollRewardsTop();
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
