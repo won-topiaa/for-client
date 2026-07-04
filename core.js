@@ -534,36 +534,50 @@ function scrollFeedUntil(untilMs) {
   }
 }
 
-function runFarm() {
-  log("[모드] 무한 파밍 시작 — 시작 즉시 1차 수확 후 영상 시청 반복");
-  safe("실행", function () { ensureForeground(true); });
-  safe("팝업", function () { clearAllPopups("초기 이벤트"); });
-
-  var lastAtt = 0;
-  // (1) 시작 즉시 받을 수 있는 리워드 한번 걷기 → 적립 카운터 바로 반응
-  safe("첫수확", function () { harvestRewards(true); });
-  lastAtt = Date.now();
-
-  // (2) 피드 스크롤(눈에 보이는 활동) ↔ 20분마다 리워드 수확 반복
-  while (running) {
-    safe("피드", function () {
-      gotoFeed();
-      // 항상 '처음 틀어지는 영상'에서 좋아요 1회(좋아요 미션 충전)
-      sleep(1500);
-      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요(미션)");
-      scrollFeedUntil(Date.now() + cfg().timing.betweenCycleMs); // 20분 시청
-    });
-    if (!running) break;
-    var doAtt = (Date.now() - lastAtt > cfg().timing.dailyAttendanceMs);
-    (function (att) {
-      safe("수확", function () {
-        log("⏰ 리워드 수확 타임");
-        harvestRewards(att);
-      });
-    })(doAtt);
-    if (doAtt) lastAtt = Date.now();
+// 리워드 페이지에서 '출석하기'만 수행(마지막 단계용)
+function doAttendanceOnly() {
+  if (!ensureOnRewardsPage()) return;
+  closeStickyBanner();
+  if (tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
+    sleep(cfg().timing.afterTapReward);
+    collectPopup(); stat.cycles++;
+    log("출석체크 완료");
+  } else {
+    log("출석체크 버튼 없음(이미 했거나 오늘 없음)");
   }
-  log("파밍 정지");
+}
+
+// 최종 플로우: 영상시청 우선(지정 시간) + 20분마다 수확 → 출석체크 → 앱 종료
+function runFarm() {
+  var total = cfg().timing.totalRunMs || (160 * 60 * 1000);
+  log("[최종 플로우] 영상시청 우선 파밍 — 약 " + Math.round(total / 60000) + "분 후 출석·종료");
+
+  safe("실행", function () { ensureForeground(true); });          // 1. TikTok Lite 실행
+  safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료
+
+  var end = Date.now() + total;
+  // 3. 영상 시청(팝업 닫으며) + 20분마다 리워드 수확 반복
+  while (running && Date.now() < end) {
+    safe("피드시청", function () {
+      gotoFeed();
+      sleep(1500);
+      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");          // 우측 하트/좋아요
+      var until = Math.min(end, Date.now() + cfg().timing.betweenCycleMs);
+      scrollFeedUntil(until);                                    // 팝업 닫으며 시청
+    });
+    if (!running || Date.now() >= end) break;
+    // 4~11. 리워드 수확(출석 제외): 포인트진입/팝업/타이머/광고/좋아요/매일광고/뒤로
+    safe("수확", function () { log("⏰ 리워드 수확"); harvestRewards(false); });
+  }
+
+  // 시간이 만료되어 끝난 경우에만(사용자 정지가 아님) 마무리 단계 수행
+  if (running) {
+    safe("출석체크", doAttendanceOnly); // 12. 출석체크(마지막)
+    safe("앱종료", stepCloseApp);        // 13. 앱 종료
+    log("✅ 최종 플로우 완료(약 " + Math.round(total / 60000) + "분)");
+  } else {
+    log("사용자 정지 — 마무리 단계 생략");
+  }
 }
 
 function start() {

@@ -21,8 +21,9 @@ var DEFAULTS = {
   packageFragments: ["tiktok.lite", "aweme.lite", "musically"],
 
   // ── 실행 모드 ──
-  //  "farm" = 켜두면 무한 파밍(리워드 수확 → 20분 대기 반복)
-  //  "once" = 리워드 페이지에서 받을 수 있는 것 1회 수확 후 종료
+  //  "farm" = 최종 플로우: 영상시청 우선(지정 시간) + 20분마다 수확 →
+  //           끝나면 출석체크 → 앱 종료 (원클릭 1회 실행, 시간 만료 시 자동 종료)
+  //  "once" = 리워드 페이지에서 받을 수 있는 것 1회만 빠르게 수확(테스트용)
   mode: "farm",
   humanize: true,   // 대기시간·탭 위치 랜덤(사람처럼)
   keepScreenOn: true,
@@ -37,7 +38,8 @@ var DEFAULTS = {
     afterTapReward: 1200,    // 리워드 버튼 누른 뒤 팝업/광고 뜨는 시간
     adBaseWaitMs: 20000,     // 광고 기본 시청 대기(광고 크레딧 위해 유지)
     adExtraWaitMs: 25000,    // 광고가 더 길 때 닫기(X)를 추가로 기다리는 최대 시간
-    betweenCycleMs: 20 * 60 * 1000, // 타이머 수령 간격(20분, TikTok 고정)
+    totalRunMs: 160 * 60 * 1000,    // 전체 시청 시간(약 2시간 40분) → 끝나면 출석·앱종료
+    betweenCycleMs: 20 * 60 * 1000, // 시청 청크 = 타이머 수령 간격(20분, TikTok 고정)
     harvestBudgetMs: 8 * 60 * 1000, // 한 번의 수확 최대 시간(넘으면 피드로 탈출)
     scrollIntervalMs: 8000,  // 영상 1개 시청 시간(다음 영상으로 더 빨리 넘김)
     shortWait: 450,          // 탭 후 대기(짧게 — 화면 렌더링 최소치)
