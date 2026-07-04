@@ -349,21 +349,25 @@ function onRewardsPageNow() {
   return false; // 리워드 콘텐츠가 전혀 안 보임 = 페이지 밖(피드/광고 등)
 }
 function ensureOnRewardsPage() {
-  for (var i = 1; i <= 3; i++) {
-    // 덮고 있는 팝업부터 닫고 표식 확인 → 이미 페이지면 탭을 다시 안 눌러
-    // 팝업이 재생성되는 걸 막음(추가 리워드 반복 원인 제거)
+  for (var i = 1; i <= 4; i++) {
+    // 덮고 있는 팝업(광고 후 '광고 시청하고 추가 리워드[나중에 하기]' 등)부터 닫고 표식 확인
     clearAllPopups("진입 팝업");
-    closeStickyBanner();
     if (onRewardsPageNow()) return true;   // 스크롤 위치 무관하게 페이지 판정
-    // 정말 페이지 밖 → 포인트 탭으로 진입(텍스트 우선, 실패 시 좌표)
-    if (!tapText(cfg().texts.pointsTab, "포인트 탭", 700)) {
-      tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+    // ★ 화면 종류에 맞게 복귀:
+    //   - 피드(하단 '포인트' 탭 보임) → 포인트 탭으로 리워드 진입
+    //   - 그 외(광고 랜딩페이지 등, 포인트 탭 없음) → back으로 '언와인드'(광고 스택 탈출)
+    //   예전엔 어디서든 포인트 탭(좌표)만 헛누르고 back 1회라, 광고 랜딩페이지가 여러 겹일 때
+    //   못 빠져나와 '진입 실패'가 났음. 피드일 때만 탭, 아니면 back으로 확실히 벗겨낸다.
+    if (findAny(cfg().texts.pointsTab, 250)) {
+      if (!tapText(cfg().texts.pointsTab, "포인트 탭", 500)) {
+        tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+      }
+    } else {
+      log("리워드/피드 아님(광고 랜딩 등) → 뒤로가기 언와인드 " + i + "/4");
+      back(); sleep(700);
     }
     clearAllPopups("진입 팝업");
     if (onRewardsPageNow()) { log("리워드 페이지 확인됨"); return true; }
-    // 그래도 아니면 계획 밖 화면 → 뒤로가기(마지막 수단)
-    log("계획 밖 화면 → 뒤로가기 탈출 " + i + "/3");
-    back(); sleep(500);
   }
   log("⚠ 리워드 페이지 진입 실패");
   return false;
