@@ -688,17 +688,37 @@ function gotoFeed() {
   }
 }
 
-// ★ 피드 시청 중 '게임 광고/게임 화면'에 잘못 들어갔는지 즉시 감지·탈출.
+// 현재 액티비티 이름(실패 시 빈 문자열). 피드/광고/게임 화면 판정에 사용.
+function curActivity() {
+  try { return String(currentActivity() || ""); } catch (e) { return ""; }
+}
+// 현재 액티비티가 '광고 랜딩/리워드광고 등 접근성 미노출(Lynx/Spark)' 화면인지.
+//  ★ 이런 화면은 텍스트로 안 잡혀 갇히므로 액티비티명으로 판정 → back으로 탈출.
+function onStuckActivity() {
+  var act = curActivity();
+  if (!act) return false;
+  var list = cfg().stuckActivities || [];
+  for (var i = 0; i < list.length; i++) if (act.indexOf(list[i]) >= 0) return true;
+  return false;
+}
+
+// ★ 피드 시청 중 '게임 광고/게임 화면/광고 랜딩'에 잘못 들어갔는지 즉시 감지·탈출.
 //   1) 피드에 낀 게임 광고 → '관심 없음' 등으로 닫음(스와이프로 게임 진입 방지)
-//   2) 이미 게임 화면(진입/보드)에 빠졌으면 → 뒤로가기로 피드 즉시 복귀
-//   @return true = 게임/광고를 처리함(이번 스와이프 건너뜀)
+//   2) 게임 화면(진입/보드) 텍스트 감지 → 뒤로가기로 피드 복귀
+//   3) 광고 랜딩/리워드광고(비접근성 Lynx/Spark) 액티비티에 갇힘 → 뒤로가기로 탈출
+//      (텍스트로 안 잡히므로 currentActivity로 판정. 피드 액티비티면 매칭 안 돼 무해)
+//   @return true = 뭔가 처리함(이번 스와이프 건너뜀)
 function escapeIfGame() {
   if (tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150)) { sleep(400); return true; }
   if (findAny(cfg().texts.gameScreen, 150)) {
     log("피드 이탈(게임 화면) 감지 → 즉시 뒤로가기 복귀");
     back(); sleep(900);
-    // 나오자마자 또 광고가 있으면 닫기
-    tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150);
+    tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150); // 나오자마자 또 광고면 닫기
+    return true;
+  }
+  if (onStuckActivity()) {
+    log("피드 이탈(광고/랜딩 액티비티 '" + curActivity() + "') → 뒤로가기 탈출");
+    back(); sleep(1000);
     return true;
   }
   return false;

@@ -20,6 +20,13 @@ var DEFAULTS = {
   // 부분매칭(지역/버전 변종 대응) — 현재 패키지에 이 조각이 들어있으면 '우리 앱'
   packageFragments: ["tiktok.lite", "aweme.lite", "musically"],
 
+  // ★ '피드 시청 중'인데 현재 액티비티가 아래에 해당하면 = 광고 랜딩/리워드광고 등
+  //   접근성 미노출(Lynx/Spark) 화면에 갇힌 것 → back으로 탈출한다.
+  //   (텍스트로는 안 잡히므로 currentActivity()로 판정. 피드/리워드 페이지 액티비티와는
+  //    안 겹치는 광고/하이브리드 전용 클래스명만.)
+  stuckActivities: ["RewardAdActivity", "SparkActivity", "reward.ui", "hybrid.spark",
+                    "AdActivity", "LandingPageActivity"],
+
   // ── 실행 모드 ──
   //  "farm" = 최종 플로우: 영상시청 우선(지정 시간) + 20분마다 수확 →
   //           끝나면 출석체크 → 앱 종료 (원클릭 1회 실행, 시간 만료 시 자동 종료)
