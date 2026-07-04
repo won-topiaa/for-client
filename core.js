@@ -433,15 +433,23 @@ function closeAd() {
     if (findAny(cfg().texts.pageMarker, 200)) break;   // 이미 페이지로 복귀
     sleep(1000);
   }
-  // 적립됐으니(표식 소멸) 이제 X로 닫는다. 랜딩페이지로 새면 back으로 복귀.
-  var end = Date.now() + cfg().timing.adExtraWaitMs;
+  // 적립됨(표식 소멸) → 광고/랜딩에서 리워드 페이지로 확실히 복귀.
+  //  ★ 실측: Temu 등 일부 광고는 종료 후 'SparkActivity(Lynx 랜딩페이지)'로 빠짐. 이 화면에선
+  //    상단 X를 누르면 오히려 링크로 더 깊이 들어갈 수 있어, 액티비티가 광고/랜딩이면(=비접근성)
+  //    back으로 언와인드한다. 상단 X는 아직 '광고 뷰'가 떠 있을 때만. 피드로 나오면 종료
+  //    (caller가 '포인트' 탭으로 리워드 페이지 재진입).
+  var end = Date.now() + cfg().timing.adExtraWaitMs + 6000;
   while (Date.now() < end && running) {
     if (detectCaptcha()) return false;
-    if (findAny(cfg().texts.pageMarker, 400)) { log("광고 종료(페이지 복귀)"); break; }
-    tapRatio(cfg().coords.adClose, "광고 X(우상단)");
-    sleep(900);
-    if (inAdScreen()) continue;                        // 아직 광고면 다시 X(적립 후에도 영상이 남는 경우)
-    if (!findAny(cfg().texts.pageMarker, 400)) { back(); sleep(500); } // 랜딩페이지로 샜으면 뒤로
+    if (findAny(cfg().texts.pageMarker, 300)) { log("광고 종료(페이지 복귀)"); return true; }
+    tapText(cfg().texts.watchClose, "광고팝업 닫기", 120); // upsell '나중에 하기' 등(텍스트 되면)
+    if (onStuckActivity()) {                    // 광고/랜딩(Spark 등) 액티비티 → back으로 언와인드
+      back(); sleep(900);
+    } else if (inAdScreen()) {                  // 아직 광고 뷰 → 상단 X
+      tapRatio(cfg().coords.adClose, "광고 X(우상단)"); sleep(800);
+    } else {                                    // 광고도 랜딩도 아님(피드 등) → caller가 진입 처리
+      break;
+    }
   }
   return true;
 }
