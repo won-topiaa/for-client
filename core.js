@@ -362,8 +362,12 @@ function ensureOnRewardsPage() {
       if (!tapText(cfg().texts.pointsTab, "포인트 탭", 500)) {
         tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
       }
+    } else if (onStuckActivity()) {
+      // 광고/랜딩(비접근성)에 갇힘 → 좌표 X/back으로 확실히 탈출(bailFromAdStack)
+      log("광고/랜딩('" + curActivity() + "') 갇힘 → 스택 탈출 " + i + "/4");
+      bailFromAdStack();
     } else {
-      log("리워드/피드 아님(광고 랜딩 등) → 뒤로가기 언와인드 " + i + "/4");
+      log("리워드/피드 아님 → 뒤로가기 언와인드 " + i + "/4");
       back(); sleep(700);
     }
     clearAllPopups("진입 팝업");
@@ -433,24 +437,9 @@ function closeAd() {
     if (findAny(cfg().texts.pageMarker, 200)) break;   // 이미 페이지로 복귀
     sleep(1000);
   }
-  // 적립됨(표식 소멸) → 광고/랜딩에서 리워드 페이지로 확실히 복귀.
-  //  ★ 실측: Temu 등 일부 광고는 종료 후 'SparkActivity(Lynx 랜딩페이지)'로 빠짐. 이 화면에선
-  //    상단 X를 누르면 오히려 링크로 더 깊이 들어갈 수 있어, 액티비티가 광고/랜딩이면(=비접근성)
-  //    back으로 언와인드한다. 상단 X는 아직 '광고 뷰'가 떠 있을 때만. 피드로 나오면 종료
-  //    (caller가 '포인트' 탭으로 리워드 페이지 재진입).
-  var end = Date.now() + cfg().timing.adExtraWaitMs + 6000;
-  while (Date.now() < end && running) {
-    if (detectCaptcha()) return false;
-    if (findAny(cfg().texts.pageMarker, 300)) { log("광고 종료(페이지 복귀)"); return true; }
-    tapText(cfg().texts.watchClose, "광고팝업 닫기", 120); // upsell '나중에 하기' 등(텍스트 되면)
-    if (onStuckActivity()) {                    // 광고/랜딩(Spark 등) 액티비티 → back으로 언와인드
-      back(); sleep(900);
-    } else if (inAdScreen()) {                  // 아직 광고 뷰 → 상단 X
-      tapRatio(cfg().coords.adClose, "광고 X(우상단)"); sleep(800);
-    } else {                                    // 광고도 랜딩도 아님(피드 등) → caller가 진입 처리
-      break;
-    }
-  }
+  // 적립됨(표식 소멸) → 광고/랜딩 스택에서 확실히 탈출.
+  //  (리워드광고 upsell 팝업은 좌표 X로, Spark 랜딩은 back으로 — bailFromAdStack이 처리)
+  bailFromAdStack();
   return true;
 }
 
@@ -707,6 +696,30 @@ function onStuckActivity() {
   if (!act) return false;
   var list = cfg().stuckActivities || [];
   for (var i = 0; i < list.length; i++) if (act.indexOf(list[i]) >= 0) return true;
+  return false;
+}
+
+// 광고/랜딩(비접근성 Lynx/Spark) 화면에서 리워드/피드로 강제 탈출.
+//  ★ 실측: 광고 종료 후 'RewardAdActivity'의 upsell 팝업('나중에 하기')은 Lynx라
+//    텍스트/back으로 안 닫히고 '하단 중앙 X 좌표'로만 닫힘. 'SparkActivity'(Temu 랜딩)는
+//    back으로 나옴. 화면(액티비티)에 맞춰 방법을 달리해 확실히 빠져나온다.
+//  @return true = 정상 화면(리워드/피드) 도달, false = 6회 안에 못 나감
+function bailFromAdStack() {
+  for (var i = 0; i < 6 && running; i++) {
+    if (detectCaptcha()) return false;
+    if (findAny(cfg().texts.pageMarker, 250)) return true;   // 리워드 페이지
+    if (findAny(cfg().texts.pointsTab, 200)) return true;    // 피드 도달('포인트' 탭 보임)
+    if (!onStuckActivity() && !inAdScreen()) return true;    // 광고/랜딩 아님 = 정상
+    var act = curActivity();
+    if (act.indexOf("RewardAd") >= 0 || act.indexOf("reward.ui") >= 0) {
+      // 리워드광고 upsell 팝업 → 상단/하단 X 좌표로 닫기(Lynx라 텍스트 불가)
+      tapRatio(cfg().coords.adClose, "광고 X(상단)"); sleep(350);
+      tapRatio(cfg().coords.adRewardClose, "광고리워드 X(하단)"); sleep(650);
+    } else {
+      // Spark 랜딩 등 → back으로 탈출
+      back(); sleep(800);
+    }
+  }
   return false;
 }
 
