@@ -1,0 +1,7 @@
+# API 키가 들어가는 실제 설정 파일은 커밋 금지 (config.example.json 만 커밋)
+config.json
+
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.csv
