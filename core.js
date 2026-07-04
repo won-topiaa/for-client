@@ -164,9 +164,9 @@ function closeStickyBanner() {
   }
 }
 function checkAndClosePopup() {
-  // 시청 중 팝업: 오탭 방지를 위해 텍스트로만 닫음
+  // 시청 중 팝업: 확실한 닫기/알림거부 문구만(리워드 수령 오탭 방지)
   if (detectCaptcha()) return false;
-  if (tapText(cfg().texts.close, "시청중 팝업", 300)) {
+  if (tapText(cfg().texts.watchClose, "시청중 팝업", 300)) {
     sleep(jitter(cfg().timing.afterPopupClose)); return true;
   }
   return false;
@@ -242,19 +242,6 @@ function stats() {
 
 // ── 리워드(초록) 페이지 동작 — 텍스트 우선 ───────────────────
 function stepCloseApp() { log("앱 종료(홈으로)"); home(); sleep(cfg().timing.shortWait); }
-
-function watchVideos(durationMs, isRunning) {
-  log("영상 시청: " + Math.round(durationMs / 1000) + "초");
-  var end = Date.now() + durationMs;
-  while (Date.now() < end) {
-    if (isRunning && !isRunning()) return;
-    if (!ensureForeground(false)) { sleep(3000); continue; }
-    napChunked(jitter(cfg().timing.scrollIntervalMs), isRunning);
-    if (isRunning && !isRunning()) return;
-    checkAndClosePopup();
-    swipeToNextVideo();
-  }
-}
 
 // 제목 노드가 속한 '카드'의 버튼을 누름.
 // 같은 행(비슷한 Y, 제목보다 오른쪽)에서 btnList 텍스트 버튼을 찾아 누르고,
@@ -572,8 +559,9 @@ function runFarm() {
 
   // 시간이 만료되어 끝난 경우에만(사용자 정지가 아님) 마무리 단계 수행
   if (running) {
-    safe("출석체크", doAttendanceOnly); // 12. 출석체크(마지막)
-    safe("앱종료", stepCloseApp);        // 13. 앱 종료
+    safe("마지막수확", function () { log("⏰ 마지막 리워드 수확"); harvestRewards(false); }); // 남은 리워드
+    safe("출석체크", doAttendanceOnly);  // 12. 출석체크(마지막)
+    safe("앱종료", stepCloseApp);         // 13. 앱 종료
     log("✅ 최종 플로우 완료(약 " + Math.round(total / 60000) + "분)");
   } else {
     log("사용자 정지 — 마무리 단계 생략");

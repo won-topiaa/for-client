@@ -21,8 +21,9 @@ try {
   if (floaty.checkPermission && !floaty.checkPermission()) {
     toast("'다른 앱 위에 표시' 권한을 허용해주세요");
     floaty.requestPermission();
-    // 사용자가 허용하고 돌아올 시간
-    while (floaty.checkPermission && !floaty.checkPermission()) sleep(1000);
+    // 사용자가 허용하고 돌아올 시간(최대 60초 대기 후 진행 시도)
+    var _t0 = Date.now();
+    while (floaty.checkPermission && !floaty.checkPermission() && Date.now() - _t0 < 60000) sleep(1000);
   }
 } catch (e) {}
 
