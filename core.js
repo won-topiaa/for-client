@@ -421,15 +421,27 @@ function closeAd() {
     log("광고 화면 미진입(소진/쿨다운) → 스킵");
     return false;
   }
-  log("광고 시청 " + Math.round(cfg().timing.adBaseWaitMs / 1000) + "초 대기...");
+  // ★ 보상은 상단 카운트('N초 시청하고 …포인트 받기') 표식이 사라질 때 지급된다.
+  //   실측: 30초 광고를 20초에 X로 닫으면 '무보상'으로 그냥 닫혔음(토스트 없음).
+  //   → 최소 시청(adBaseWaitMs) 뒤, 표식이 사라질(=적립될) 때까지 기다린 후 닫는다.
+  log("광고 시청 — 최소 " + Math.round(cfg().timing.adBaseWaitMs / 1000) + "초 + 적립(표식 소멸) 대기...");
   napChunked(cfg().timing.adBaseWaitMs, isRunningFlag);
+  var creditBy = Date.now() + cfg().timing.adExtraWaitMs;
+  while (running && Date.now() < creditBy) {
+    if (detectCaptcha()) return false;
+    if (!inAdScreen()) break;                          // 카운트 표식 사라짐 = 적립 완료
+    if (findAny(cfg().texts.pageMarker, 200)) break;   // 이미 페이지로 복귀
+    sleep(1000);
+  }
+  // 적립됐으니(표식 소멸) 이제 X로 닫는다. 랜딩페이지로 새면 back으로 복귀.
   var end = Date.now() + cfg().timing.adExtraWaitMs;
   while (Date.now() < end && running) {
     if (detectCaptcha()) return false;
     if (findAny(cfg().texts.pageMarker, 400)) { log("광고 종료(페이지 복귀)"); break; }
     tapRatio(cfg().coords.adClose, "광고 X(우상단)");
     sleep(900);
-    if (!inAdScreen()) { back(); sleep(500); } // X 눌렀는데 랜딩페이지로 갔으면 뒤로
+    if (inAdScreen()) continue;                        // 아직 광고면 다시 X(적립 후에도 영상이 남는 경우)
+    if (!findAny(cfg().texts.pageMarker, 400)) { back(); sleep(500); } // 랜딩페이지로 샜으면 뒤로
   }
   return true;
 }
