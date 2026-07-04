@@ -407,22 +407,24 @@ function harvestClaimSweep() {
   }
 }
 
-// 리워드 페이지 수확(순서): 출석 → 타이머(먼저) → 스크롤 스윕(포인트받기)
-// → 광고 추가보상 → 매일광고 배치. 게시/검색/보류/친구초대/게임은 절대 안 함.
+// 리워드 페이지 수확 — 사용자 지정 우선순위대로:
+//   (선택)출석 → ①타이머(20분마다,최대40) → ②광고 보면 추가 보상(4)
+//   → ③'포인트 받기' 스윕(좋아요 미션20 등) → ④매일 광고(최대200) → ⑤라이브 영상(60)
+// 게시/검색/보류/친구초대/게임(캔디병·킥오프·스핀·원판)은 절대 안 함.
 function harvestRewards(doAttendance) {
   if (!ensureOnRewardsPage()) return;
   harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
   clearAllPopups("초기 팝업");
   closeStickyBanner();
 
-  // 1) 출석하기(하루 1회)
+  // (선택) 출석하기 — 기본 마지막에 별도 수행. 여기선 doAttendance=true일 때만.
   if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     ensureOnRewardsPage(); closeStickyBanner();
   }
 
-  // 2) 타이머(20분마다) 먼저 — 카드 지정으로 그 카드의 '포인트 받기'만
+  // ① 타이머(20분마다, 최대 40) — 시작하자마자 이미 충전돼 있으면 바로 수령
   if (running) {
     scrollRewardsTop();
     var tc = findCard(cfg().texts.timerTitle, 4);
@@ -434,26 +436,33 @@ function harvestRewards(doAttendance) {
     }
   }
 
-  // 3) 스크롤 내리며 '포인트 받기' 수확 — 매 패스 무조건 한 칸 스크롤(진행 보장),
-  //    같은 위치 중복 클릭 차단, 4번 연속 못 찾으면 바닥으로 보고 종료
+  // ② 광고 보면 추가 보상(4) — 쿨다운 끝났을 때만 실제 광고가 열림
+  if (running) claimAdBonus();
+  if (!running) return;
+
+  // ③ '포인트 받기' 스윕 — 좋아요 미션(20) 등 페이지에 이미 준비된 수령을 훑음.
+  //    (좋아요 미션은 영상 1개 좋아요 후에야 활성화되므로, 첫 영상 시청 뒤 수확부터 잡힘)
+  //    매 패스 무조건 한 칸 스크롤(진행 보장), 같은 위치 중복 클릭 차단.
   if (running) harvestClaimSweep();
 
-  // 4) 광고 보면 추가 보상(쿨다운 끝났을 때만 실제로 광고가 열림) — 카드 지정
-  if (running) {
-    ensureOnRewardsPage(); scrollRewardsTop();
-    var adCard = findCard(cfg().texts.adRewardTitle, 6);
-    if (adCard) {
-      tapCardButton(adCard.node, null, "광고 추가보상"); // 카드 우측(>) 탭
-      sleep(cfg().timing.afterTapReward);
-      if (detectCaptcha()) return;
-      if (inAdScreen()) { if (closeAd()) stat.cycles++; collectPopup(); }
-      else log("광고 추가보상 쿨다운/미준비 → 스킵");
-      ensureOnRewardsPage(); closeStickyBanner();
-    }
-  }
-
-  // 5) 매일 광고(하루 40개) — 사이클당 batch개
+  // ④ 매일 광고(하루 40개, 최대 ~200) — 사이클당 batch개
   if (running) watchDailyAdBatch();
+
+  // ⑤ 라이브 영상 시청(하루 10회, 최대 60) — 사이클당 liveBatch개
+  if (running) watchLiveBatch();
+}
+
+// '광고 보면 추가 보상' 카드를 찾아 광고를 1회 시청 후 닫음
+function claimAdBonus() {
+  ensureOnRewardsPage(); scrollRewardsTop();
+  var adCard = findCard(cfg().texts.adRewardTitle, 6);
+  if (!adCard) return;
+  tapCardButton(adCard.node, null, "광고 추가보상"); // 카드 우측(>) 탭
+  sleep(cfg().timing.afterTapReward);
+  if (detectCaptcha()) return;
+  if (inAdScreen()) { if (closeAd()) stat.cycles++; collectPopup(); }
+  else log("광고 추가보상 쿨다운/미준비 → 스킵");
+  ensureOnRewardsPage(); closeStickyBanner();
 }
 
 // '매일 광고' 카드를 찾아 그 카드의 '시청' 버튼만 눌러 광고를 batch개 시청
@@ -473,6 +482,41 @@ function watchDailyAdBatch() {
     if (!inAdScreen()) { log("광고 안 열림(한도 소진/쿨다운) → 매일광고 종료"); break; }
     if (closeAd()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
     collectPopup();
+  }
+  ensureOnRewardsPage();
+}
+
+// '라이브 영상 시청' 카드를 찾아 '시청'을 눌러 라이브를 batch회 시청.
+// ※ 실기기 테스트가 어려워 방어적으로 구현: 라이브가 열리지 않거나(쿨다운/한도)
+//    UI가 다르면 즉시 스킵하고 리워드 페이지로 복귀(오작동 방지).
+function watchLiveBatch() {
+  var batch = cfg().liveBatch || 0;
+  if (batch <= 0) return;
+  log("라이브 영상 시청 시작(최대 " + batch + "회)");
+  for (var i = 0; i < batch && running; i++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 라이브 종료"); break; }
+    if (!ensureOnRewardsPage()) break;
+    closeStickyBanner(); scrollRewardsTop();
+    var card = findCard(cfg().texts.liveTitle, 8);
+    if (!card) { log("라이브 카드 없음 → 종료"); break; }
+    tapCardButton(card.node, cfg().texts.watchBtn, "라이브 '시청'");
+    sleep(cfg().timing.afterTapReward);
+    if (detectCaptcha()) return;
+    // 리워드 페이지 표식이 그대로면 라이브가 안 열린 것(한도/쿨다운) → 종료
+    if (findAny(cfg().texts.pageMarker, 300)) {
+      log("라이브 안 열림(한도/쿨다운/UI상이) → 종료");
+      ensureOnRewardsPage(); break;
+    }
+    // 라이브 시청(크레딧 위해 지정 시간 유지), 중간 팝업은 닫으며 대기
+    var until = Date.now() + (cfg().timing.liveWatchMs || 40000);
+    while (running && Date.now() < until) {
+      checkAndClosePopup();
+      napChunked(2000, isRunningFlag);
+    }
+    // 라이브에서 빠져나와 리워드 페이지로 복귀
+    for (var b = 0; b < 4 && !findAny(cfg().texts.pageMarker, 300); b++) { back(); sleep(700); }
+    collectPopup();
+    if (ensureOnRewardsPage()) { stat.cycles++; log("라이브 " + (i + 1) + "회째 완료"); }
   }
   ensureOnRewardsPage();
 }
@@ -540,26 +584,32 @@ function doAttendanceOnly() {
   }
 }
 
-// 최종 플로우: 영상시청 우선(지정 시간) + 20분마다 수확 → 출석체크 → 앱 종료
+// 최종 플로우: 진입 즉시 포인트 수확(이미 충전된 타이머부터) → 영상시청 청크와
+//             수확을 번갈아 반복 → (시간 만료) 출석체크 → 앱 종료
 function runFarm() {
   var total = cfg().timing.totalRunMs || (160 * 60 * 1000);
-  log("[최종 플로우] 영상시청 우선 파밍 — 약 " + Math.round(total / 60000) + "분 후 출석·종료");
+  log("[최종 플로우] 포인트 우선 수확 후 영상시청 반복 — 약 " + Math.round(total / 60000) + "분 후 출석·종료");
 
   safe("실행", function () { ensureForeground(true); });          // 1. TikTok Lite 실행
   safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료
 
+  // 3. 앱 진입 즉시 포인트 페이지로 가서 먼저 수확
+  //    (①타이머 최대40 ②광고 추가보상4 ③준비된 포인트받기 스윕 ④매일광고 ⑤라이브)
+  //    ※ 좋아요 미션(20)은 영상 1개 좋아요 후 활성화되므로 이 첫 수확엔 안 잡힐 수 있음
+  safe("첫수확", function () { log("⏰ 진입 즉시 포인트 수확"); harvestRewards(false); });
+
   var end = Date.now() + total;
-  // 3. 영상 시청(팝업 닫으며) + 20분마다 리워드 수확 반복
+  // 4. 영상 시청(팝업 닫으며) + 20분마다 리워드 수확 반복
   while (running && Date.now() < end) {
     safe("피드시청", function () {
       gotoFeed();
       sleep(1500);
-      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");          // 우측 하트/좋아요
+      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");          // 우측 하트/좋아요(미션 활성화)
       var until = Math.min(end, Date.now() + cfg().timing.betweenCycleMs);
       scrollFeedUntil(until);                                    // 팝업 닫으며 시청
     });
     if (!running || Date.now() >= end) break;
-    // 4~11. 리워드 수확(출석 제외): 포인트진입/팝업/타이머/광고/좋아요/매일광고/뒤로
+    // 리워드 수확(출석 제외): 포인트진입/팝업/타이머/광고/좋아요/매일광고/라이브/뒤로
     safe("수확", function () { log("⏰ 리워드 수확"); harvestRewards(false); });
   }
 
