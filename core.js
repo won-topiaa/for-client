@@ -580,9 +580,13 @@ function watchDailyAdBatch() {
   if (ensureOnRewardsPage()) scrollRewardsTop();
 }
 
-// '라이브 영상 시청' 카드를 찾아 '시청'을 눌러 라이브를 batch회 시청.
-// ※ 실기기 테스트가 어려워 방어적으로 구현: 라이브가 열리지 않거나(쿨다운/한도)
-//    UI가 다르면 즉시 스킵하고 리워드 페이지로 복귀(오작동 방지).
+// '라이브 영상 시청' 카드 → 라이브 진입 → 시청 → '리워드 포인트 수령'만 안전 수령 → 복귀.
+// ★★ 절대 금지: 선물 보내기('보내기'/'선물 보내기'/'선물 보내고 …[보내기]')·선물 아이콘.
+//    포인트/현금 소모 위험 → 코드는 '수령/리워드 포인트 수령/시청/포인트'만 텍스트로 누르고,
+//    수령 후 뜨는 선물 유도 팝업은 back으로만 닫는다. 선물 좌표는 절대 안 누름.
+// 실측(2026-07): 라이브 보상은 '시청'만으론 지급 안 됨. 시청 후 좌상단 '수령' 필 →
+//    시트의 '리워드 포인트 수령'을 눌러야 회당 ~4~6P 적립(카운터 0→2 확인).
+//    라이브를 나가면 '피드'로 나오므로 '포인트' 탭으로 리워드 페이지 복귀.
 function watchLiveBatch() {
   var batch = cfg().liveBatch || 0;
   if (batch <= 0) return;
@@ -601,21 +605,54 @@ function watchLiveBatch() {
       log("라이브 안 열림(한도/쿨다운/UI상이) → 종료");
       ensureOnRewardsPage(); break;
     }
-    // 라이브 시청(크레딧 위해 지정 시간 유지), 중간 팝업은 닫으며 대기
+    // 라이브 시청(크레딧 누적). ★ 이 동안엔 아무 것도 탭하지 않는다
+    //   (라이브 X/선물 오탭 방지 — checkAndClosePopup은 '×'를 눌러 라이브를 닫을 수 있어 제외)
     var until = Date.now() + (cfg().timing.liveWatchMs || 40000);
     while (running && Date.now() < until) {
-      checkAndClosePopup();
+      if (detectCaptcha()) return;
       napChunked(2000, isRunningFlag);
     }
-    // 라이브에서 빠져나와 리워드 페이지로 복귀
-    for (var b = 0; b < 4 && !findAny(cfg().texts.pageMarker, 300); b++) { back(); sleep(700); }
-    collectPopup();
-    // ※ 라이브 보상 지급 여부를 화면상 확실히 확인할 수 없어 적립 카운트는 올리지 않음
-    //   (거짓 적립 표시 방지). 복귀만 확인하고 다음 회차 진행.
+    // 준비된 포인트만 안전 수령(선물 팝업은 back으로 닫음)
+    claimLiveReadyPoints();
+    // 라이브 나가기 → 피드 → '포인트' 탭으로 리워드 페이지 복귀(앱 종료 방지)
+    exitLiveToRewards();
     if (!ensureOnRewardsPage()) break;
-    log("라이브 " + (i + 1) + "회째 시청 완료(적립은 앱에서 확인)");
+    log("라이브 " + (i + 1) + "회째 완료");
   }
   scrollRewardsTop();
+}
+
+// 라이브 시청 후 '리워드 포인트 수령'으로 준비된 포인트만 텍스트로 안전 수령.
+// ★ 선물 관련(보내기/선물 아이콘)은 절대 누르지 않는다.
+function claimLiveReadyPoints() {
+  // 좌상단 '수령' 필이 있으면 눌러 리워드 시트 열기(정확일치 — '리워드 포인트 수령'과 구분)
+  tapText(cfg().texts.liveCollect, "라이브 '수령'필", 1200, true);
+  sleep(700);
+  for (var k = 0; k < 6 && running; k++) {
+    if (detectCaptcha()) return;
+    // '리워드 포인트 수령'이 있을 때만 수령. '라이브 시청'으로 바뀌면(더 봐야 함) 종료.
+    if (!findAny(cfg().texts.liveClaim, 700)) break;
+    tapText(cfg().texts.liveClaim, "라이브 포인트 수령", 300);
+    stat.cycles++;
+    sleep(cfg().timing.afterTapReward);
+    // ★ 수령 직후 '선물 보내고 추가 리워드 받기[보내기]' 유도 팝업이 뜨면 back으로만 닫음.
+    //   (절대 '보내기'를 누르지 않음 — 감지 전용 문구로만 판단)
+    if (findAny(cfg().texts.giftUpsell, 500)) {
+      log("선물 유도 팝업 감지 → back으로 닫음(선물 안 보냄)");
+      back(); sleep(700);
+    }
+  }
+}
+
+// 라이브에서 리워드 페이지로 복귀. 라이브를 나가면 '피드'로 나오므로
+// back은 '피드(포인트 탭 보임)까지'만 하고(앱 종료 방지) '포인트' 탭으로 리워드 진입.
+function exitLiveToRewards() {
+  for (var b = 0; b < 3 && running; b++) {
+    if (findAny(cfg().texts.pageMarker, 250)) return;   // 이미 리워드 페이지
+    if (findAny(cfg().texts.pointsTab, 250)) break;     // 피드 도달 → 더 back 금지(앱 종료 방지)
+    back(); sleep(800);
+  }
+  ensureOnRewardsPage(); // 피드의 '포인트' 탭(텍스트→좌표)으로 리워드 페이지 복귀
 }
 
 // ── 엔진(스레드) ─────────────────────────────────────────────
