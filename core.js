@@ -340,10 +340,17 @@ function findCard(titleList, maxScroll) {
 //   '페이지 밖'으로 오판하던 버그가 있었음(하단 게임 구역에서 헤맴). 그래서
 //   판정 전에 항상 맨 위로 올려 확인한다. 게임 카드가 보이면 = 페이지 안에 있는 것.
 function onRewardsPageNow() {
-  if (findAny(cfg().texts.pageMarker, 400)) return true;
-  if (atGameZone()) return true; // 하단 게임 구역이 보임 = 리워드 페이지 맞음(스크롤됨)
-  scrollRewardsTop();            // 스크롤 때문에 표식이 안 보였을 수 있음 → 위로 올려 재확인
-  return !!findAny(cfg().texts.pageMarker, 500);
+  if (findAny(cfg().texts.pageMarker, 300)) return true;
+  // 표식(상단 전용)이 안 보여도, 리워드 '콘텐츠'가 보이면 = 스크롤된 리워드 페이지.
+  //   (게임 카드 / '포인트 받기' / '시청' 버튼 중 하나라도 보이면 페이지 안으로 인정)
+  //   이때만 맨 위로 올려 표식을 재확인 → 피드/광고 화면에서 헛스크롤하지 않음.
+  var t = cfg().texts;
+  if (atGameZone() || findAny(t.pageClaim, 150) || findAny(t.watchBtn, 150) ||
+      findAny(t.timerTitle, 150) || findAny(t.dailyAdCard, 150)) {
+    if (scrollRewardsTop()) return true;
+    return true; // 리워드 콘텐츠가 확실히 보였으니 페이지 안으로 간주(표식만 못 올라온 경우)
+  }
+  return false; // 리워드 콘텐츠가 전혀 안 보임 = 페이지 밖(피드/광고 등)
 }
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 3; i++) {
@@ -434,11 +441,23 @@ function watchAdThenClose() {
   return true;
 }
 
-// 리워드 페이지 스크롤 — '천천히 끄는' 드래그(빠른 스와이프는 탭/플링으로 오인식돼
-// 스크롤이 안 되는 기기가 있어 500ms로 또박또박 끌고, 렌더링 대기를 넉넉히 줌)
-function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.30), Math.round(W*0.5), Math.round(H*0.78), 500); sleep(500); }
-function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.78), Math.round(W*0.5), Math.round(H*0.30), 500); sleep(500); }
-function scrollRewardsTop()  { for (var i=0;i<4;i++) scrollRewardsUp(); }
+// 리워드 페이지 스크롤 — 한 번에 많이(위/아래 80%↔18%), 드래그로 확실히(350ms).
+// 빠른 플링/탭 오인식을 피하면서도 이동량을 키워 빠르게 훑음.
+function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.20), Math.round(W*0.5), Math.round(H*0.82), 350); sleep(350); }
+function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.82), Math.round(W*0.5), Math.round(H*0.20), 350); sleep(350); }
+// ★ 핵심 수정: '맨 위'는 고정 횟수가 아니라 상단 표식이 보일 때까지(또는 더 이상
+//   안 올라갈 때까지) 반복해서 올린다. 긴 페이지에서 위로 못 돌아오던 버그의 해결.
+function scrollRewardsTop() {
+  var last = null;
+  for (var i = 0; i < 14 && running; i++) {
+    if (findAny(cfg().texts.pageMarker, 150)) return true; // 최상단 도달
+    scrollRewardsUp();
+    var sig = screenSig();
+    if (sig && sig === last) break; // 더 이상 안 올라감(최상단 or 스크롤 막힘)
+    last = sig;
+  }
+  return !!findAny(cfg().texts.pageMarker, 150);
+}
 
 // 스크롤 내리며 '포인트 받기'만 수확. 매 패스 반드시 한 칸 스크롤(진행 보장),
 // 같은 위치 버튼 중복 클릭 차단, 4번 연속 못 찾으면 바닥으로 보고 종료.
