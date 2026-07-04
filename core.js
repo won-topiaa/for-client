@@ -512,7 +512,9 @@ function harvestRewards(doAttendance) {
   closeStickyBanner();
 
   // (선택) 출석하기 — 기본 마지막에 별도 수행. 여기선 doAttendance=true일 때만.
-  if (doAttendance && running && tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
+  //  ※ exact=false(부분매칭): "오늘 출석하고 200 받기"처럼 N이 달라 정확일치 불가.
+  //    "오늘 출석하고"만 매칭하므로 회색 '내일 출석하고…'는 안 눌러 중복지급/오탭 없음.
+  if (doAttendance && running && tapText(cfg().texts.attendance, "출석", 1500, false)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     ensureOnRewardsPage(); closeStickyBanner();
@@ -705,11 +707,13 @@ function scrollFeedUntil(untilMs) {
   }
 }
 
-// 리워드 페이지에서 '출석하기'만 수행(마지막 단계용)
+// 리워드 페이지에서 '출석'만 수행(마지막 단계용)
 function doAttendanceOnly() {
   if (!ensureOnRewardsPage()) return;
   closeStickyBanner();
-  if (tapText(cfg().texts.attendance, "출석하기", 1500, true)) {
+  // exact=false: "오늘 출석하고 200 받기"(복귀 프로모) / "출석하기"(표준) 모두 부분매칭.
+  //  회색 '내일 출석하고…'·카드 제목과는 안 겹침(config 주석 참고).
+  if (tapText(cfg().texts.attendance, "출석", 1500, false)) {
     sleep(cfg().timing.afterTapReward);
     collectPopup(); stat.cycles++;
     log("출석체크 완료");
