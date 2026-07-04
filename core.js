@@ -63,19 +63,20 @@ function napChunked(ms, isRunning) {
 // 게임 진입 버튼을 "포인트 받기"로 오인식하는 것을 방지
 function findAny(list, timeoutMs, exact) {
   if (!list || !list.length) return null;
-  var end = Date.now() + timeoutMs;
+  // 인자 방어: 숫자가 아니거나 음수/NaN이면 0으로 → for(;;)가 절대 무한루프 못 함
+  var t = (typeof timeoutMs === "number" && isFinite(timeoutMs) && timeoutMs > 0) ? timeoutMs : 0;
+  var end = Date.now() + t;
   for (;;) {
     for (var i = 0; i < list.length; i++) {
-      var t = list[i];
+      var s = list[i];
       try {
-        var n = text(t).findOnce() || desc(t).findOnce()
-             || (!exact && t.length > 2 ? textContains(t).findOnce() : null);
-        if (n) return { node: n, matched: t };
+        var n = text(s).findOnce() || desc(s).findOnce()
+             || (!exact && s.length > 2 ? textContains(s).findOnce() : null);
+        if (n) return { node: n, matched: s };
       } catch (e) { /* 접근성 노드 조회 순간 오류는 무시하고 재시도 */ }
     }
-    var remain = end - Date.now();
-    if (remain <= 0) return null;
-    sleep(Math.min(250, remain));
+    if (Date.now() >= end) return null;      // NaN 불가 → 반드시 종료
+    sleep(Math.min(250, end - Date.now()));
   }
 }
 function clickNode(node) {
@@ -482,7 +483,8 @@ function safe(name, fn) {
   catch (e) {
     stat.lastError = name + ": " + e;
     log("⚠ " + name + " 오류: " + e);
-    try { ensureForeground(false); } catch (e2) {}
+    // 정지(인터럽트)로 인한 예외면 복구 안 함 — 정지 후 앱 재실행/추가동작 방지
+    if (running) { try { ensureForeground(false); } catch (e2) {} }
   }
 }
 function isRunningFlag() { return running; }
