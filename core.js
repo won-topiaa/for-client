@@ -182,11 +182,13 @@ function detectCaptcha() {
   return true;
 }
 function swipeToNextVideo() {
-  // 매번 궤적/속도를 조금씩 다르게(탐지 완화) — 빠르게 다음 영상으로
+  // 매번 궤적/속도를 조금씩 다르게(탐지 완화) — 빠르게 다음 영상으로.
+  // ★ y2를 0.34H 아래로(예전 0.20H) → 상단 제어판을 지나지 않게 해 스와이프가 먹히지
+  //   않는 문제 방지(리워드 페이지 스크롤과 동일한 이유).
   var x1 = Math.round(W * rnd(0.42, 0.58));
   var x2 = x1 + Math.round(rnd(-25, 25));
-  var y1 = Math.round(H * rnd(0.70, 0.78));
-  var y2 = Math.round(H * rnd(0.20, 0.28));
+  var y1 = Math.round(H * rnd(0.74, 0.82));
+  var y2 = Math.round(H * rnd(0.34, 0.42));
   swipe(x1, y1, x2, y2, Math.round(rnd(180, 320)));
   sleep(Math.round(rnd(300, 550)));
 }
@@ -440,10 +442,13 @@ function closeAd() {
   return true;
 }
 
-// 리워드 페이지 스크롤 — 한 번에 많이(위/아래 80%↔18%), 드래그로 확실히(350ms).
-// 빠른 플링/탭 오인식을 피하면서도 이동량을 키워 빠르게 훑음.
-function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.20), Math.round(W*0.5), Math.round(H*0.82), 350); sleep(350); }
-function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.82), Math.round(W*0.5), Math.round(H*0.20), 350); sleep(350); }
+// 리워드 페이지 스크롤 — 드래그로 확실히(350ms).
+// ★ 중요: 스와이프 y-범위를 화면 상단 '제어판(플로팅 창)' 아래(약 y>0.30H)로 제한한다.
+//   제어판이 기본 좌상단(≈y 200~640px)을 덮는데, 예전엔 스와이프가 y=0.20H(≈528px)까지
+//   올라가 제어판 위를 지나면서 '터치 가능 오버레이'가 제스처를 가로채 스크롤이 먹히지
+//   않던 문제가 있었음. 양 끝점을 0.31H↔0.85H로 잡아 제어판을 피한다.
+function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.31), Math.round(W*0.5), Math.round(H*0.85), 350); sleep(350); }
+function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.85), Math.round(W*0.5), Math.round(H*0.31), 350); sleep(350); }
 // ★ 핵심 수정: '맨 위'는 고정 횟수가 아니라 상단 표식이 보일 때까지(또는 더 이상
 //   안 올라갈 때까지) 반복해서 올린다. 긴 페이지에서 위로 못 돌아오던 버그의 해결.
 function scrollRewardsTop() {
@@ -538,7 +543,9 @@ function harvestRewards(doAttendance) {
 // '광고 보면 추가 보상' 카드를 찾아 광고를 1회 시청 후 닫음
 function claimAdBonus() {
   ensureOnRewardsPage(); scrollRewardsTop();
-  var adCard = findCard(cfg().texts.adRewardTitle, 6);
+  // maxScroll=3: 이 카드가 있으면 대개 상단 근처. 없는 UI(복귀 프로모 등)에서
+  //   매 사이클 헛스크롤을 줄여 전체 수확 플로우를 빠르게 유지.
+  var adCard = findCard(cfg().texts.adRewardTitle, 3);
   if (!adCard) return;
   tapCardButton(adCard.node, null, "광고 추가보상"); // 카드 우측(>) 탭
   sleep(cfg().timing.afterTapReward);
@@ -677,14 +684,32 @@ function gotoFeed() {
   }
 }
 
+// ★ 피드 시청 중 '게임 광고/게임 화면'에 잘못 들어갔는지 즉시 감지·탈출.
+//   1) 피드에 낀 게임 광고 → '관심 없음' 등으로 닫음(스와이프로 게임 진입 방지)
+//   2) 이미 게임 화면(진입/보드)에 빠졌으면 → 뒤로가기로 피드 즉시 복귀
+//   @return true = 게임/광고를 처리함(이번 스와이프 건너뜀)
+function escapeIfGame() {
+  if (tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150)) { sleep(400); return true; }
+  if (findAny(cfg().texts.gameScreen, 150)) {
+    log("피드 이탈(게임 화면) 감지 → 즉시 뒤로가기 복귀");
+    back(); sleep(900);
+    // 나오자마자 또 광고가 있으면 닫기
+    tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150);
+    return true;
+  }
+  return false;
+}
+
 // 피드를 지정 시간만큼 스크롤하며 시청(중간에 리워드 수확 타이밍이면 빠져나옴)
 // + 주기적으로 "다음 리워드까지 N분" 로그로 살아있음을 표시
 function scrollFeedUntil(untilMs) {
   var nextTick = 0;
   while (running && Date.now() < untilMs) {
     if (!ensureForeground(false)) { sleep(3000); continue; }
+    if (escapeIfGame()) continue;      // 스와이프 '전' 검사(광고 먼저 닫기)
     checkAndClosePopup();
     swipeToNextVideo();
+    if (escapeIfGame()) continue;      // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 8초 안 기다리고 바로 탈출
     if (Date.now() > nextTick) {
       var leftMin = Math.max(0, Math.ceil((untilMs - Date.now()) / 60000));
       log("영상 시청 중… 다음 리워드 수확까지 약 " + leftMin + "분");
