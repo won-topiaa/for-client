@@ -104,12 +104,6 @@ function tapRatio(ratio, label) {
   click(x, y);
   sleep(jitter(cfg().timing.shortWait));
 }
-function tapTextOrCoord(list, coord, label) {
-  if (list && tapText(list, label)) return true;
-  if (coord) { tapRatio(coord, label + "(좌표)"); return true; }
-  log(label + " 실패: 대상 못 찾음");
-  return false;
-}
 /**
  * 팝업 정리 — "헤매지 않는" 안전 버전.
  * 규칙: 팝업이 확실할 때만 손댄다. 애매하면 아무것도 안 누른다(오탭 방지).
@@ -446,13 +440,6 @@ function closeAd() {
   return true;
 }
 
-// 광고 시청 후 리워드 수령 팝업까지 처리
-function watchAdThenClose() {
-  if (!closeAd()) return false;
-  collectPopup();
-  return true;
-}
-
 // 리워드 페이지 스크롤 — 한 번에 많이(위/아래 80%↔18%), 드래그로 확실히(350ms).
 // 빠른 플링/탭 오인식을 피하면서도 이동량을 키워 빠르게 훑음.
 function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.20), Math.round(W*0.5), Math.round(H*0.82), 350); sleep(350); }
@@ -742,7 +729,12 @@ function runFarm() {
     safe("피드시청", function () {
       gotoFeed();
       sleep(1500);
-      tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");          // 우측 하트/좋아요(미션 활성화)
+      // ★ 피드로 확실히 나온 경우에만 좋아요(리워드 페이지 표식이 안 보일 때).
+      //   gotoFeed 실패로 리워드 페이지에 남아 있으면 (0.92,0.57) 좌표가 게임/카드
+      //   버튼을 오탭할 수 있어 방지. 피드가 아니면 이번 사이클 좋아요는 건너뜀.
+      if (!findAny(cfg().texts.pageMarker, 300)) {
+        tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");        // 우측 하트/좋아요(미션 활성화)
+      }
       var until = Math.min(end, Date.now() + cfg().timing.betweenCycleMs);
       scrollFeedUntil(until);                                    // 팝업 닫으며 시청
     });
