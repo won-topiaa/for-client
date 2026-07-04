@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이평선 레이더 — 주요 지지/저항 이동평균선 분석기</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --panel2: #1e2230;
+    --border: #2a2f40; --text: #e6e9f0; --muted: #8b93a7;
+    --accent: #4f8cff; --up: #ef4444; --down: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Noto Sans KR", -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  header h1 { font-size: 20px; margin: 0 0 2px; }
+  header p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+  .banner {
+    background: #3a2f10; border: 1px solid #6b5518; color: #ffd66b;
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
+    display: none;
+  }
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .search-box { position: relative; flex: 1; min-width: 220px; }
+  input, select {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px; font-size: 14px; width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  .years-input { width: 84px; }
+  .suggest {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; max-height: 260px; overflow-y: auto; display: none;
+  }
+  .suggest div { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; }
+  .suggest div:hover, .suggest div.active { background: #262c3d; }
+  .suggest .code { color: var(--muted); font-size: 12px; }
+  button.primary {
+    background: var(--accent); border: none; color: white; font-weight: 600;
+    padding: 10px 22px; border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .tabs { display: flex; gap: 6px; margin: 20px 0 10px; }
+  .tabs button {
+    background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+    padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  .tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .reco-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .reco-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; min-width: 170px;
+  }
+  .reco-card .period { font-size: 16px; font-weight: 700; }
+  .reco-card .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .reco-card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .reco-card .warn { color: #ffd66b; font-size: 11.5px; }
+  #chart {
+    height: 460px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--panel); position: relative;
+  }
+  .chart-note { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; margin: 6px 2px 18px; flex-wrap: wrap; gap: 6px;}
+  table {
+    width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    font-size: 13px;
+  }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+  th { background: var(--panel2); color: var(--muted); font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.reco td { background: rgba(79, 140, 255, 0.08); }
+  tr.dim td { color: var(--muted); }
+  .status { margin: 30px 0; color: var(--muted); text-align: center; }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
+    border: 2px solid var(--muted); border-top-color: transparent;
+    border-radius: 50%; animation: spin .8s linear infinite; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #result { display: none; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { width: auto; }
+  footer { margin-top: 34px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📈 이평선 레이더</h1>
+    <p>일봉·주봉·월봉에서 주요 지지/저항 역할을 해온 이동평균선을 백테스트로 찾아드립니다.</p>
+  </header>
+
+  <div class="banner" id="sampleBanner">
+    ⚠️ 지금은 <b>샘플 데이터 모드</b>입니다 (합성 데이터). 토스증권 API 키를
+    설정하면 실제 시세로 분석합니다 — README 참고.
+  </div>
+
+  <div class="controls">
+    <div class="field search-box">
+      <label>종목 검색 (이름 또는 코드)</label>
+      <input id="searchInput" placeholder="예: 삼성전자, 005930" autocomplete="off">
+      <div class="suggest" id="suggest"></div>
+    </div>
+    <div class="field">
+      <label>일봉 기간(년)</label>
+      <input class="years-input" id="yearsDay" type="number" min="0" step="0.5" value="3">
+    </div>
+    <div class="field">
+      <label>주봉 기간(년)</label>
+      <input class="years-input" id="yearsWeek" type="number" min="0" step="0.5" value="7">
+    </div>
+    <div class="field">
+      <label>월봉 기간(년)</label>
+      <input class="years-input" id="yearsMonth" type="number" min="0" step="1" value="0">
+    </div>
+    <div class="field">
+      <button class="primary" id="analyzeBtn" disabled>분석</button>
+    </div>
+  </div>
+  <div class="hint">기간 0 = 상장 후 전체 기간 · 추천 기본값: 일봉 3년, 주봉 7년, 월봉 전체 (최근 흐름에 자동 가중)</div>
+
+  <div class="status" id="status"></div>
+
+  <div id="result">
+    <div class="tabs" id="tabs">
+      <button data-tf="day" class="active">일봉</button>
+      <button data-tf="week">주봉</button>
+      <button data-tf="month">월봉</button>
+    </div>
+    <div class="reco-cards" id="recoCards"></div>
+    <div id="chart"></div>
+    <div class="chart-note">
+      <span id="windowNote"></span>
+      <label class="toggle"><input type="checkbox" id="markerToggle" checked> 이벤트 마커 (▲지지 성공 · ▼저항 성공 · ●돌파 실패, 색 = 이평선)</label>
+    </div>
+    <h3 style="margin:8px 0 8px">전체 후보 이평선 성적표</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>이평선</th><th>터치</th><th>지지성공</th><th>저항성공</th>
+          <th>돌파(실패)</th><th>미확정</th><th>성공률*</th><th>점수</th><th>최근 터치</th>
+        </tr>
+      </thead>
+      <tbody id="statsBody"></tbody>
+    </table>
+    <div class="hint">* 성공률은 최근 사건에 더 큰 가중치를 준 가중 성공률입니다. 점수 = 성공률 신뢰하한 × log(1+가중 성공 횟수) — "자주 그리고 믿을 만하게" 지지/저항이 된 순서.</div>
+  </div>
+
+  <footer>
+    본 도구는 과거 데이터 통계이며 투자 권유가 아닙니다. 미래의 지지/저항을 보장하지 않습니다.
+  </footer>
+</div>
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
