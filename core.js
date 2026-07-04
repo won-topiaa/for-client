@@ -120,25 +120,30 @@ function tapTextOrCoord(list, coord, label) {
  * @return true = 정상, false = CAPTCHA로 중단
  */
 function clearAllPopups(label) {
-  var rounds = Math.min(10, cfg().popup.maxRounds); // 초기 이벤트가 10개+ 라 넉넉히
   var gap = cfg().popup.roundGapMs;
-  var lastMatched = null, sameCount = 0;
-  for (var round = 0; round < rounds; round++) {
+  var maxClicks = Math.min(6, cfg().popup.maxRounds); // 총 닫기 클릭 상한(핑퐁 방지)
+  var recent = []; // 최근 클릭한 닫기 텍스트(핑퐁 A,B,A,B 감지용)
+  for (var c = 0; c < maxClicks; c++) {
     if (detectCaptcha()) return false;
-    // 1) 안전한 텍스트/desc 닫기 — 단, 같은 팝업이 계속 재출현하면 탈출
-    var f = findAny(cfg().texts.close, 500);
+    // ★ 이미 리워드 페이지가 보이면 더 이상 닫지 않음
+    //   (페이지 내용의 확인/닫기 오클릭 + 핑퐁 무한반복 방지)
+    if (findAny(cfg().texts.pageMarker, 200)) return true;
+    // 1) 텍스트/desc 닫기
+    var f = findAny(cfg().texts.close, 400);
     if (f) {
-      if (f.matched === lastMatched) sameCount++; else { sameCount = 0; lastMatched = f.matched; }
-      if (sameCount >= 3) { // 같은 닫기 버튼이 계속 다시 뜸 = 무한반복 → 탈출
-        log("팝업 재출현 감지('" + f.matched + "') → 뒤로가기로 탈출");
-        back(); sleep(1000); break;
-      }
       log((label || "팝업") + " 닫기 '" + f.matched + "'");
-      clickNode(f.node); sleep(gap); continue;
+      clickNode(f.node); sleep(gap);
+      recent.push(f.matched); if (recent.length > 4) recent.shift();
+      // ★ 핑퐁 감지: 최근 4클릭이 A,B,A,B(두 텍스트 번갈아) → 뒤로가기 탈출
+      if (recent.length === 4 && recent[0] === recent[2] &&
+          recent[1] === recent[3] && recent[0] !== recent[1]) {
+        log("팝업 핑퐁 감지('" + recent[2] + "'↔'" + recent[3] + "') → 뒤로가기 탈출");
+        back(); sleep(800); return true;
+      }
+      continue;
     }
-    // 2) 리워드 페이지가 아니고, 모달 이벤트 팝업만 떠 있는 경우에만 좌표 사용
-    var onPage = !!findAny(cfg().texts.pageMarker, 300);
-    var eventOnly = !onPage && !!findAny(cfg().texts.eventPopup, 300);
+    // 2) 닫기 텍스트 없음 + 리워드 페이지 아님 + 모달 이벤트 팝업만 → 좌표 ✕
+    var eventOnly = !findAny(cfg().texts.pageMarker, 150) && !!findAny(cfg().texts.eventPopup, 200);
     if (eventOnly) {
       var spots = cfg().coords.eventCloseSpots || [];
       var closed = false;
@@ -146,13 +151,12 @@ function clearAllPopups(label) {
         tapRatio(spots[s], "이벤트팝업 ✕후보" + (s + 1));
         sleep(gap);
         if (detectCaptcha()) return false;
-        if (!findAny(cfg().texts.eventPopup, 400)) { closed = true; break; }
+        if (!findAny(cfg().texts.eventPopup, 300)) { closed = true; break; }
       }
-      if (!closed) { back(); sleep(800); }
+      if (!closed) { back(); sleep(600); }
       continue;
     }
-    // 3) 더 닫을 것 없음 → 종료(헤매지 않기)
-    break;
+    break; // 더 닫을 것 없음
   }
   return true;
 }
