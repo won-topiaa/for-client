@@ -257,8 +257,29 @@ function isGameText(s) {
   for (var j = 0; j < b.length; j++) if (s === b[j]) return true; // 버튼은 완전일치만
   return false;
 }
-// 현재 화면에 게임 카드가 보이면 true(= 스크롤이 하단 게임 구역에 닿음 → 멈춤 신호)
+// 현재 화면에 게임 카드가 보이면 true(리워드 페이지 판정 시 '스크롤됨'으로 인정하는 용도)
 function atGameZone() { return !!findAny(cfg().texts.gameTitle, 150); }
+
+// 현재 화면(대상 앱)의 텍스트 지문 — 스크롤 후 이게 그대로면 '스크롤이 안 움직인 것'
+// (바닥 도달/스크롤 불가) → 같은 화면에서 무한반복하는 것을 막는 데 사용
+function screenSig() {
+  try {
+    var pkg = currentPackage();
+    var col = className("android.widget.TextView").packageName(pkg).find();
+    var parts = [];
+    try {
+      for (var i = 0; i < col.size() && parts.length < 5; i++) {
+        var n = col.get(i);
+        var t = null; try { t = n.text(); } catch (e) {}
+        if (t && t.length) {
+          var b = null; try { b = n.bounds(); } catch (e2) {}
+          parts.push(t + "@" + (b ? b.top : 0));
+        }
+      }
+    } finally { try { col.recycle(); } catch (e) {} }
+    return parts.length ? parts.join("|") : null;
+  } catch (e) { return null; }
+}
 
 // 제목 노드가 속한 '카드'의 버튼을 누름.
 // 같은 행(비슷한 Y, 제목보다 오른쪽)에서 btnList 텍스트 버튼을 찾아 누르고,
@@ -296,14 +317,20 @@ function tapCardButton(titleNode, btnList, label) {
 }
 
 // 스크롤하며 특정 제목 카드를 찾음(찾으면 {node,matched}, 없으면 null)
-// ★ 하단 게임 구역에 닿으면 즉시 중단(게임 화면 진입 사고 방지)
+// ※ 게임 카드가 보여도 '멈추지 않고' 그냥 지나쳐 계속 찾음(스크롤은 자유롭게).
+//   게임을 건드리지 않는 안전장치는 tapCardButton의 '버튼 탭 차단'이 담당.
+//   스크롤이 더 이상 움직이지 않으면(바닥) 조기 종료 → 헛도는 것 방지.
 function findCard(titleList, maxScroll) {
   var m = (maxScroll === undefined) ? 6 : maxScroll;
+  var lastSig = null, stuck = 0;
   for (var s = 0; s <= m && running; s++) {
     var c = findAny(titleList, 700);
     if (c) return c;
-    if (atGameZone()) { log("게임 구역 도달 → 카드 탐색 중단(안전)"); return null; }
     scrollRewardsDown();
+    var sig = screenSig();
+    if (sig && sig === lastSig) { if (++stuck >= 2) return null; } // 2번 연속 안 움직임 = 바닥
+    else stuck = 0;
+    lastSig = sig;
   }
   return null;
 }
@@ -407,16 +434,17 @@ function watchAdThenClose() {
   return true;
 }
 
-// 리워드 페이지 스크롤 — 빠르게(스와이프 짧고, 대기 최소)
-function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.35), Math.round(W*0.5), Math.round(H*0.75), 220); sleep(320); }
-function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.72), Math.round(W*0.5), Math.round(H*0.30), 220); sleep(320); }
-function scrollRewardsTop()  { for (var i=0;i<3;i++) scrollRewardsUp(); }
+// 리워드 페이지 스크롤 — '천천히 끄는' 드래그(빠른 스와이프는 탭/플링으로 오인식돼
+// 스크롤이 안 되는 기기가 있어 500ms로 또박또박 끌고, 렌더링 대기를 넉넉히 줌)
+function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.30), Math.round(W*0.5), Math.round(H*0.78), 500); sleep(500); }
+function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.78), Math.round(W*0.5), Math.round(H*0.30), 500); sleep(500); }
+function scrollRewardsTop()  { for (var i=0;i<4;i++) scrollRewardsUp(); }
 
 // 스크롤 내리며 '포인트 받기'만 수확. 매 패스 반드시 한 칸 스크롤(진행 보장),
 // 같은 위치 버튼 중복 클릭 차단, 4번 연속 못 찾으면 바닥으로 보고 종료.
 function harvestClaimSweep() {
   scrollRewardsTop();
-  var seen = {}, noFind = 0;
+  var seen = {}, noFind = 0, stuck = 0;
   for (var pass = 0; pass < 16 && running; pass++) {
     if (Date.now() > harvestDeadline) { log("수확 시간 초과"); break; }
     if (detectCaptcha()) return;
@@ -432,11 +460,14 @@ function harvestClaimSweep() {
     } else {
       if (++noFind >= 4) { log("더 받을 것 없음 — 스윕 종료"); break; }
     }
-    // ★ 하단 게임 구역이 보이면 여기서 멈춤(게임 화면 진입/헤맴 방지)
-    if (atGameZone()) { log("게임 구역 도달 → 스윕 종료(안전)"); break; }
+    // 스크롤이 더 이상 안 움직이면(바닥) 종료 — 같은 화면 무한반복 방지
+    var before = screenSig();
     scrollRewardsDown(); // 항상 한 칸 내려감
+    if (before && before === screenSig()) {
+      if (++stuck >= 2) { log("바닥 도달(스크롤 정지) — 스윕 종료"); break; }
+    } else { stuck = 0; }
   }
-  scrollRewardsTop(); // ★ 끝나면 맨 위로 복귀(하단 게임 구역에 화면이 머물지 않게)
+  scrollRewardsTop(); // 끝나면 맨 위로 복귀(하단에 화면이 머물지 않게)
 }
 
 // 리워드 페이지 수확 — 사용자 지정 우선순위대로:
