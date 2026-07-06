@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from pathlib import Path
@@ -184,6 +185,11 @@ class TossProvider:
                 "client_secret": self.cfg.client_secret,
             })
         resp = await self._client.post(self.cfg.token_path, data=data, auth=auth)
+        for attempt in range(4):  # 토큰 발급도 429 면 잠깐 기다렸다 재시도
+            if resp.status_code != 429:
+                break
+            await asyncio.sleep(self._retry_delay(resp, attempt))
+            resp = await self._client.post(self.cfg.token_path, data=data, auth=auth)
         if resp.status_code != 200:
             raise TossApiError(
                 f"토큰 발급 실패 ({resp.status_code}): {resp.text[:300]}"
@@ -197,18 +203,34 @@ class TossProvider:
         self._token_expiry = time.monotonic() + expires_in
         return token
 
+    @staticmethod
+    def _retry_delay(resp: httpx.Response, attempt: int) -> float:
+        """429 재시도 대기 시간. Retry-After 헤더 우선, 없으면 지수 백오프."""
+        ra = resp.headers.get("Retry-After")
+        if ra:
+            try:
+                return min(float(ra), 30.0)
+            except ValueError:
+                pass
+        return min(1.0 * (2 ** attempt), 16.0)
+
     async def _get(self, path: str, params: dict) -> Any:
         token = await self._ensure_token()
-        resp = await self._client.get(
-            path, params=params, headers={"Authorization": f"Bearer {token}"}
-        )
-        if resp.status_code == 401:
-            # 토큰 만료 등 -> 1회 재발급 후 재시도
-            self._token = None
-            token = await self._ensure_token()
+        resp: httpx.Response | None = None
+        # 최대 6회: 401(토큰 만료) 재발급, 429(요청 한도) 백오프 후 재시도
+        for attempt in range(6):
             resp = await self._client.get(
                 path, params=params, headers={"Authorization": f"Bearer {token}"}
             )
+            if resp.status_code == 401:
+                self._token = None
+                token = await self._ensure_token()
+                continue
+            if resp.status_code == 429:
+                await asyncio.sleep(self._retry_delay(resp, attempt))
+                continue
+            break
+        assert resp is not None
         if resp.status_code != 200:
             raise TossApiError(
                 f"API 호출 실패 {path} ({resp.status_code}): {resp.text[:300]}"
@@ -313,6 +335,8 @@ class TossProvider:
                 before = str(next_before)
             else:
                 break  # nextBefore == null -> 마지막 페이지
+            # 페이지 사이 짧은 간격 — 요청 한도(rate limit)에 몰리는 것 방지
+            await asyncio.sleep(0.06)
         if merged is None or merged.empty:
             raise TossApiError(f"{symbol} 캔들 데이터를 받지 못했습니다.")
         return merged.tail(max_bars).reset_index(drop=True)

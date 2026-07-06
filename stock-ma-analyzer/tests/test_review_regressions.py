@@ -172,6 +172,81 @@ def test_week_interval_not_supported_raises():
     assert calls["n"] == 0  # 네트워크 호출 없이 실패해야 함
 
 
+# --- 6. 요청 한도(429) 재시도 + 일봉 1회 조회 (rate limit 회피) ---
+
+def test_get_retries_on_429(monkeypatch):
+    """429 응답이면 백오프 후 재시도, 성공하면 결과 반환."""
+    import httpx
+    from app.config import TossConfig
+    from app.providers.toss import TossProvider
+
+    provider = TossProvider(TossConfig(client_id="x", client_secret="y"))
+    provider._token = "tok"
+    provider._token_expiry = 1e18  # 토큰 재발급 안 하도록
+
+    seq = [429, 429, 200]
+    calls = {"n": 0}
+
+    async def fake_request_get(path, params=None, headers=None):
+        code = seq[calls["n"]]
+        calls["n"] += 1
+        return httpx.Response(
+            code,
+            json={"result": {"candles": [], "nextBefore": None}},
+            headers={"Retry-After": "0"},
+            request=httpx.Request("GET", "http://t" + path),
+        )
+
+    provider._client.get = fake_request_get
+    # sleep 을 무력화해 테스트가 빠르게 끝나도록
+    import app.providers.toss as toss_mod
+    async def no_sleep(_): return None
+    monkeypatch.setattr(toss_mod.asyncio, "sleep", no_sleep)
+
+    out = _run(provider._get("/api/v1/candles", {}))
+    assert calls["n"] == 3  # 429, 429, 200
+    assert "result" in out
+
+
+def test_analyze_fetches_daily_only_once():
+    """일/주/월봉 분석이 일봉을 딱 한 번만 요청해야 한다 (rate limit 회피 핵심)."""
+    import pandas as pd
+    from app.config import Settings
+    from app.service import analyze_symbol
+
+    calls = {"day": 0, "other": 0}
+
+    class OneShotProvider:
+        name = "toss"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            if timeframe == "day":
+                calls["day"] += 1
+            else:
+                calls["other"] += 1
+            n = 1600
+            dates = pd.bdate_range("2016-01-01", periods=n)
+            base = 60000 + pd.Series(range(n)) * 3
+            return pd.DataFrame({
+                "date": dates, "open": base, "high": base + 200,
+                "low": base - 200, "close": base, "volume": 1000,
+            })
+
+        async def search(self, q):
+            return []
+
+    settings = Settings()
+    result = _run(analyze_symbol(
+        OneShotProvider(), settings, "005930",
+        {"day": 3, "week": 7, "month": None},
+    ))
+    assert calls["day"] == 1, f"일봉을 {calls['day']}번 요청함 (1번이어야 함)"
+    assert calls["other"] == 0, "주/월봉을 API 로 직접 요청하면 안 됨 (리샘플링해야 함)"
+    # 세 타임프레임 모두 정상 분석됐는지
+    for tf in ("day", "week", "month"):
+        assert "error" not in result["timeframes"][tf], result["timeframes"][tf]
+
+
 # --- 5. 공식 스펙 응답 형태 파싱 (toss.py) ---
 
 def test_normalize_official_candle_payload():
