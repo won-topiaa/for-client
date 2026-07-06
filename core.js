@@ -366,40 +366,60 @@ function dismissFeedGamePopup() {
 }
 
 function ensureOnRewardsPage() {
-  for (var i = 1; i <= 4; i++) {
+  var extBounces = 0; // 외부 앱(Temu 등) 반복 튕김 횟수 — 무한 탭-재실행 루프 차단용
+  var pointTried = false; // 안전한 '포인트' 탭을 이미 시도했는지(중앙 X는 그 뒤에만)
+  for (var i = 1; i <= 5; i++) {
     // 덮고 있는 팝업(광고 후 '광고 시청하고 추가 리워드[나중에 하기]' 등)부터 닫고 표식 확인
     clearAllPopups("진입 팝업");
     if (onRewardsPageNow()) return true;   // 스크롤 위치 무관하게 페이지 판정
-    // ★ 화면 종류에 맞게 복귀:
-    //   - 피드(하단 '포인트' 탭 보임) → 포인트 탭으로 리워드 진입
-    //   - 그 외(광고 랜딩페이지 등, 포인트 탭 없음) → back으로 '언와인드'(광고 스택 탈출)
-    //   예전엔 어디서든 포인트 탭(좌표)만 헛누르고 back 1회라, 광고 랜딩페이지가 여러 겹일 때
-    //   못 빠져나와 '진입 실패'가 났음. 피드일 때만 탭, 아니면 back으로 확실히 벗겨낸다.
-    if (findAny(cfg().texts.pointsTab, 250)) {
-      if (!tapText(cfg().texts.pointsTab, "포인트 탭", 500)) {
-        tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
-      }
-    } else if (onStuckActivity()) {
-      // 광고/랜딩(비접근성)에 갇힘 → 좌표 X/back으로 확실히 탈출(bailFromAdStack)
-      log("광고/랜딩('" + curActivity() + "') 갇힘 → 스택 탈출 " + i + "/4");
+    // ★ 화면 종류에 맞게 복귀 (순서 중요):
+    //   1) 광고/랜딩(비접근성 Lynx/Spark 액티비티)에 갇힘 → bailFromAdStack로 확실히 탈출
+    //   2) 우리 앱 안(피드 등) → 게임팝업 닫고 '포인트' 탭으로 리워드 진입
+    //   3) 앱 밖 → back으로 복귀
+    if (onStuckActivity()) {
+      log("광고/랜딩('" + curActivity() + "') 갇힘 → 스택 탈출 " + i + "/5");
       bailFromAdStack();
     } else if (isOurApp(currentPackage())) {
-      // ★ 실기기(2026-07-06): TikTok Lite 피드가 캔버스(Lynx/GL)로 렌더돼 하단 '포인트'
-      //   탭 '텍스트'가 접근성 트리에 전혀 안 잡힘(uiautomator 11노드·텍스트0). 그래서
-      //   위 findAny(pointsTab)가 늘 실패 → 예전엔 좌표 폴백까지 건너뛰고 back만 눌러
-      //   앱을 나가버렸음(마무리 수확 전멸). 우리 앱 안이고 스턱 액티비티도 아니면 =
-      //   피드로 보고 '포인트' 탭을 좌표로 눌러 리워드 페이지(SparkActivity, 텍스트 잡힘)로 진입.
-      // ★★ 추가(2026-07-06 2차 검증): 피드를 덮는 '게임 프로모 팝업'(돼지저금통/슈팅마블/
-      //   킥오프 등)이 뜨면 모달이라 하단 '포인트' 탭 탭이 씹혀 진입이 실패함(실측:
-      //   좌표 4번 눌러도 안 열림). 이 팝업은 캔버스라 텍스트/back으로 안 닫히고 하단 중앙
-      //   X(≈0.50,0.72)로만 닫힘(실측). → '포인트' 누르기 전에 그 X를 먼저 눌러 치운다.
-      log("피드 → 게임팝업 닫기 후 포인트 탭 좌표 진입 " + i + "/4");
-      dismissFeedGamePopup();
-      tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+      // ★ 진입 2단계 (2026-07-06 3차 검증 — 피드 Temu 광고 오탭 방지):
+      //   피드는 캔버스(Lynx/GL)라 '포인트' 텍스트가 간헐적으로만 잡히고, 피드에 Temu
+      //   전면/게임 광고가 자주 껴서 '화면 중앙'을 누르면 그 광고 CTA가 눌려 Temu가 열림.
+      //   그래서:
+      //    1단계) 먼저 '포인트' 탭만 누른다(텍스트 우선, 없으면 하단 나브 좌표 0.30,0.92).
+      //           하단 나브는 영상/광고 CTA와 안 겹쳐 안전(Temu 실수 실행 없음).
+      //    2단계) 그래도 리워드로 안 넘어가면:
+      //           · 광고 화면(스턱/adMarker)으로 재감지되면 → 중앙탭 금지, 스택 탈출(bail)
+      //           · 아니면 게임 프로모 팝업(돼지저금통 등)이 하단 탭을 막는 것 → 그때만
+      //             중앙 X(0.50,0.72)로 팝업을 닫고 '포인트' 재시도.
+      if (!pointTried) {
+        log("피드 → 포인트 탭(안전) 진입 " + i + "/5");
+        if (!tapText(cfg().texts.pointsTab, "포인트 탭", 400)) {
+          tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+        }
+        pointTried = true;
+      } else if (onStuckActivity() || inAdScreen()) {
+        log("광고 화면 재감지 → 중앙탭 금지, 스택 탈출 " + i + "/5");
+        bailFromAdStack();
+      } else {
+        log("포인트만으론 미진입 → 게임팝업 X 닫고 재시도 " + i + "/5");
+        dismissFeedGamePopup();
+        if (!tapText(cfg().texts.pointsTab, "포인트 탭", 400)) {
+          tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+        }
+      }
       sleep(cfg().timing.afterTapReward);
     } else {
-      log("앱 밖(" + currentPackage() + ") → 뒤로가기 복귀 " + i + "/4");
-      back(); sleep(700);
+      // 앱 밖(외부 앱 — 광고가 띄운 Temu/스토어 등). back으론 우리 앱 복귀 불가 → 재실행.
+      // ★ 단, 광고(Temu)가 '광고 CTA'를 통해 계속 재실행돼 우리 앱↔Temu를 왕복하는
+      //   무한 루프가 생길 수 있음(복귀 직후 진입 탭이 광고 CTA를 다시 누름). 2회 이상
+      //   외부로 튕기면 탭을 멈추고 포기한다(무한 루프·과탭 방지). 광고 크레딧은 이미
+      //   지급됐고, 남은 단계는 각자 안전 스킵되므로 손실 최소.
+      if (++extBounces >= 2) {
+        log("외부앱 반복 튕김('" + currentPackage() + "') → 진입 포기(무한 탭 방지)");
+        launchApp(true);
+        return false;
+      }
+      log("앱 밖(" + currentPackage() + ") → TikTok 재실행 복귀 " + i + "/5");
+      launchApp(true);
     }
     clearAllPopups("진입 팝업");
     if (onRewardsPageNow()) { log("리워드 페이지 확인됨"); return true; }
@@ -601,7 +621,12 @@ function watchDailyAdBatch() {
     closeStickyBanner(); scrollRewardsTop();
     var card = findCard(cfg().texts.dailyAdCard, 6);
     if (!card) { log("매일 광고 카드 없음 → 종료"); break; }
-    tapCardButton(card.node, cfg().texts.watchBtn, "매일광고 '시청'");
+    // noFallback=true: 카드 행에 '시청' 버튼이 없으면(한도 소진/'완료' 표시/UI 상이)
+    //   좌표 블라인드 폴백 금지(카드 우측 헛탭 방지). 아래 inAdScreen 체크가 안 열림을
+    //   잡아 안전히 종료한다. 리워드 페이지는 텍스트가 잡히므로 정상 시엔 '시청'을 텍스트로 누름.
+    if (!tapCardButton(card.node, cfg().texts.watchBtn, "매일광고 '시청'", true)) {
+      log("매일 광고 '시청' 버튼 없음(한도/UI) → 종료"); break;
+    }
     sleep(cfg().timing.afterTapReward);
     if (detectCaptcha()) return;
     if (!inAdScreen()) { log("광고 안 열림(한도 소진/쿨다운) → 매일광고 종료"); break; }
@@ -743,7 +768,16 @@ function bailFromAdStack() {
     if (detectCaptcha()) return false;
     if (findAny(cfg().texts.pageMarker, 250)) return true;   // 리워드 페이지
     if (findAny(cfg().texts.pointsTab, 200)) return true;    // 피드 도달('포인트' 탭 보임)
-    if (!onStuckActivity() && !inAdScreen()) return true;    // 광고/랜딩 아님 = 정상
+    // ★ 실측(2026-07-06): 광고(특히 Temu 광고)가 '외부 앱'(com.einnovation.temu/Play스토어
+    //   등)을 실제로 실행시키는 경우가 있음. 이땐 back으로는 TikTok에 못 돌아옴(외부 앱
+    //   안에서만 돎) → 우리 앱을 재실행해 복귀한다. (isOurApp 체크를 아래 '정상' 판정보다
+    //   먼저 둬서, 외부 앱을 '광고 아님=정상'으로 오판하고 빠져나온 척하지 않게 함)
+    if (!isOurApp(currentPackage())) {
+      log("광고가 외부앱('" + currentPackage() + "') 실행 → TikTok 재실행 복귀");
+      launchApp(true);
+      continue;
+    }
+    if (!onStuckActivity() && !inAdScreen()) return true;    // 우리 앱의 정상 화면 = 탈출 완료
     var act = curActivity();
     if (act.indexOf("RewardAd") >= 0 || act.indexOf("reward.ui") >= 0) {
       // 리워드광고 upsell 팝업 → 상단/하단 X 좌표로 닫기(Lynx라 텍스트 불가)
@@ -829,15 +863,26 @@ function doAttendanceOnly() {
   }
 }
 
-// 종료 직전 1회 수확 — 의뢰인 확정 순서(2026-07-06):
+// 종료 직전 1회 수확 (2026-07-06, 의뢰인 확정 항목 + 안정화 순서 조정):
 //  ① 20분 타이머 받기 — 누르면 뜨는 '광고 보기' 팝업(안 뜰 때도 있음)의 광고까지
 //     collectPopup이 시청·수령 처리
 //  ② 좋아요 미션 '포인트 받기' — 시청 중 좋아요를 눌러뒀으므로 활성화돼 있음
-//  ③ 매일 광고 1회(dailyAdBatch=1, 하루 1번만)
-//  ④ 출석체크(마지막)
+//  ③ 출석체크 — 매일 광고보다 먼저(광고가 Temu로 튕겨도 출석은 확보)
+//  ④ 매일 광고 1회(dailyAdBatch=1, 하루 1번만) — Temu 등 외부앱 위험이 있어 마지막
 function finalHarvest() {
-  log("⏰ 마무리 수확: 타이머 → 좋아요 → 매일광고 1회 → 출석");
-  if (!ensureOnRewardsPage()) return;
+  log("⏰ 마무리 수확: 타이머 → 좋아요 → 출석 → 매일광고 1회");
+  // 리워드 진입은 마무리 수확의 관문 — 진입만 성공하면 그 뒤 단계는 각자 실패해도 안전
+  //  스킵되지만, 진입 자체가 실패하면 수확이 통째로 0이 된다. 광고(특히 Temu 전면광고)가
+  //  화면을 잡고 있으면 진입이 실패할 수 있는데, 전면광고는 대개 수십 초 뒤 자동 종료되므로
+  //  실패 시 '기다렸다' 재시도한다(최대 3회, 광고 자동종료 대기). 그래도 안 되면 무한 탭
+  //  없이 깔끔히 포기(시청 크레딧은 이미 적립됨).
+  var entered = ensureOnRewardsPage();
+  for (var _r = 0; !entered && running && _r < 2; _r++) {
+    log("리워드 진입 실패 → 8초 대기 후 재시도(" + (_r + 1) + "/2, 전면광고 자동종료 대기)");
+    napChunked(8000, isRunningFlag);
+    entered = ensureOnRewardsPage();
+  }
+  if (!entered) { log("리워드 진입 최종 실패 → 마무리 수확 생략(시청 크레딧은 적립됨)"); return; }
   harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
   clearAllPopups("포인트 팝업");
   closeStickyBanner();
@@ -872,11 +917,18 @@ function finalHarvest() {
     }
   }
 
-  // ③ 매일 광고 — 하루 1회만(dailyAdBatch=1)
-  if (running) watchDailyAdBatch();
-
-  // ④ 출석체크(마지막)
+  // ③ 출석체크 — ★ 매일 광고보다 '먼저' 수행(2026-07-06 3차 검증).
+  //   실측: 매일 광고가 'Temu 광고'인 경우가 있어, 시청 후 광고 랜딩이 외부 앱(Temu)을
+  //   띄우면 리워드 페이지 복귀가 어려워짐(복귀 탭이 광고 CTA를 다시 눌러 왕복). 그래서
+  //   위험이 적은 출석을 광고 '앞'에 두어, 광고가 Temu로 튕겨도 출석·타이머·좋아요는
+  //   이미 확보되게 한다. (의뢰인 확정 순서는 광고→출석이었으나, 광고를 마지막에 두는
+  //   편이 총 적립에 유리해 순서만 조정. 지급 항목은 동일)
   if (running) doAttendanceOnly();
+
+  // ④ 매일 광고 — 하루 1회만(dailyAdBatch=1). Temu 등 외부 앱을 띄울 수 있어 '마지막'에.
+  //   광고 크레딧은 시청 중 지급되며, 이후 외부앱 튕김은 ensureOnRewardsPage의
+  //   '외부앱 반복 튕김 → 진입 포기'가 무한 루프 없이 정리한 뒤 앱을 종료한다.
+  if (running) watchDailyAdBatch();
 }
 
 // 최종 플로우(의뢰인 확정 2026-07-06):
