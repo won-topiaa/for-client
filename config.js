@@ -10,6 +10,12 @@
 var STORE = storages.create("ttl_farmer_v2");
 
 var DEFAULTS = {
+  // ── 설정 스키마 버전 ──
+  // 코드 업데이트로 기본값/문구가 바뀔 때마다 +1 한다.
+  // 저장된 설정의 버전이 다르면 사용자가 잡은 '좌표'만 보존하고 나머지는
+  // 새 기본값을 쓴다(옛 저장값이 새 기본값·문구 수정을 덮어쓰는 사고 방지).
+  cfgVersion: 3,
+
   // ── 앱 정보 ──
   appName: "TikTok Lite",
   packageCandidates: [
@@ -215,7 +221,15 @@ function deepMerge(base, over) {
 }
 function clone(v) { return (v && typeof v === "object") ? JSON.parse(JSON.stringify(v)) : v; }
 
-var active = deepMerge(DEFAULTS, STORE.get("config", null));
+// ── 저장 설정 로드(버전 확인) ──
+// 버전이 다르면 = 코드 업데이트로 기본값·문구가 바뀐 것.
+// [좌표설정]으로 잡은 coords만 살리고 나머지는 새 기본값으로 마이그레이션.
+var _stored = STORE.get("config", null);
+if (_stored && _stored.cfgVersion !== DEFAULTS.cfgVersion) {
+  _stored = { coords: _stored.coords, cfgVersion: DEFAULTS.cfgVersion };
+  STORE.put("config", _stored); // 옛 스키마는 즉시 폐기(다음 로드도 동일 보장)
+}
+var active = deepMerge(DEFAULTS, _stored);
 
 module.exports = {
   DEFAULTS: DEFAULTS,

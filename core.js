@@ -749,16 +749,32 @@ function escapeIfGame() {
   return false;
 }
 
-// 피드를 지정 시간만큼 스크롤하며 시청(중간에 리워드 수확 타이밍이면 빠져나옴)
-// + 주기적으로 "다음 리워드까지 N분" 로그로 살아있음을 표시
+// 피드를 지정 시간만큼 스크롤하며 시청 + 주기적으로 남은 시간 로그.
+// ★ 멈춤 감지(2026-07-06 의뢰인 사진): 앱 재실행 직후 '14일 연속 출석' 같은 모달이
+//   피드를 덮으면 스와이프가 안 먹혀 몇 시간을 헛돌 수 있음. 스와이프를 했는데도
+//   화면 텍스트 지문(screenSig)이 2번 연속 그대로면 = 막힌 것 → 팝업 정리(clearAllPopups,
+//   좌표 ✕ 포함) → 그래도 그대로면 뒤로가기. 정상 시청 중엔 영상마다 지문이 바뀌므로
+//   오탐 없음(스와이프 실패가 2회 연속일 때만 발동).
 function scrollFeedUntil(untilMs) {
-  var nextTick = 0;
+  var nextTick = 0, lastSig = null, stuckN = 0;
   while (running && Date.now() < untilMs) {
     if (!ensureForeground(false)) { sleep(3000); continue; }
     if (escapeIfGame()) continue;      // 스와이프 '전' 검사(광고 먼저 닫기)
     checkAndClosePopup();
     swipeToNextVideo();
     if (escapeIfGame()) continue;      // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 8초 안 기다리고 바로 탈출
+    // ── 멈춤 감지: 스와이프 후에도 화면이 그대로인가? ──
+    var sig = screenSig();
+    if (sig && sig === lastSig) {
+      if (++stuckN >= 2) {
+        log("⚠ 피드 멈춤 감지(스와이프 후에도 화면 불변) → 팝업 정리");
+        clearAllPopups("피드 멈춤");
+        if (screenSig() === sig) { back(); sleep(800); } // 팝업 정리로도 그대로면 뒤로가기
+        stuckN = 0; lastSig = null;
+        continue;
+      }
+    } else { stuckN = 0; }
+    lastSig = sig;
     if (Date.now() > nextTick) {
       var leftMin = Math.max(0, Math.ceil((untilMs - Date.now()) / 60000));
       log("영상 시청 중… 시청 종료까지 약 " + leftMin + "분");
