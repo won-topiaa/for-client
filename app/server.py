@@ -30,7 +30,7 @@ def build_provider(settings: Settings) -> Provider:
                 "provider=toss 인데 TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 이 없습니다."
             )
         logger.info("토스증권 Open API 공급자 사용 (base=%s)", settings.toss.base_url)
-        return TossProvider(settings.toss)
+        return TossProvider(settings.toss, data_dir=settings.data_dir)
     logger.info("샘플 데이터 공급자 사용 (API 키 없음 또는 provider=sample)")
     return SampleProvider(data_dir=settings.data_dir)
 

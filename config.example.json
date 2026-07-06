@@ -6,16 +6,15 @@
     "auth_style": "body",
     "client_id": "여기에 발급받은 client_id",
     "client_secret": "여기에 발급받은 client_secret",
-    "candles_path": "/api/v1/market/candles",
+    "candles_path": "/api/v1/candles",
     "candles_symbol_param": "symbol",
     "candles_interval_param": "interval",
-    "interval_values": { "day": "day", "week": "week", "month": "month" },
+    "interval_values": { "day": "1d" },
     "candles_count_param": "count",
-    "max_count_per_request": 300,
-    "candles_to_param": "to",
-    "to_date_format": "%Y-%m-%d",
-    "search_path": "/api/v1/market/symbols",
-    "search_query_param": "query"
+    "max_count_per_request": 200,
+    "candles_before_param": "before",
+    "stocks_path": "/api/v1/stocks",
+    "stocks_symbols_param": "symbols"
   },
   "lookback_years": { "day": 3, "week": 7, "month": null },
   "candidates": {

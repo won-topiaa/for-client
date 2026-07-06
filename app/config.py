@@ -38,7 +38,7 @@ BARS_PER_YEAR = {"day": 248, "week": 52, "month": 12}
 
 @dataclass
 class TossConfig:
-    """토스증권 Open API 연결 설정. 경로/파라미터명은 공식 openapi.json 기준으로 조정."""
+    """토스증권 Open API 연결 설정 (공식 openapi.json v1.1.5 기준 기본값)."""
 
     base_url: str = "https://openapi.tossinvest.com"
     token_path: str = "/oauth2/token"
@@ -47,28 +47,49 @@ class TossConfig:
     client_id: str = ""
     client_secret: str = ""
 
-    candles_path: str = "/api/v1/market/candles"
+    # GET /api/v1/candles?symbol=&interval=1d&count=&before=
+    candles_path: str = "/api/v1/candles"
     candles_symbol_param: str = "symbol"
     candles_interval_param: str = "interval"
-    # 토스 API 가 기대하는 interval 값으로 매핑
+    # 토스 API 가 기대하는 interval 값. 공식 API 는 '1m'/'1d' 만 지원하므로
+    # week/month 는 매핑에 없음 -> 일봉 리샘플링으로 자동 폴백된다.
     interval_values: dict[str, str] = field(
-        default_factory=lambda: {"day": "day", "week": "week", "month": "month"}
+        default_factory=lambda: {"day": "1d"}
     )
     candles_count_param: str = "count"
-    max_count_per_request: int = 300
-    # 과거 페이지네이션용 파라미터명 (예: "to", "before"). 빈 문자열이면 단일 요청.
-    candles_to_param: str = "to"
-    # to 파라미터에 넣을 날짜 포맷 (strftime)
-    to_date_format: str = "%Y-%m-%d"
+    max_count_per_request: int = 200  # 공식 최대 200
+    # 과거 페이지네이션 파라미터 (exclusive, ISO 8601). 응답의 nextBefore 를 그대로 전달.
+    candles_before_param: str = "before"
 
-    search_path: str = "/api/v1/market/symbols"
-    search_query_param: str = "query"
+    # GET /api/v1/stocks?symbols=005930,AAPL — 종목 기본 정보 (코드 조회 전용,
+    # 이름 검색 API 는 공식 스펙에 없음 -> 내장 이름사전 + 이 API 로 검증)
+    stocks_path: str = "/api/v1/stocks"
+    stocks_symbols_param: str = "symbols"
 
     timeout_sec: float = 15.0
 
     @property
     def configured(self) -> bool:
         return bool(self.client_id and self.client_secret)
+
+
+# 예전 기본값을 그대로 들고 있는 config.json 을 위한 자동 이관.
+# (사용자가 직접 바꾼 값은 건드리지 않고, '예전 기본값 그대로'인 경우에만 갱신)
+_TOSS_DEFAULT_MIGRATIONS: dict[str, list[tuple[object, object]]] = {
+    "candles_path": [("/api/v1/market/candles", "/api/v1/candles")],
+    "max_count_per_request": [(300, 200)],
+    "interval_values": [
+        ({"day": "day", "week": "week", "month": "month"}, {"day": "1d"}),
+    ],
+}
+
+
+def _migrate_old_defaults(toss: TossConfig) -> None:
+    for attr, pairs in _TOSS_DEFAULT_MIGRATIONS.items():
+        current = getattr(toss, attr)
+        for old, new in pairs:
+            if current == old:
+                setattr(toss, attr, new)
 
 
 @dataclass
@@ -93,7 +114,7 @@ def _apply_env(toss: TossConfig) -> None:
         "TOSS_CLIENT_ID": "client_id",
         "TOSS_CLIENT_SECRET": "client_secret",
         "TOSS_CANDLES_PATH": "candles_path",
-        "TOSS_SEARCH_PATH": "search_path",
+        "TOSS_STOCKS_PATH": "stocks_path",
     }
     for env, attr in env_map.items():
         val = os.environ.get(env)
@@ -134,6 +155,7 @@ def load_settings(config_path: Path | None = None) -> Settings:
                     settings.min_touches[tf] = int(n)
         if "provider" in raw:
             settings.provider = raw["provider"]
+    _migrate_old_defaults(settings.toss)
     _apply_env(settings.toss)
     env_provider = os.environ.get("MA_PROVIDER")
     if env_provider:
