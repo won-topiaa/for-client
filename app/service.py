@@ -25,24 +25,8 @@ def _warmup_bars(candidates: list[int], params: EngineParams) -> int:
     return max(candidates) + params.atr_period + 10
 
 
-async def fetch_candles(
-    provider: Provider, symbol: str, timeframe: str, max_bars: int
-) -> pd.DataFrame:
-    """타임프레임 캔들 취득. 주/월봉 API 가 안 되면 일봉 리샘플링으로 폴백."""
-    try:
-        return await provider.candles(symbol, timeframe, max_bars)
-    except Exception as exc:
-        if timeframe == "day":
-            raise
-        # 토스 공식 API 는 일봉까지만 제공하므로 주/월봉은 이 경로가 정상 동작
-        logger.info(
-            "%s %s봉 직접 조회 불가(%s) — 일봉 리샘플링으로 대체합니다.",
-            symbol, timeframe, exc,
-        )
-        ratio = {"week": 5, "month": 21}[timeframe]
-        daily = await provider.candles(symbol, "day", max_bars * ratio)
-        df = resample_daily(daily, timeframe)
-        return df.tail(max_bars).reset_index(drop=True)
+# 한 타임프레임 봉 1개당 대략적인 거래일(일봉) 수 — 필요한 일봉 수 환산용
+DAILY_PER_TF_BAR = {"day": 1, "week": 5, "month": 21}
 
 
 def _stat_to_dict(s: MAStat, dates: pd.Series) -> dict[str, Any]:
@@ -125,41 +109,80 @@ def serialize_report(
     }
 
 
-async def analyze_symbol(
-    provider: Provider,
-    settings: Settings,
-    symbol: str,
-    lookback_years: dict[str, float | None],
-) -> dict[str, Any]:
-    """일/주/월봉 각각 분석해 프런트엔드용 JSON 으로 반환."""
-    result: dict[str, Any] = {"symbol": symbol, "provider": provider.name, "timeframes": {}}
+def _timeframe_plan(
+    settings: Settings, lookback_years: dict[str, float | None]
+) -> dict[str, dict[str, Any]]:
+    """타임프레임별 후보/파라미터/워밍업/룩백(해당 봉 단위)을 미리 계산."""
+    plan: dict[str, dict[str, Any]] = {}
     for tf in TIMEFRAMES:
         candidates = settings.candidates[tf]
         params = EngineParams(min_touches=settings.min_touches[tf],
                               **TF_ENGINE_OVERRIDES.get(tf, {}))
         warmup = _warmup_bars(candidates, params)
         years = lookback_years.get(tf)
-        if years:
-            # 아주 작은 years 값도 최소 1봉 창으로 — 창/라벨 불일치 방지
-            lookback_bars = max(1, int(years * BARS_PER_YEAR[tf]))
-            need = lookback_bars + warmup
-        else:
-            lookback_bars = None
-            need = 100_000  # 전체 기간: 공급자가 주는 만큼 전부
+        lookback_bars = max(1, int(years * BARS_PER_YEAR[tf])) if years else None
+        plan[tf] = {
+            "candidates": candidates,
+            "params": params,
+            "warmup": warmup,
+            "years": years,
+            "lookback_bars": lookback_bars,
+        }
+    return plan
 
+
+def _daily_bars_needed(plan: dict[str, dict[str, Any]]) -> int:
+    """모든 타임프레임을 만들기 위해 필요한 일봉 수(최댓값).
+
+    전체 기간(lookback None)이 하나라도 있으면 공급자가 주는 만큼 전부.
+    """
+    need = 300
+    for tf, p in plan.items():
+        if p["lookback_bars"] is None:
+            return 100_000  # 전체 기간
+        tf_bars = p["lookback_bars"] + p["warmup"]
+        need = max(need, tf_bars * DAILY_PER_TF_BAR[tf] + 5)
+    return need
+
+
+async def analyze_symbol(
+    provider: Provider,
+    settings: Settings,
+    symbol: str,
+    lookback_years: dict[str, float | None],
+) -> dict[str, Any]:
+    """일/주/월봉 분석해 프런트엔드용 JSON 으로 반환.
+
+    핵심: 일봉을 '한 번만' 받아 주봉/월봉은 그 일봉을 리샘플링해 만든다.
+    (토스 공식 API 는 주/월봉을 제공하지 않고, 세 번 따로 받으면 요청 한도에
+    걸리기 때문 — rate limit 회피의 핵심.)
+    """
+    result: dict[str, Any] = {"symbol": symbol, "provider": provider.name, "timeframes": {}}
+    plan = _timeframe_plan(settings, lookback_years)
+    need_daily = _daily_bars_needed(plan)
+
+    try:
+        daily = await provider.candles(symbol, "day", need_daily)
+    except Exception as exc:
+        logger.exception("%s 일봉 데이터 취득 실패", symbol)
+        msg = str(exc)
+        for tf in TIMEFRAMES:
+            result["timeframes"][tf] = {"timeframe": tf, "error": msg}
+        return result
+
+    for tf in TIMEFRAMES:
+        p = plan[tf]
         try:
-            df = await fetch_candles(provider, symbol, tf, need)
+            df = daily if tf == "day" else resample_daily(daily, tf)
+            if df.empty:
+                raise ValueError("리샘플링 결과가 비어 있습니다.")
+            lookback_bars = p["lookback_bars"]
+            window_start = max(0, len(df) - lookback_bars) if lookback_bars is not None else 0
+            report = analyze_timeframe(df, p["candidates"], p["params"], tf, window_start)
+            payload = serialize_report(report, df)
+            payload["lookbackYears"] = p["years"]
+            result["timeframes"][tf] = payload
         except Exception as exc:
-            logger.exception("%s %s봉 데이터 취득 실패", symbol, tf)
+            logger.exception("%s %s봉 분석 실패", symbol, tf)
             result["timeframes"][tf] = {"timeframe": tf, "error": str(exc)}
-            continue
-
-        if lookback_bars is not None:
-            window_start = max(0, len(df) - lookback_bars)
-        else:
-            window_start = 0
-        report = analyze_timeframe(df, candidates, params, tf, window_start)
-        payload = serialize_report(report, df)
-        payload["lookbackYears"] = years
-        result["timeframes"][tf] = payload
     return result
