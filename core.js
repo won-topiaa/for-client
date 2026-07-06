@@ -863,9 +863,32 @@ function doAttendanceOnly() {
   }
 }
 
+// 타이머 '포인트 받기' 1회 수령 — 의뢰인 확정(2026-07-06 2차):
+//   20분마다 반복 수령은 봇 의심 우려 → "시작 때 1번 + 종료 때 1번"만 수행.
+//   누르면 뜨는 '광고 보기' 팝업(안 뜰 때도 있음)의 광고까지 collectPopup이 처리.
+//   noFallback: 타이머가 아직 충전 안 됐으면(카운트다운 표시) 카드에 '포인트 받기'가
+//   없음 → 좌표 블라인드 폴백 금지(클램프된 bounds/게임 카드 오탭 방지). 준비됐을
+//   때만 '포인트 받기' 텍스트로 정확히 눌러 수령한다.
+function claimTimerOnce(label) {
+  var tag = label || "타이머";
+  if (!ensureOnRewardsPage()) return;
+  harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
+  clearAllPopups("포인트 팝업");
+  closeStickyBanner();
+  scrollRewardsTop();
+  var tc = findCard(cfg().texts.timerTitle, 4);
+  if (!tc) { log(tag + ": 타이머 카드 없음 → 스킵"); return; }
+  if (tapCardButton(tc.node, cfg().texts.pageClaim, tag + " 받기", true)) {
+    sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
+    log(tag + " 수령 완료");
+  } else {
+    log(tag + ": '포인트 받기' 없음(쿨다운/이미 수령) → 스킵");
+  }
+  ensureOnRewardsPage(); closeStickyBanner();
+}
+
 // 종료 직전 1회 수확 (2026-07-06, 의뢰인 확정 항목 + 안정화 순서 조정):
-//  ① 20분 타이머 받기 — 누르면 뜨는 '광고 보기' 팝업(안 뜰 때도 있음)의 광고까지
-//     collectPopup이 시청·수령 처리
+//  ① 타이머 받기(종료 1회분 — 시작 1회는 runFarm 초반 claimTimerOnce)
 //  ② 좋아요 미션 '포인트 받기' — 시청 중 좋아요를 눌러뒀으므로 활성화돼 있음
 //  ③ 출석체크 — 매일 광고보다 먼저(광고가 Temu로 튕겨도 출석은 확보)
 //  ④ 매일 광고 1회(dailyAdBatch=1, 하루 1번만) — Temu 등 외부앱 위험이 있어 마지막
@@ -887,20 +910,8 @@ function finalHarvest() {
   clearAllPopups("포인트 팝업");
   closeStickyBanner();
 
-  // ① 타이머 — '광고 보기' 팝업이 뜨면 그 광고도 보고 수령(팝업 없으면 그냥 수령)
-  if (running) {
-    scrollRewardsTop();
-    var tc = findCard(cfg().texts.timerTitle, 4);
-    if (tc) {
-      // noFallback=true: 타이머가 아직 충전 안 됐으면(20분 주기 미도래) 카드에 '포인트 받기'가
-      //   없음 → 좌표 블라인드 폴백 금지(클램프된 bounds/게임 카드 오탭 방지). 준비됐을 때만
-      //   '포인트 받기' 텍스트로 정확히 눌러 수령한다.
-      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기", true)) {
-        sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
-      }
-      ensureOnRewardsPage(); closeStickyBanner();
-    }
-  }
+  // ① 타이머 — 종료 시점 1회(시작 1회는 runFarm 초반에 수행)
+  if (running) claimTimerOnce("마무리 타이머");
 
   // ② 좋아요 미션 '포인트 받기' — noFallback: 버튼이 '미션 완료/시작하기' 상태면
   //    좌표 폴백 없이 스킵(엉뚱한 탭 방지)
@@ -931,17 +942,21 @@ function finalHarvest() {
   if (running) watchDailyAdBatch();
 }
 
-// 최종 플로우(의뢰인 확정 2026-07-06):
-//   앱 실행 → 팝업 종료 → 첫 영상 좋아요 → 영상 시청만 꾸준히(중간 수확 없음, ~15초/개)
-//   → 시간 종료 후 포인트 페이지 1회 진입(finalHarvest) → 앱 종료.
-// ※ 중간(20분마다) 수확을 없앤 이유: 페이지 전환이 적을수록 멈춤/오류가 적음(의뢰인 요청).
-//   타이머를 자주 받고 싶으면 config.harvestEveryCycle=true로 예전 방식 사용 가능.
+// 최종 플로우(의뢰인 확정 2026-07-06, 2차 수정):
+//   앱 실행 → 팝업 종료 → ★타이머 1회 수령(시작분) → 첫 영상 좋아요
+//   → 영상 시청만 꾸준히(중간 수확 없음, ~15초/개)
+//   → 시간 종료 후 포인트 페이지 1회 진입(finalHarvest: 타이머 종료분 포함) → 앱 종료.
+// ※ 타이머는 "시작 1번 + 종료 1번"만(20분마다 반복 = 봇 의심 우려, 의뢰인 확정).
+//   중간(20분마다) 수확 전체를 되살리려면 config.harvestEveryCycle=true(기본 꺼짐).
 function runFarm() {
   var total = cfg().timing.totalRunMs || (160 * 60 * 1000);
-  log("[최종 플로우] 영상시청 " + Math.round(total / 60000) + "분 → 종료 직전 1회 수확·출석");
+  log("[최종 플로우] 시작 타이머 → 영상시청 " + Math.round(total / 60000) + "분 → 종료 수확·출석");
 
   safe("실행", function () { ensureForeground(true); });          // 1. TikTok Lite 실행
   safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료(출석팝업 ✕ 포함)
+
+  // 3. 시작 시 타이머 1회 수령(전날/이전에 충전된 분) → 피드로 복귀는 아래 gotoFeed가 수행
+  safe("시작타이머", function () { log("⏰ 시작 타이머 수령"); claimTimerOnce("시작 타이머"); });
 
   var end = Date.now() + total;
 
