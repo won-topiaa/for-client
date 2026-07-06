@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from app.analysis import EngineParams, MAStat, analyze_ma, select_recommended
-from app.providers.toss import TossApiError, _parse_date
+from app.providers.toss import TossApiError, _parse_date, normalize_candles
 from tests.test_analysis import make_df
 
 
@@ -98,10 +98,14 @@ def test_parse_date_garbage():
     assert _parse_date(3.14) is None
 
 
-# --- 4. 페이지네이션: 빈 마지막 페이지 / exclusive to 세만틱스 (toss.py) ---
+# --- 4. 페이지네이션: 공식 스펙(before/nextBefore, exclusive) 기준 (toss.py) ---
 
 def _make_provider(pages):
-    """_get 을 가짜 페이로드 시퀀스로 대체한 TossProvider."""
+    """_get 을 공식 스펙 형태의 가짜 응답으로 대체한 TossProvider.
+
+    pages: [{"timestamp": ISO, ...}] 전체 캔들 풀. before(exclusive)보다
+    이전 것만 최신순으로 count 개 반환, 커서는 nextBefore 로 제공.
+    """
     from app.config import TossConfig
     from app.providers.toss import TossProvider
 
@@ -110,50 +114,140 @@ def _make_provider(pages):
     calls = {"n": 0}
 
     async def fake_get(path, params):
-        to = params.get("to")
-        # to 파라미터: exclusive — to 날짜 미만의 캔들만 반환
-        rows = [r for r in pages
-                if to is None or r["date"] < to]
-        rows = sorted(rows, key=lambda r: r["date"], reverse=True)[: params["count"]]
         calls["n"] += 1
-        return {"result": {"candles": rows}}
+        before = params.get("before")
+        rows = [r for r in pages if before is None or r["timestamp"] < before]
+        rows = sorted(rows, key=lambda r: r["timestamp"], reverse=True)
+        page = rows[: params["count"]]
+        has_more = len(rows) > len(page)
+        next_before = page[-1]["timestamp"] if page and has_more else None
+        return {"result": {"candles": page, "nextBefore": next_before}}
 
     provider._get = fake_get
     return provider, calls
 
 
 def _rows(dates):
-    return [{"date": d, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 1}
-            for d in dates]
+    return [{
+        "timestamp": f"{d}T09:00:00+09:00",
+        "openPrice": "100", "highPrice": "110", "lowPrice": "95",
+        "closePrice": "105", "volume": "1000", "currency": "KRW",
+    } for d in dates]
 
 
-def test_pagination_no_missing_days_with_exclusive_to():
-    """exclusive `to` API 에서 페이지 경계 거래일이 누락되면 안 된다."""
+def _run(coro):
     import asyncio
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def test_pagination_no_missing_days():
+    """nextBefore 커서 페이지네이션에서 거래일이 누락되면 안 된다."""
     days = [f"2024-01-{d:02d}" for d in range(2, 12)]  # 10 거래일
     provider, _ = _make_provider(_rows(days))
-    df = asyncio.get_event_loop().run_until_complete(
-        provider.candles("TEST", "day", max_bars=10)
-    )
+    df = _run(provider.candles("TEST", "day", max_bars=10))
     got = df["date"].dt.strftime("%Y-%m-%d").tolist()
     assert got == days, f"누락 발생: {sorted(set(days) - set(got))}"
 
 
-def test_pagination_exhausted_history_returns_collected():
-    """히스토리 소진(빈 페이지)이 이미 모은 캔들을 버리면 안 된다."""
-    import asyncio
+def test_pagination_stops_at_last_page():
+    """nextBefore=null(마지막 페이지)에서 추가 요청 없이 종료해야 한다."""
     days = [f"2024-01-{d:02d}" for d in range(2, 7)]  # 5 거래일뿐
-    provider, _ = _make_provider(_rows(days))
-    df = asyncio.get_event_loop().run_until_complete(
-        provider.candles("TEST", "day", max_bars=50)  # 더 많이 요청
-    )
+    provider, calls = _make_provider(_rows(days))
+    df = _run(provider.candles("TEST", "day", max_bars=50))
     assert len(df) == 5
+    assert calls["n"] == 2  # 3개 + 2개(nextBefore=null) — 세 번째 요청 없음
 
 
 def test_pagination_first_page_empty_raises():
-    import asyncio
     provider, _ = _make_provider([])
     with pytest.raises(TossApiError):
-        asyncio.get_event_loop().run_until_complete(
-            provider.candles("TEST", "day", max_bars=10)
-        )
+        _run(provider.candles("TEST", "day", max_bars=10))
+
+
+def test_week_interval_not_supported_raises():
+    """공식 API 는 1d 까지만 -> week 요청은 즉시 TossApiError (리샘플링 폴백용)."""
+    provider, calls = _make_provider(_rows(["2024-01-02"]))
+    with pytest.raises(TossApiError):
+        _run(provider.candles("TEST", "week", max_bars=10))
+    assert calls["n"] == 0  # 네트워크 호출 없이 실패해야 함
+
+
+# --- 5. 공식 스펙 응답 형태 파싱 (toss.py) ---
+
+def test_normalize_official_candle_payload():
+    """실제 토스 응답 (result.candles, 문자열 숫자, +09:00 타임존)."""
+    payload = {
+        "result": {
+            "candles": [
+                {"timestamp": "2026-03-25T09:00:00+09:00", "openPrice": "71600",
+                 "highPrice": "72300", "lowPrice": "71500", "closePrice": "72000",
+                 "volume": "3521000", "currency": "KRW"},
+                {"timestamp": "2026-03-24T09:00:00+09:00", "openPrice": "71000",
+                 "highPrice": "71900", "lowPrice": "70800", "closePrice": "71600",
+                 "volume": "2900000", "currency": "KRW"},
+            ],
+            "nextBefore": "2026-03-24T09:00:00+09:00",
+        }
+    }
+    df = normalize_candles(payload)
+    assert len(df) == 2
+    assert df["date"].is_monotonic_increasing
+    assert df["date"].dt.tz is None  # 타임존 제거됨 (naive)
+    assert df["close"].iloc[-1] == 72000.0
+    assert df["volume"].iloc[-1] == 3521000.0
+
+
+def test_search_name_resolves_via_stocks_api():
+    """이름 검색: 내장 사전으로 코드 찾기 -> /api/v1/stocks 로 확정."""
+    from app.config import TossConfig
+    from app.providers.toss import TossProvider
+
+    provider = TossProvider(TossConfig(client_id="x", client_secret="y"))
+    seen_params = {}
+
+    async def fake_get(path, params):
+        seen_params.update(params)
+        assert path == "/api/v1/stocks"
+        symbols = params["symbols"].split(",")
+        return {"result": [
+            {"symbol": s, "name": "삼성전자" if s == "005930" else s,
+             "market": "KOSPI", "status": "ACTIVE"}
+            for s in symbols
+        ]}
+
+    provider._get = fake_get
+    results = _run(provider.search("삼성전자"))
+    assert results and results[0].symbol == "005930"
+    assert results[0].name == "삼성전자"
+
+    results = _run(provider.search("aapl"))
+    assert results[0].symbol == "AAPL"  # 티커는 대문자로 정규화
+
+
+def test_config_migration_from_old_defaults():
+    """예전 config.json (틀린 기본 경로)을 자동으로 새 스펙으로 이관."""
+    import json, tempfile
+    from pathlib import Path
+    from app.config import load_settings
+
+    old = {
+        "provider": "auto",
+        "toss": {
+            "client_id": "id", "client_secret": "sec",
+            "candles_path": "/api/v1/market/candles",
+            "interval_values": {"day": "day", "week": "week", "month": "month"},
+            "max_count_per_request": 300,
+            "search_path": "/api/v1/market/symbols",
+            "candles_to_param": "to",
+            "to_date_format": "%Y-%m-%d",
+        },
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "config.json"
+        p.write_text(json.dumps(old), encoding="utf-8")
+        s = load_settings(p)
+    assert s.toss.candles_path == "/api/v1/candles"
+    assert s.toss.interval_values == {"day": "1d"}
+    assert s.toss.max_count_per_request == 200
+    assert s.toss.candles_before_param == "before"
+    assert s.toss.client_id == "id"  # 사용자 값은 보존

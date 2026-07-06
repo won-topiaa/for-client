@@ -39,6 +39,9 @@ def validate_candles(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"캔들 데이터에 누락된 컬럼: {missing}")
     out = df[REQUIRED_COLUMNS].copy()
     out["date"] = pd.to_datetime(out["date"])
+    # 토스 API 는 "+09:00" 타임존이 붙은 시각을 준다 -> 로컬 시각 기준 naive 로 통일
+    if isinstance(out["date"].dtype, pd.DatetimeTZDtype):
+        out["date"] = out["date"].dt.tz_localize(None)
     for col in ("open", "high", "low", "close", "volume"):
         out[col] = pd.to_numeric(out[col], errors="coerce")
     out = (

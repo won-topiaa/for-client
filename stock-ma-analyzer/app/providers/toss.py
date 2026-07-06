@@ -1,17 +1,21 @@
-"""토스증권 Open API 클라이언트.
+"""토스증권 Open API 클라이언트 (공식 openapi.json v1.1.5 기준).
 
-이 환경에서는 공식 문서(developers.tossinvest.com)의 세부 스키마를 검증할 수
-없어서, 확인된 사실(베이스 URL, OAuth2 client-credentials 토큰, /candles 계열
-OHLCV 엔드포인트, Bearer 인증)만 하드코딩하고 나머지 경로/파라미터명은 전부
-config.json 으로 조정 가능하게 했다. 응답 파싱도 필드명 별칭 기반의
-관용(normalizer) 방식이라 스키마가 예상과 조금 달라도 동작한다.
+확인된 스펙:
+- POST /oauth2/token (form, client_credentials) -> access_token / expires_in
+- GET  /api/v1/candles?symbol=&interval=1d&count<=200&before=<ISO8601, exclusive>
+  응답: {result: {candles: [{timestamp, openPrice, ..., volume}], nextBefore}}
+  interval 은 '1m'/'1d' 만 지원 -> 주봉/월봉은 일봉 리샘플링으로 폴백.
+- GET  /api/v1/stocks?symbols=005930,AAPL (코드 전용, 이름 검색 API 없음)
+  -> 이름 검색은 내장 사전(kr_symbols)으로 코드 후보를 찾고 이 API 로 확정.
 
-실제 키를 넣고 처음 실행할 때 404/400 이 나면 README 의 "토스 API 경로 맞추기"
-절차대로 openapi.json 을 확인해 config.json 만 고치면 된다.
+응답 파싱은 필드명 별칭 기반의 관용(normalizer) 방식이라 스키마가 조금
+바뀌어도 동작하고, 경로/파라미터명은 config.json 으로 재정의할 수 있다.
 """
 from __future__ import annotations
 
+import re
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -19,6 +23,7 @@ import pandas as pd
 
 from ..config import TossConfig
 from .base import SymbolInfo, validate_candles
+from .kr_symbols import SymbolDictionary
 
 # 응답 JSON 에서 캔들 리스트를 찾을 때 시도하는 키 (중첩 지원)
 _LIST_KEYS = ("result", "data", "candles", "body", "output", "items", "list", "prices")
@@ -127,13 +132,38 @@ def normalize_candles(payload: Any) -> pd.DataFrame:
     return validate_candles(pd.DataFrame(records))
 
 
+# 종목코드/티커로 볼 수 있는 입력 (KRX 6자리 숫자, 미국 티커 등)
+_SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
+
+
+def _find_key(payload: Any, key: str, _missing=object()) -> Any:
+    """중첩 JSON 어디에 있든 key 의 값을 찾는다. 없으면 sentinel."""
+    if isinstance(payload, dict):
+        if key in payload:
+            return payload[key]
+        for val in payload.values():
+            found = _find_key(val, key, _missing)
+            if found is not _missing:
+                return found
+    elif isinstance(payload, list):
+        for item in payload:
+            found = _find_key(item, key, _missing)
+            if found is not _missing:
+                return found
+    return _missing
+
+
+_MISSING = object()
+
+
 class TossProvider:
     name = "toss"
 
-    def __init__(self, cfg: TossConfig):
+    def __init__(self, cfg: TossConfig, data_dir: Path | None = None):
         self.cfg = cfg
         self._token: str | None = None
         self._token_expiry: float = 0.0
+        self._symbols = SymbolDictionary(data_dir)
         self._client = httpx.AsyncClient(
             base_url=cfg.base_url, timeout=cfg.timeout_sec
         )
@@ -186,39 +216,76 @@ class TossProvider:
         return resp.json()
 
     async def search(self, query: str) -> list[SymbolInfo]:
-        payload = await self._get(
-            self.cfg.search_path, {self.cfg.search_query_param: query}
-        )
-        rows = _find_symbol_list(payload)
-        results = []
-        for row in rows or []:
+        """이름/코드 검색.
+
+        공식 API 에 이름 검색이 없으므로: (1) 입력이 코드/티커 형태면 그대로,
+        (2) 이름이면 내장 사전 + data/symbols.csv 에서 코드 후보를 찾은 뒤,
+        /api/v1/stocks 로 실제 종목명·시장을 확정해 반환한다.
+        """
+        q = query.strip()
+        if not q:
+            return []
+        candidates: list[str] = []
+        if _SYMBOL_RE.match(q):
+            candidates.append(q if q.isdigit() else q.upper())
+        local = self._symbols.match_names(q)
+        for sym, _name, _market in local:
+            if sym not in candidates:
+                candidates.append(sym)
+        if not candidates:
+            return []
+        candidates = candidates[:30]
+
+        try:
+            payload = await self._get(
+                self.cfg.stocks_path,
+                {self.cfg.stocks_symbols_param: ",".join(candidates)},
+            )
+            rows = _find_symbol_list(payload) or []
+        except TossApiError:
+            # 후보 중 무효 코드가 섞여 배치가 거부된 경우 등 -> 사전 정보로 응답
+            return [SymbolInfo(s, n, m) for s, n, m in local][:20]
+
+        by_symbol: dict[str, SymbolInfo] = {}
+        for row in rows:
             symbol = _pick(row, _SYMBOL_ALIASES)
-            name = _pick(row, _NAME_ALIASES)
             if not symbol:
                 continue
-            results.append(SymbolInfo(
+            status = row.get("status")
+            if status and str(status).upper() == "DELISTED":
+                continue
+            name = _pick(row, _NAME_ALIASES)
+            by_symbol[str(symbol)] = SymbolInfo(
                 symbol=str(symbol),
                 name=str(name or symbol),
                 market=str(_pick(row, _MARKET_ALIASES) or ""),
-            ))
+            )
+        # 후보 순서 유지 (직접 입력한 코드 -> 사전 일치 순)
+        results = [by_symbol[c] for c in candidates if c in by_symbol]
         return results[:20]
 
     async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
         cfg = self.cfg
-        interval = cfg.interval_values.get(timeframe, timeframe)
+        interval = cfg.interval_values.get(timeframe)
+        if interval is None:
+            # 공식 API 는 '1m'/'1d' 만 지원 -> 주/월봉은 service 층에서
+            # 일봉 리샘플링으로 폴백된다.
+            raise TossApiError(
+                f"토스 API 가 {timeframe} 봉을 직접 지원하지 않습니다 (일봉 리샘플링 사용)."
+            )
         merged: pd.DataFrame | None = None
-        to_value: str | None = None
-        prev_oldest: pd.Timestamp | None = None
-        # 한 번에 max_count_per_request 씩, to 파라미터로 과거로 페이지네이션
-        for _ in range(40):  # 안전 상한
+        before: str | None = None
+        # 한 번에 max_count_per_request 씩, before(exclusive)로 과거 페이지네이션.
+        # 다음 페이지 커서는 응답의 nextBefore 를 그대로 사용 (공식 스펙).
+        for _ in range(80):  # 안전 상한
             remaining = max_bars - (0 if merged is None else len(merged))
             params: dict[str, Any] = {
                 cfg.candles_symbol_param: symbol,
                 cfg.candles_interval_param: interval,
                 cfg.candles_count_param: min(remaining, cfg.max_count_per_request),
             }
-            if to_value and cfg.candles_to_param:
-                params[cfg.candles_to_param] = to_value
+            if before and cfg.candles_before_param:
+                params[cfg.candles_before_param] = before
             payload = await self._get(cfg.candles_path, params)
             try:
                 df = normalize_candles(payload)
@@ -232,16 +299,20 @@ class TossProvider:
             if merged is not None and len(new_merged) <= len(merged):
                 break  # 새 캔들이 없음 — 데이터 끝
             merged = new_merged
-            if len(merged) >= max_bars or not cfg.candles_to_param:
+            if len(merged) >= max_bars or not cfg.candles_before_param:
                 break
-            oldest = merged["date"].min()
-            if prev_oldest is not None and oldest >= prev_oldest:
-                break  # 과거로 진전 없음
-            prev_oldest = oldest
-            # to 는 가장 오래된 캔들 날짜 그대로 사용: exclusive 세만틱스면
-            # 그 전 거래일부터, inclusive 면 중복 1개가 오지만 위에서 dedup 됨.
-            # (oldest - 1일 방식은 exclusive API 에서 거래일 누락을 만든다)
-            to_value = oldest.strftime(cfg.to_date_format)
+            next_before = _find_key(payload, "nextBefore", _MISSING)
+            if next_before is _MISSING:
+                # 응답에 커서가 없으면 가장 오래된 봉 시각을 exclusive 커서로 사용
+                oldest = df["date"].min()
+                fallback = oldest.isoformat()
+                if fallback == before:
+                    break
+                before = fallback
+            elif next_before:
+                before = str(next_before)
+            else:
+                break  # nextBefore == null -> 마지막 페이지
         if merged is None or merged.empty:
             raise TossApiError(f"{symbol} 캔들 데이터를 받지 못했습니다.")
         return merged.tail(max_bars).reset_index(drop=True)

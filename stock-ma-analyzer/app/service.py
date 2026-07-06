@@ -31,12 +31,13 @@ async def fetch_candles(
     """타임프레임 캔들 취득. 주/월봉 API 가 안 되면 일봉 리샘플링으로 폴백."""
     try:
         return await provider.candles(symbol, timeframe, max_bars)
-    except Exception:
+    except Exception as exc:
         if timeframe == "day":
             raise
-        logger.warning(
-            "%s %s봉 직접 조회 실패 — 일봉 리샘플링으로 폴백합니다.",
-            symbol, timeframe, exc_info=True,
+        # 토스 공식 API 는 일봉까지만 제공하므로 주/월봉은 이 경로가 정상 동작
+        logger.info(
+            "%s %s봉 직접 조회 불가(%s) — 일봉 리샘플링으로 대체합니다.",
+            symbol, timeframe, exc,
         )
         ratio = {"week": 5, "month": 21}[timeframe]
         daily = await provider.candles(symbol, "day", max_bars * ratio)

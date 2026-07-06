@@ -38,33 +38,31 @@ UI·분석 로직을 그대로 체험할 수 있습니다.
    - 또는 `config.example.json` 을 `config.json` 으로 복사해 키 입력
 3. 키가 감지되면 자동으로 토스 공급자로 전환됩니다 (`provider: "toss"` 로 강제 가능).
 
-### 토스 API 경로 맞추기 (중요)
+### 공식 스펙 반영 상태
 
-이 프로젝트를 만든 환경에서는 `developers.tossinvest.com` 공식 문서에 접근할 수
-없어서, **확인된 사실**(베이스 URL `https://openapi.tossinvest.com`, OAuth2
-client-credentials 토큰 `POST /oauth2/token`, Bearer 인증, `/candles` 계열
-OHLCV 엔드포인트)만 기본값으로 넣고 **나머지 경로·파라미터명은 전부
-`config.json` 에서 조정 가능**하게 설계했습니다.
+토스증권 공식 OpenAPI 스펙(v1.1.5) 기준으로 기본값이 맞춰져 있습니다:
 
-처음 연결 시 404/400 이 나오면:
+- 토큰: `POST /oauth2/token` (form, client_credentials)
+- 캔들: `GET /api/v1/candles?symbol=&interval=1d&count=&before=`
+  (1회 최대 200개, `nextBefore` 커서로 과거 페이지네이션, 수정주가 기본 적용)
+- 종목 정보: `GET /api/v1/stocks?symbols=005930,AAPL`
 
-1. 공식 문서의 OpenAPI 스펙(`/openapi-docs/latest/openapi.json`)에서
-   캔들 조회·종목 검색 엔드포인트의 실제 경로와 파라미터명을 확인
-2. `config.json` 의 `toss` 섹션에서 아래 항목만 맞춰주면 됩니다:
+알아둘 것 두 가지:
 
-| 설정 키 | 의미 |
-|---|---|
-| `candles_path` | 캔들 조회 경로 |
-| `candles_symbol_param` | 종목코드 파라미터명 |
-| `candles_interval_param` / `interval_values` | 봉 종류 파라미터명과 값 매핑 (day/week/month) |
-| `candles_count_param` / `max_count_per_request` | 개수 파라미터명 / 1회 최대 개수 |
-| `candles_to_param` / `to_date_format` | 과거 페이지네이션 기준일 파라미터명 (없으면 `""`) |
-| `search_path` / `search_query_param` | 종목 검색 경로 / 검색어 파라미터명 |
-| `auth_style` | 토큰 발급 시 `body`(폼 전송) 또는 `basic`(HTTP Basic) |
+1. **공식 API 에는 "이름 검색"이 없습니다** (`/api/v1/stocks` 는 코드 전용).
+   그래서 이름 검색은 내장 주요 종목 사전(약 90개, `app/providers/kr_symbols.py`)
+   으로 코드를 찾은 뒤 API 로 실제 종목명을 확정합니다. 사전에 없는 종목은
+   **6자리 코드**(예: `042670`)나 **미국 티커**(예: `AAPL`)를 직접 입력하세요.
+   전 종목 이름 검색을 원하면 KRX 정보데이터시스템(data.krx.co.kr)에서 상장종목
+   목록을 받아 `data/symbols.csv` (컬럼: `symbol,name[,market]`)로 저장하면
+   자동으로 검색에 포함됩니다.
+2. **봉 단위는 분봉/일봉만 제공**됩니다. 주봉·월봉은 일봉을 자동으로
+   리샘플링(주: 월~금 집계, 월: 월별 집계)해서 분석합니다.
 
-응답 파싱은 필드명 별칭 기반(관용 파서)이라, 응답 JSON 구조가 예상과 조금
-달라도 (`camelCase`, 중첩 `result.candles`, epoch 타임스탬프 등) 대부분 자동으로
-해석됩니다. 주봉/월봉 API가 따로 없으면 일봉을 자동 리샘플링해서 씁니다.
+스펙이 향후 바뀌면 `config.json` 의 `toss` 섹션에서 경로·파라미터명을
+재정의할 수 있고, 응답 파싱은 필드명 별칭 기반(관용 파서)이라 구조가 조금
+달라져도 대부분 자동으로 해석됩니다. 예전 버전 `config.json` 의 기본값
+(`/api/v1/market/candles` 등)은 실행 시 자동으로 새 스펙으로 이관됩니다.
 
 ## 3. 백테스트 기간 — 무엇을 권장하나
 
