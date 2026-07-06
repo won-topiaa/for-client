@@ -618,29 +618,36 @@ function claimAdBonus() {
   ensureOnRewardsPage(); closeStickyBanner();
 }
 
-// '매일 광고' 카드를 찾아 그 카드의 '시청' 버튼만 눌러 광고를 batch개 시청
+// '매일 광고' 카드의 '시청' 버튼을 눌러 하루 한도만큼 광고를 시청한다.
+//  ★ 하루 한도(현재 40개)에 하드코딩하지 않는다: dailyAdBatch는 '안전 상한'(무한루프
+//    방지)일 뿐이고, 실제 종료는 "광고가 더 이상 안 열림"(=오늘 한도 소진)으로 판단한다.
+//    → 이미 몇 개 봐서 남은 게 30개뿐이면 30개만 보고 종료하고, TikTok이 한도 숫자를
+//      40에서 다른 값으로 바꿔도(상한 이내라면) 코드 수정 없이 그 개수만큼 자동 대응한다.
+//    한도가 상한(dailyAdBatch)보다 커지면 config 그 숫자만 올리면 됨(로그로 실제 개수 확인).
 function watchDailyAdBatch() {
-  var batch = cfg().dailyAdBatch || 0;
-  if (batch <= 0) return;
-  log("매일 광고 시청 시작(최대 " + batch + "개)");
-  for (var i = 0; i < batch && running; i++) {
-    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 매일광고 종료"); break; }
-    if (!ensureOnRewardsPage()) break;
+  var cap = cfg().dailyAdBatch || 0;   // 안전 상한(실제로는 '남은 한도'만큼만 봄)
+  if (cap <= 0) return;
+  log("매일 광고 시청 시작(상한 " + cap + "개 — 오늘 남은 한도만큼만 보고 종료)");
+  var watched = 0;                     // 이번 런에서 실제로 시청·적립한 개수
+  for (var i = 0; i < cap && running; i++) {
+    if (Date.now() > harvestDeadline) { log("수확 시간 초과 → 매일광고 종료(" + watched + "개 봄)"); break; }
+    if (!ensureOnRewardsPage()) { log("리워드 진입 실패 → 매일광고 종료(" + watched + "개 봄)"); break; }
     closeStickyBanner(); scrollRewardsTop();
     var card = findCard(cfg().texts.dailyAdCard, 6);
-    if (!card) { log("매일 광고 카드 없음 → 종료"); break; }
+    if (!card) { log("매일 광고 카드 없음 → 종료(" + watched + "개 봄)"); break; }
     // noFallback=true: 카드 행에 '시청' 버튼이 없으면(한도 소진/'완료' 표시/UI 상이)
     //   좌표 블라인드 폴백 금지(카드 우측 헛탭 방지). 아래 inAdScreen 체크가 안 열림을
     //   잡아 안전히 종료한다. 리워드 페이지는 텍스트가 잡히므로 정상 시엔 '시청'을 텍스트로 누름.
     if (!tapCardButton(card.node, cfg().texts.watchBtn, "매일광고 '시청'", true)) {
-      log("매일 광고 '시청' 버튼 없음(한도/UI) → 종료"); break;
+      log("'시청' 버튼 없음 = 오늘 한도 소진 → 매일광고 종료(" + watched + "개 봄)"); break;
     }
     sleep(cfg().timing.afterTapReward);
     if (detectCaptcha()) return;
-    if (!inAdScreen()) { log("광고 안 열림(한도 소진/쿨다운) → 매일광고 종료"); break; }
-    if (closeAd()) { stat.cycles++; log("매일 광고 " + (i + 1) + "개째 완료"); }
+    if (!inAdScreen()) { log("광고 안 열림 = 한도 소진/쿨다운 → 매일광고 종료(" + watched + "개 봄)"); break; }
+    if (closeAd()) { stat.cycles++; watched++; log("매일 광고 " + watched + "개째 완료"); }
     collectPopup();
   }
+  log("매일 광고 종료 — 이번 런에서 " + watched + "개 시청" + (watched >= cap ? " (상한 도달 — 한도가 더 크면 config dailyAdBatch↑)" : ""));
   if (ensureOnRewardsPage()) scrollRewardsTop();
 }
 
@@ -968,8 +975,9 @@ function runFarm() {
   // 3. 시작 시 타이머 1회 수령(전날/이전에 충전된 분) → 피드로 복귀는 아래 gotoFeed가 수행
   safe("시작타이머", function () { log("⏰ 시작 타이머 수령"); claimTimerOnce("시작 타이머"); });
 
-  // 3.5 시작 시 '매일 광고' 40개(dailyAdBatch) 연속 시청 — 하루 200P를 시작에 몰아서 확보(의뢰인
-  //   확정 2026-07-07). 영상시청 前에 수행하되 end 계산 前에 둬서 영상 시청 시간은 안 깎임.
+  // 3.5 시작 시 '매일 광고'를 오늘 남은 한도만큼 연속 시청 — 하루 200P(현재 한도 40개)를 시작에
+  //   몰아서 확보(의뢰인 확정 2026-07-07). 영상시청 前에 수행하되 end 계산 前에 둬서 영상시청
+  //   시간은 안 깎임. 개수는 dailyAdBatch(안전 상한) 이내에서 '한도 소진'까지 자동(하드코딩 아님).
   //   watchDailyAdBatch는 harvestDeadline 예산 안에서만 도므로 넉넉히 부여(startAdBudgetMs).
   //   외부앱(Temu) 튕김은 ensureOnRewardsPage의 진입별 가드가 무한루프 없이 정리 → 못 열리면
   //   각 회차가 안전 스킵/조기종료되고 영상시청으로 넘어감(런 전체는 계속 진행).
