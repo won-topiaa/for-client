@@ -1,6 +1,7 @@
 """분석 오케스트레이션: 데이터 취득 -> 엔진 실행 -> 직렬화."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -171,18 +172,25 @@ async def analyze_symbol(
         return result
 
     for tf in TIMEFRAMES:
-        p = plan[tf]
         try:
-            df = daily if tf == "day" else resample_daily(daily, tf)
-            if df.empty:
-                raise ValueError("리샘플링 결과가 비어 있습니다.")
-            lookback_bars = p["lookback_bars"]
-            window_start = max(0, len(df) - lookback_bars) if lookback_bars is not None else 0
-            report = analyze_timeframe(df, p["candidates"], p["params"], tf, window_start)
-            payload = serialize_report(report, df)
-            payload["lookbackYears"] = p["years"]
-            result["timeframes"][tf] = payload
+            # pandas/numpy 연산은 순수 동기 CPU 작업이라 이벤트 루프를 막는다.
+            # 스레드로 분리해 다른 사용자의 요청이 그동안에도 처리되게 한다.
+            result["timeframes"][tf] = await asyncio.to_thread(
+                _analyze_one_sync, daily, tf, plan[tf]
+            )
         except Exception as exc:
             logger.exception("%s %s봉 분석 실패", symbol, tf)
             result["timeframes"][tf] = {"timeframe": tf, "error": str(exc)}
     return result
+
+
+def _analyze_one_sync(daily: pd.DataFrame, tf: str, p: dict[str, Any]) -> dict[str, Any]:
+    df = daily if tf == "day" else resample_daily(daily, tf)
+    if df.empty:
+        raise ValueError("리샘플링 결과가 비어 있습니다.")
+    lookback_bars = p["lookback_bars"]
+    window_start = max(0, len(df) - lookback_bars) if lookback_bars is not None else 0
+    report = analyze_timeframe(df, p["candidates"], p["params"], tf, window_start)
+    payload = serialize_report(report, df)
+    payload["lookbackYears"] = p["years"]
+    return payload

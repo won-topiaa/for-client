@@ -128,9 +128,11 @@
 
   /* ---------- 분석 ---------- */
   el.analyze.addEventListener("click", runAnalysis);
+  let analyzeSeq = 0; // 늦게 도착한 이전 분석 응답이 최신 결과를 덮지 않도록
 
   async function runAnalysis() {
     if (!selected) return;
+    const seq = ++analyzeSeq;
     el.analyze.disabled = true;
     el.result.style.display = "none";
     el.status.innerHTML = '<span class="spinner"></span>일봉·주봉·월봉 백테스트 중…';
@@ -140,18 +142,21 @@
     const ym = parseFloat(el.yearsMonth.value); if (!isNaN(ym)) params.set("years_month", ym);
     try {
       const r = await fetch(`/api/analyze?${params}`);
+      if (seq !== analyzeSeq) return; // 더 최신 분석이 시작됨 -> 이 응답 폐기
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error(err.detail || `HTTP ${r.status}`);
       }
-      analysis = await r.json();
+      const body = await r.json();
+      if (seq !== analyzeSeq) return;
+      analysis = body;
       el.status.textContent = "";
       el.result.style.display = "block";
       renderTimeframe(currentTf);
     } catch (err) {
-      el.status.textContent = "분석 실패: " + err.message;
+      if (seq === analyzeSeq) el.status.textContent = "분석 실패: " + err.message;
     } finally {
-      el.analyze.disabled = false;
+      if (seq === analyzeSeq) el.analyze.disabled = false;
     }
   }
 

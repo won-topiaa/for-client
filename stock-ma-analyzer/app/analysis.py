@@ -186,8 +186,12 @@ def _decide_outcome(
             continue
         # dist > 0 = 원래 편(지지면 위, 저항이면 아래), dist < 0 = 반대편
         dist = sign * (close[j] - ma[j])
-        # 돌파: 반대편으로 확실히(ATR 기준) 마감
-        if dist < -p.break_atr_mult * atr_arr[j]:
+        # 판정 문턱은 최소한 터치 밴드 밖이어야 한다 — 저변동성 종목에서
+        # ATR 문턱이 밴드보다 작아지면 밴드 '안' 종가가 성급히 판정되므로.
+        break_thr = max(p.break_atr_mult * atr_arr[j], band[j])
+        bounce_thr = max(p.bounce_atr_mult * atr_arr[j], band[j])
+        # 돌파: 반대편으로 확실히 마감
+        if dist < -break_thr:
             return "break", j
         if dist < -band[j]:
             consec_against += 1
@@ -196,7 +200,7 @@ def _decide_outcome(
         elif dist >= 0:
             consec_against = 0
         # 반등: 원래 방향으로 확실히 복귀
-        if dist > p.bounce_atr_mult * atr_arr[j]:
+        if dist > bounce_thr:
             return "bounce", j
     return "undecided", None
 
@@ -232,9 +236,14 @@ def analyze_ma(
     touch_mask = (low <= ma + band) & (high >= ma - band)
     touch_mask &= ~np.isnan(ma) & ~np.isnan(band)
     touch_idx = np.flatnonzero(touch_mask)
-    touch_idx = touch_idx[touch_idx >= window_start]
 
-    episodes = _group_episodes(touch_idx, p.episode_gap)
+    # 에피소드는 전체 터치로 구성한 뒤 분석 창 안에서 끝나는 것만 집계한다.
+    # (창 경계로 터치 군집을 먼저 자르면 에피소드 시작점이 군집 중간이 되어
+    # 방향/판정이 뒤집힐 수 있다)
+    episodes = [
+        (s, e) for s, e in _group_episodes(touch_idx, p.episode_gap)
+        if e >= window_start
+    ]
     last_index = n - 1
 
     for start, end in episodes:

@@ -1,0 +1,23 @@
+# Render.com 배포 설정 (Blueprint)
+# 사용법: render.com -> New -> Blueprint -> 이 저장소/브랜치 선택
+# 환경변수 3개(TOSS_CLIENT_ID, TOSS_CLIENT_SECRET, SITE_PASSWORD)는
+# Render 대시보드에서 직접 입력한다 (sync: false = 저장소에 저장 안 함).
+services:
+  - type: web
+    name: ma-radar
+    runtime: python
+    plan: free
+    rootDir: stock-ma-analyzer
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: TOSS_CLIENT_ID
+        sync: false
+      - key: TOSS_CLIENT_SECRET
+        sync: false
+      - key: SITE_PASSWORD
+        sync: false

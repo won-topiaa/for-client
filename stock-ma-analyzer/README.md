@@ -127,7 +127,28 @@ stock-ma-analyzer/
 └── config.example.json
 ```
 
-## 6. 테스트
+## 6. 사이트로 배포 (Render — 무료, GitHub 푸시 시 자동 업데이트)
+
+로컬 실행 대신 웹사이트로 쓰려면 [Render](https://render.com) 무료 플랜으로
+배포할 수 있습니다. 저장소 루트에 `render.yaml` 이 준비되어 있습니다.
+
+1. render.com 가입 (GitHub 계정으로 로그인)
+2. **New → Blueprint** → 이 GitHub 저장소 연결 → 브랜치 선택
+3. 환경변수 3개 입력:
+   - `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET`: 토스 API 키
+   - `SITE_PASSWORD`: 사이트 접속 비밀번호 (설정하면 접속 시 비밀번호를
+     물어봅니다 — **본인 API 키로 도는 사이트이므로 반드시 설정 권장**)
+4. 배포가 끝나면 `https://ma-radar-xxxx.onrender.com` 형태의 주소가 생깁니다
+5. **중요 — 토스 허용 IP 등록**: Render 대시보드 → 해당 서비스 →
+   우측 상단 **Connect → Outbound** 에 나오는 고정 IP 3개를
+   토스증권 Open API 설정의 "허용 IP 관리"에 모두 추가
+6. 이후에는 이 저장소 브랜치에 푸시할 때마다 **자동으로 재배포**됩니다
+
+무료 플랜 특성: 15분 동안 접속이 없으면 잠들었다가 다음 접속 때 깨어나는 데
+30초~1분 걸립니다. 실제 API 호출은 10분 캐시로 보호되어 여러 번 눌러도
+토스 요청 한도를 아끼며, 동시에 같은 종목을 조회해도 호출은 1번만 나갑니다.
+
+## 7. 테스트
 
 ```bash
 python -m pytest tests/ -q
