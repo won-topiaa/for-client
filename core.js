@@ -281,7 +281,7 @@ function screenSig() {
 // 같은 행(비슷한 Y, 제목보다 오른쪽)에서 btnList 텍스트 버튼을 찾아 누르고,
 // 없으면 제목 우측 좌표를 누름(카드 버튼은 대개 우측에 있음).
 // → "시청/시작하기"가 여러 카드에 있어도 '이 카드의' 버튼만 정확히 누름
-function tapCardButton(titleNode, btnList, label) {
+function tapCardButton(titleNode, btnList, label, noFallback) {
   try {
     // ★ 게임 카드면 절대 손대지 않음(제목 문구로 판별)
     var ttext = "";
@@ -304,6 +304,10 @@ function tapCardButton(titleNode, btnList, label) {
         }
       } finally { try { col.recycle(); } catch (e) {} }
     }
+    // noFallback=true면 지정 버튼 텍스트가 없을 때 좌표 폴백을 하지 않음.
+    //  (좋아요 카드처럼 버튼이 '미션 완료/시작하기'로 바뀌는 카드에서
+    //   우측 좌표를 눌러 엉뚱한 걸 탭하는 사고 방지)
+    if (noFallback) { log(label + " 지정 버튼 없음 → 스킵(폴백 안 함)"); return false; }
     var x = Math.round(W * 0.80), y = tb.centerY();
     log(label + " 우측버튼(좌표) → (" + x + ", " + y + ")");
     click(x, y); sleep(jitter(cfg().timing.shortWait)); return true;
@@ -757,7 +761,7 @@ function scrollFeedUntil(untilMs) {
     if (escapeIfGame()) continue;      // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 8초 안 기다리고 바로 탈출
     if (Date.now() > nextTick) {
       var leftMin = Math.max(0, Math.ceil((untilMs - Date.now()) / 60000));
-      log("영상 시청 중… 다음 리워드 수확까지 약 " + leftMin + "분");
+      log("영상 시청 중… 시청 종료까지 약 " + leftMin + "분");
       nextTick = Date.now() + 30000;
     }
     napChunked(jitter(cfg().timing.scrollIntervalMs), isRunningFlag);
@@ -779,45 +783,96 @@ function doAttendanceOnly() {
   }
 }
 
-// 최종 플로우: 진입 즉시 포인트 수확(이미 충전된 타이머부터) → 영상시청 청크와
-//             수확을 번갈아 반복 → (시간 만료) 출석체크 → 앱 종료
+// 종료 직전 1회 수확 — 의뢰인 확정 순서(2026-07-06):
+//  ① 20분 타이머 받기 — 누르면 뜨는 '광고 보기' 팝업(안 뜰 때도 있음)의 광고까지
+//     collectPopup이 시청·수령 처리
+//  ② 좋아요 미션 '포인트 받기' — 시청 중 좋아요를 눌러뒀으므로 활성화돼 있음
+//  ③ 매일 광고 1회(dailyAdBatch=1, 하루 1번만)
+//  ④ 출석체크(마지막)
+function finalHarvest() {
+  log("⏰ 마무리 수확: 타이머 → 좋아요 → 매일광고 1회 → 출석");
+  if (!ensureOnRewardsPage()) return;
+  harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
+  clearAllPopups("포인트 팝업");
+  closeStickyBanner();
+
+  // ① 타이머 — '광고 보기' 팝업이 뜨면 그 광고도 보고 수령(팝업 없으면 그냥 수령)
+  if (running) {
+    scrollRewardsTop();
+    var tc = findCard(cfg().texts.timerTitle, 4);
+    if (tc) {
+      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기")) {
+        sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
+      }
+      ensureOnRewardsPage(); closeStickyBanner();
+    }
+  }
+
+  // ② 좋아요 미션 '포인트 받기' — noFallback: 버튼이 '미션 완료/시작하기' 상태면
+  //    좌표 폴백 없이 스킵(엉뚱한 탭 방지)
+  if (running) {
+    scrollRewardsTop();
+    var lc = findCard(cfg().texts.likeTitle, 6);
+    if (lc) {
+      if (tapCardButton(lc.node, cfg().texts.pageClaim, "좋아요 받기", true)) {
+        sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
+      } else {
+        log("좋아요 '포인트 받기' 없음(미활성/이미 수령) → 스킵");
+      }
+      ensureOnRewardsPage(); closeStickyBanner();
+    }
+  }
+
+  // ③ 매일 광고 — 하루 1회만(dailyAdBatch=1)
+  if (running) watchDailyAdBatch();
+
+  // ④ 출석체크(마지막)
+  if (running) doAttendanceOnly();
+}
+
+// 최종 플로우(의뢰인 확정 2026-07-06):
+//   앱 실행 → 팝업 종료 → 첫 영상 좋아요 → 영상 시청만 꾸준히(중간 수확 없음, ~15초/개)
+//   → 시간 종료 후 포인트 페이지 1회 진입(finalHarvest) → 앱 종료.
+// ※ 중간(20분마다) 수확을 없앤 이유: 페이지 전환이 적을수록 멈춤/오류가 적음(의뢰인 요청).
+//   타이머를 자주 받고 싶으면 config.harvestEveryCycle=true로 예전 방식 사용 가능.
 function runFarm() {
   var total = cfg().timing.totalRunMs || (160 * 60 * 1000);
-  log("[최종 플로우] 포인트 우선 수확 후 영상시청 반복 — 약 " + Math.round(total / 60000) + "분 후 출석·종료");
+  log("[최종 플로우] 영상시청 " + Math.round(total / 60000) + "분 → 종료 직전 1회 수확·출석");
 
   safe("실행", function () { ensureForeground(true); });          // 1. TikTok Lite 실행
-  safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료
-
-  // 3. 앱 진입 즉시 포인트 페이지로 가서 먼저 수확
-  //    (①타이머 최대40 ②광고 추가보상4 ③준비된 포인트받기 스윕 ④매일광고 ⑤라이브)
-  //    ※ 좋아요 미션(20)은 영상 1개 좋아요 후 활성화되므로 이 첫 수확엔 안 잡힐 수 있음
-  safe("첫수확", function () { log("⏰ 진입 즉시 포인트 수확"); harvestRewards(false); });
+  safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료(출석팝업 ✕ 포함)
 
   var end = Date.now() + total;
-  // 4. 영상 시청(팝업 닫으며) + 20분마다 리워드 수확 반복
-  while (running && Date.now() < end) {
+
+  if (cfg().harvestEveryCycle) {
+    // (옵션) 예전 방식: 20분 시청 ↔ 수확 반복 — 기본 꺼짐
+    while (running && Date.now() < end) {
+      safe("피드시청", function () {
+        gotoFeed(); sleep(1500);
+        if (!findAny(cfg().texts.pageMarker, 300)) {
+          tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");
+        }
+        scrollFeedUntil(Math.min(end, Date.now() + cfg().timing.betweenCycleMs));
+      });
+      if (!running || Date.now() >= end) break;
+      safe("수확", function () { log("⏰ 리워드 수확"); harvestRewards(false); });
+    }
+  } else {
+    // 기본: 3. 첫 영상 좋아요 → 4. 영상 시청만 쭉(중간에 포인트 페이지 안 감)
     safe("피드시청", function () {
-      gotoFeed();
-      sleep(1500);
+      gotoFeed(); sleep(1500);
       // ★ 피드로 확실히 나온 경우에만 좋아요(리워드 페이지 표식이 안 보일 때).
-      //   gotoFeed 실패로 리워드 페이지에 남아 있으면 (0.92,0.57) 좌표가 게임/카드
-      //   버튼을 오탭할 수 있어 방지. 피드가 아니면 이번 사이클 좋아요는 건너뜀.
       if (!findAny(cfg().texts.pageMarker, 300)) {
-        tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");        // 우측 하트/좋아요(미션 활성화)
+        tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");        // 좋아요 미션 활성화
       }
-      var until = Math.min(end, Date.now() + cfg().timing.betweenCycleMs);
-      scrollFeedUntil(until);                                    // 팝업 닫으며 시청
+      scrollFeedUntil(end);                                       // 팝업 닫으며 끝까지 시청
     });
-    if (!running || Date.now() >= end) break;
-    // 리워드 수확(출석 제외): 포인트진입/팝업/타이머/광고/좋아요/매일광고/라이브/뒤로
-    safe("수확", function () { log("⏰ 리워드 수확"); harvestRewards(false); });
   }
 
   // 시간이 만료되어 끝난 경우에만(사용자 정지가 아님) 마무리 단계 수행
   if (running) {
-    safe("마지막수확", function () { log("⏰ 마지막 리워드 수확"); harvestRewards(false); }); // 남은 리워드
-    safe("출석체크", doAttendanceOnly);  // 12. 출석체크(마지막)
-    safe("앱종료", stepCloseApp);         // 13. 앱 종료
+    safe("마무리수확", finalHarvest);    // 5~8. 타이머→좋아요→매일광고1회→출석
+    safe("앱종료", stepCloseApp);         // 9. 앱 종료
     log("✅ 최종 플로우 완료(약 " + Math.round(total / 60000) + "분)");
   } else {
     log("사용자 정지 — 마무리 단계 생략");
