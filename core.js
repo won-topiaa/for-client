@@ -352,6 +352,19 @@ function onRewardsPageNow() {
   }
   return false; // 리워드 콘텐츠가 전혀 안 보임 = 페이지 밖(피드/광고 등)
 }
+// 피드를 덮는 '게임 프로모 팝업'(돼지저금통/슈팅마블/킥오프/원판 등)을 닫는다.
+//  이 팝업들은 캔버스(Lynx)라 텍스트/back으로 안 닫히고 하단 중앙 X(≈0.50,0.72)로만
+//  닫힘(실측 2026-07-06). 모달이라 안 닫으면 하단 '포인트' 탭 탭까지 가로막아 리워드
+//  진입이 실패한다. eventCloseSpots[0]이 그 X 좌표(0.50,0.72)와 일치.
+//  ※ 팝업이 없을 때 이 좌표는 '영상 중앙 하단' → 단일 탭은 무해(일시정지 토글 정도,
+//    좋아요=더블탭이라 영향 없음). '시작하기/플레이' 액션 버튼은 그 위쪽(≈0.60)이라 안 눌림.
+function dismissFeedGamePopup() {
+  var spots = cfg().coords.eventCloseSpots || [];
+  var x = (spots[0] && typeof spots[0].x === "number") ? spots[0] : { x: 0.50, y: 0.72 };
+  tapRatio(x, "게임팝업 닫기 X");
+  sleep(400);
+}
+
 function ensureOnRewardsPage() {
   for (var i = 1; i <= 4; i++) {
     // 덮고 있는 팝업(광고 후 '광고 시청하고 추가 리워드[나중에 하기]' 등)부터 닫고 표식 확인
@@ -376,7 +389,12 @@ function ensureOnRewardsPage() {
       //   위 findAny(pointsTab)가 늘 실패 → 예전엔 좌표 폴백까지 건너뛰고 back만 눌러
       //   앱을 나가버렸음(마무리 수확 전멸). 우리 앱 안이고 스턱 액티비티도 아니면 =
       //   피드로 보고 '포인트' 탭을 좌표로 눌러 리워드 페이지(SparkActivity, 텍스트 잡힘)로 진입.
-      log("피드(캔버스, 포인트 텍스트 미노출) → 포인트 탭 좌표로 진입 " + i + "/4");
+      // ★★ 추가(2026-07-06 2차 검증): 피드를 덮는 '게임 프로모 팝업'(돼지저금통/슈팅마블/
+      //   킥오프 등)이 뜨면 모달이라 하단 '포인트' 탭 탭이 씹혀 진입이 실패함(실측:
+      //   좌표 4번 눌러도 안 열림). 이 팝업은 캔버스라 텍스트/back으로 안 닫히고 하단 중앙
+      //   X(≈0.50,0.72)로만 닫힘(실측). → '포인트' 누르기 전에 그 X를 먼저 눌러 치운다.
+      log("피드 → 게임팝업 닫기 후 포인트 탭 좌표 진입 " + i + "/4");
+      dismissFeedGamePopup();
       tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
       sleep(cfg().timing.afterTapReward);
     } else {
@@ -531,7 +549,10 @@ function harvestRewards(doAttendance) {
     scrollRewardsTop();
     var tc = findCard(cfg().texts.timerTitle, 4);
     if (tc) {
-      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기")) {
+      // noFallback=true: 타이머가 아직 충전 안 됐으면(20분 주기 미도래) 카드에 '포인트 받기'가
+      //   없음 → 좌표 블라인드 폴백 금지(클램프된 bounds/게임 카드 오탭 방지). 준비됐을 때만
+      //   '포인트 받기' 텍스트로 정확히 눌러 수령한다.
+      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기", true)) {
         sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
       }
       ensureOnRewardsPage(); closeStickyBanner();
@@ -826,7 +847,10 @@ function finalHarvest() {
     scrollRewardsTop();
     var tc = findCard(cfg().texts.timerTitle, 4);
     if (tc) {
-      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기")) {
+      // noFallback=true: 타이머가 아직 충전 안 됐으면(20분 주기 미도래) 카드에 '포인트 받기'가
+      //   없음 → 좌표 블라인드 폴백 금지(클램프된 bounds/게임 카드 오탭 방지). 준비됐을 때만
+      //   '포인트 받기' 텍스트로 정확히 눌러 수령한다.
+      if (tapCardButton(tc.node, cfg().texts.pageClaim, "타이머 받기", true)) {
         sleep(cfg().timing.afterTapReward); collectPopup(); stat.cycles++;
       }
       ensureOnRewardsPage(); closeStickyBanner();
