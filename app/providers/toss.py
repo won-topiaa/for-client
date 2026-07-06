@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from pathlib import Path
@@ -21,6 +22,8 @@ from typing import Any
 
 import httpx
 import pandas as pd
+
+logger = logging.getLogger("ma-analyzer")
 
 from ..config import TossConfig
 from .base import SymbolInfo, validate_candles
@@ -107,10 +110,21 @@ def _parse_date(val: Any) -> pd.Timestamp | None:
         return None
 
 
+class EmptyCandles(TossApiError):
+    """캔들 배열은 있으나 비어 있음 (히스토리 끝 또는 잘못된 종목코드)."""
+
+
 def normalize_candles(payload: Any) -> pd.DataFrame:
     """토스 응답 JSON -> 표준 OHLCV DataFrame."""
     rows = _find_candle_list(payload)
     if not rows:
+        # 구조는 맞는데 candles 가 빈 배열인 정상 응답과, 아예 구조가 다른
+        # 응답(설정 문제)을 구분해 사용자에게 올바른 메시지를 준다.
+        explicit = _find_key(payload, "candles", _MISSING)
+        if isinstance(explicit, list) and not explicit:
+            raise EmptyCandles(
+                "캔들 데이터가 비어 있습니다 — 종목코드가 맞는지 확인해 주세요."
+            )
         raise TossApiError(
             "응답에서 캔들 배열을 찾지 못했습니다. config.json 의 candles_path 와 "
             "파라미터명을 공식 openapi.json 과 대조해 주세요."
@@ -164,6 +178,8 @@ class TossProvider:
         self.cfg = cfg
         self._token: str | None = None
         self._token_expiry: float = 0.0
+        # 동시 요청이 토큰을 중복 발급하지 않도록 (콜드 스타트/만료 시점 보호)
+        self._token_lock = asyncio.Lock()
         self._symbols = SymbolDictionary(data_dir)
         self._client = httpx.AsyncClient(
             base_url=cfg.base_url, timeout=cfg.timeout_sec
@@ -172,9 +188,19 @@ class TossProvider:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def _token_valid(self) -> bool:
+        return bool(self._token) and time.monotonic() < self._token_expiry - 60
+
     async def _ensure_token(self) -> str:
-        if self._token and time.monotonic() < self._token_expiry - 60:
-            return self._token
+        if self._token_valid():
+            return self._token  # type: ignore[return-value]
+        async with self._token_lock:
+            # 락을 기다리는 동안 다른 코루틴이 발급했을 수 있음 (double-check)
+            if self._token_valid():
+                return self._token  # type: ignore[return-value]
+            return await self._issue_token()
+
+    async def _issue_token(self) -> str:
         data = {"grant_type": "client_credentials"}
         auth = None
         if self.cfg.auth_style == "basic":
@@ -214,20 +240,38 @@ class TossProvider:
                 pass
         return min(1.0 * (2 ** attempt), 16.0)
 
+    # _get 한 번이 재시도 대기에 쓸 수 있는 누적 시간 상한(초).
+    # 호스팅 게이트웨이 타임아웃(~100초)보다 훨씬 짧아야 사용자가 에러라도 받는다.
+    MAX_RETRY_WAIT_SEC = 40.0
+
     async def _get(self, path: str, params: dict) -> Any:
         token = await self._ensure_token()
         resp: httpx.Response | None = None
-        # 최대 6회: 401(토큰 만료) 재발급, 429(요청 한도) 백오프 후 재시도
+        refreshed = False
+        waited = 0.0
+        # 최대 6회: 401(토큰 만료) 재발급 1회, 429(요청 한도) 백오프 재시도
         for attempt in range(6):
             resp = await self._client.get(
                 path, params=params, headers={"Authorization": f"Bearer {token}"}
             )
             if resp.status_code == 401:
-                self._token = None
+                if refreshed:
+                    break  # 재발급으로 해결 안 되는 401(권한 등) — 즉시 실패
+                refreshed = True
+                # 다른 코루틴이 이미 새 토큰을 발급했다면 그것을 쓰고,
+                # 아니면(내가 쓰던 토큰이 아직 공유 상태면) 무효화 후 재발급
+                if self._token == token:
+                    self._token = None
                 token = await self._ensure_token()
                 continue
             if resp.status_code == 429:
-                await asyncio.sleep(self._retry_delay(resp, attempt))
+                if attempt == 5:
+                    break  # 마지막 시도 실패 후에는 기다릴 이유가 없음
+                delay = self._retry_delay(resp, attempt)
+                if waited + delay > self.MAX_RETRY_WAIT_SEC:
+                    break  # 누적 대기 상한 초과 — 빨리 실패해서 사용자에게 알림
+                waited += delay
+                await asyncio.sleep(delay)
                 continue
             break
         assert resp is not None
@@ -265,8 +309,17 @@ class TossProvider:
             )
             rows = _find_symbol_list(payload) or []
         except TossApiError:
-            # 후보 중 무효 코드가 섞여 배치가 거부된 경우 등 -> 사전 정보로 응답
-            return [SymbolInfo(s, n, m) for s, n, m in local][:20]
+            # 배치 거부/한도 초과 등 -> 사전 정보로 응답하되,
+            # 사용자가 직접 입력한 코드/티커는 잃지 않고 맨 앞에 유지한다
+            fallback: list[SymbolInfo] = []
+            if _SYMBOL_RE.match(q):
+                code = q if q.isdigit() else q.upper()
+                fallback.append(SymbolInfo(code, code, ""))
+            fallback += [
+                SymbolInfo(s, n, m) for s, n, m in local
+                if not fallback or s != fallback[0].symbol
+            ]
+            return fallback[:20]
 
         by_symbol: dict[str, SymbolInfo] = {}
         for row in rows:
@@ -297,9 +350,16 @@ class TossProvider:
             )
         merged: pd.DataFrame | None = None
         before: str | None = None
+        deadline = time.monotonic() + 75.0  # 전체 페이지네이션 시간 예산
         # 한 번에 max_count_per_request 씩, before(exclusive)로 과거 페이지네이션.
         # 다음 페이지 커서는 응답의 nextBefore 를 그대로 사용 (공식 스펙).
         for _ in range(80):  # 안전 상한
+            if merged is not None and time.monotonic() > deadline:
+                logger.warning(
+                    "%s 캔들 페이지네이션 시간 예산 초과 — %d봉까지만 사용합니다.",
+                    symbol, len(merged),
+                )
+                break
             remaining = max_bars - (0 if merged is None else len(merged))
             params: dict[str, Any] = {
                 cfg.candles_symbol_param: symbol,

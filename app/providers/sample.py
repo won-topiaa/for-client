@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -101,8 +102,20 @@ class SampleProvider:
             if q in s.symbol.lower() or q in s.name.lower()
         ][:20]
 
+    # 종목코드/티커로 쓸 수 있는 문자만 허용 — 경로 탈출(../) 등 차단
+    _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,20}$")
+    _MAX_CACHE = 50
+
     def _load_daily(self, symbol: str) -> pd.DataFrame:
+        if not self._SYMBOL_RE.match(symbol):
+            raise ValueError(f"잘못된 종목코드 형식: {symbol!r}")
         csv_path = (self.data_dir / f"{symbol}.csv") if self.data_dir else None
+        if csv_path is not None:
+            # 이중 방어: 최종 경로가 data 폴더 밖이면 거부
+            resolved = csv_path.resolve()
+            if resolved.parent != self.data_dir.resolve():
+                raise ValueError(f"허용되지 않는 경로: {symbol!r}")
+            csv_path = resolved
         mtime = csv_path.stat().st_mtime if csv_path and csv_path.exists() else None
         cached = self._cache.get(symbol)
         if cached is not None and cached[0] == mtime:
@@ -115,6 +128,8 @@ class SampleProvider:
             seed = int.from_bytes(symbol.encode("utf-8"), "little") % (2**32)
             base = 20000.0 + (seed % 17) * 15000.0
             df = generate_daily(seed, days=3600, s0=base)
+        if len(self._cache) >= self._MAX_CACHE:  # 메모리 보호
+            self._cache.pop(next(iter(self._cache)))
         self._cache[symbol] = (mtime, df)
         return df
 
