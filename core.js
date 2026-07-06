@@ -370,8 +370,17 @@ function ensureOnRewardsPage() {
       // 광고/랜딩(비접근성)에 갇힘 → 좌표 X/back으로 확실히 탈출(bailFromAdStack)
       log("광고/랜딩('" + curActivity() + "') 갇힘 → 스택 탈출 " + i + "/4");
       bailFromAdStack();
+    } else if (isOurApp(currentPackage())) {
+      // ★ 실기기(2026-07-06): TikTok Lite 피드가 캔버스(Lynx/GL)로 렌더돼 하단 '포인트'
+      //   탭 '텍스트'가 접근성 트리에 전혀 안 잡힘(uiautomator 11노드·텍스트0). 그래서
+      //   위 findAny(pointsTab)가 늘 실패 → 예전엔 좌표 폴백까지 건너뛰고 back만 눌러
+      //   앱을 나가버렸음(마무리 수확 전멸). 우리 앱 안이고 스턱 액티비티도 아니면 =
+      //   피드로 보고 '포인트' 탭을 좌표로 눌러 리워드 페이지(SparkActivity, 텍스트 잡힘)로 진입.
+      log("피드(캔버스, 포인트 텍스트 미노출) → 포인트 탭 좌표로 진입 " + i + "/4");
+      tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+      sleep(cfg().timing.afterTapReward);
     } else {
-      log("리워드/피드 아님 → 뒤로가기 언와인드 " + i + "/4");
+      log("앱 밖(" + currentPackage() + ") → 뒤로가기 복귀 " + i + "/4");
       back(); sleep(700);
     }
     clearAllPopups("진입 팝업");
