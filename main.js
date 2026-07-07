@@ -88,8 +88,13 @@ function shutdown() {
   try { win.close(); } catch (e) {}
   try { exit(); } catch (e) {}
 }
-// 스크립트가 어떤 이유로든 종료되면 제어판도 함께 닫음(유령 창 방지)
-try { events.on("exit", function () { try { win.close(); } catch (e) {} }); } catch (e) {}
+// 스크립트가 어떤 이유로든 종료되면 제어판도 닫고, 화면 켜짐 웨이크락도 해제(배터리 누수 방지)
+try {
+  events.on("exit", function () {
+    try { core.stop(); } catch (e) {}   // running이면 releaseAwake까지 수행(웨이크락 해제)
+    try { win.close(); } catch (e) {}
+  });
+} catch (e) {}
 
 // ── 버튼 동작 ────────────────────────────────────────────────
 win.closebtn.click(function () { shutdown(); }); // ✕ = 제어판 완전 종료

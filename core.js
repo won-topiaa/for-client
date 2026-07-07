@@ -79,6 +79,14 @@ function findAny(list, timeoutMs, exact) {
     sleep(Math.min(250, end - Date.now()));
   }
 }
+// findAny의 boolean 전용 래퍼 — 매칭 노드를 즉시 recycle해 누수를 막는다.
+//  (결과를 '화면에 있나?' 진위로만 쓰는 hot-path 게이트 체크에 사용)
+function exists(list, timeoutMs, exact) {
+  var f = findAny(list, timeoutMs, exact);
+  if (!f) return false;
+  try { f.node.recycle(); } catch (e) {}
+  return true;
+}
 function clickNode(node) {
   try {
     if (node.click()) return true;
@@ -92,6 +100,7 @@ function tapText(list, label, timeoutMs, exact) {
   if (!f) return false;
   log((label || "텍스트") + " '" + f.matched + "' 클릭");
   var ok = clickNode(f.node);
+  try { f.node.recycle(); } catch (e) {}
   sleep(jitter(cfg().timing.shortWait));
   return ok;
 }
@@ -104,6 +113,12 @@ function tapRatio(ratio, label) {
   click(x, y);
   sleep(jitter(cfg().timing.shortWait));
 }
+// 하단 '포인트' 탭으로 리워드 진입 시도 — 텍스트 우선, 없으면 나브 좌표 폴백(중복 제거용 헬퍼)
+function tapPointsTab() {
+  if (!tapText(cfg().texts.pointsTab, "포인트 탭", 400)) {
+    tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
+  }
+}
 /**
  * 팝업 정리 — "헤매지 않는" 안전 버전.
  * 규칙: 팝업이 확실할 때만 손댄다. 애매하면 아무것도 안 누른다(오탭 방지).
@@ -115,18 +130,18 @@ function tapRatio(ratio, label) {
  */
 function clearAllPopups(label) {
   var gap = cfg().popup.roundGapMs;
-  var maxClicks = Math.min(6, cfg().popup.maxRounds); // 총 닫기 클릭 상한(핑퐁 방지)
+  var maxClicks = cfg().popup.maxRounds || 6; // 총 닫기 클릭 상한(핑퐁 방지)
   var recent = []; // 최근 클릭한 닫기 텍스트(핑퐁 A,B,A,B 감지용)
   for (var c = 0; c < maxClicks; c++) {
     if (detectCaptcha()) return false;
     // ★ 이미 리워드 페이지가 보이면 더 이상 닫지 않음
     //   (페이지 내용의 확인/닫기 오클릭 + 핑퐁 무한반복 방지)
-    if (findAny(cfg().texts.pageMarker, 200)) return true;
+    if (exists(cfg().texts.pageMarker, 200)) return true;
     // 1) 텍스트/desc 닫기
     var f = findAny(cfg().texts.close, 400);
     if (f) {
       log((label || "팝업") + " 닫기 '" + f.matched + "'");
-      clickNode(f.node); sleep(gap);
+      clickNode(f.node); try { f.node.recycle(); } catch (e) {} sleep(gap);
       recent.push(f.matched); if (recent.length > 4) recent.shift();
       // ★ 핑퐁 감지: 최근 4클릭이 A,B,A,B(두 텍스트 번갈아) → 뒤로가기 탈출
       if (recent.length === 4 && recent[0] === recent[2] &&
@@ -137,7 +152,7 @@ function clearAllPopups(label) {
       continue;
     }
     // 2) 닫기 텍스트 없음 + 리워드 페이지 아님 + 모달 이벤트 팝업만 → 좌표 ✕
-    var eventOnly = !findAny(cfg().texts.pageMarker, 150) && !!findAny(cfg().texts.eventPopup, 200);
+    var eventOnly = !exists(cfg().texts.pageMarker, 150) && exists(cfg().texts.eventPopup, 200);
     if (eventOnly) {
       var spots = cfg().coords.eventCloseSpots || [];
       var closed = false;
@@ -145,7 +160,7 @@ function clearAllPopups(label) {
         tapRatio(spots[s], "이벤트팝업 ✕후보" + (s + 1));
         sleep(gap);
         if (detectCaptcha()) return false;
-        if (!findAny(cfg().texts.eventPopup, 300)) { closed = true; break; }
+        if (!exists(cfg().texts.eventPopup, 300)) { closed = true; break; }
       }
       if (!closed) { back(); sleep(600); }
       continue;
@@ -254,7 +269,7 @@ function isGameText(s) {
   return false;
 }
 // 현재 화면에 게임 카드가 보이면 true(리워드 페이지 판정 시 '스크롤됨'으로 인정하는 용도)
-function atGameZone() { return !!findAny(cfg().texts.gameTitle, 150); }
+function atGameZone() { return exists(cfg().texts.gameTitle, 150); }
 
 // 현재 화면(대상 앱)의 텍스트 지문 — 스크롤 후 이게 그대로면 '스크롤이 안 움직인 것'
 // (바닥 도달/스크롤 불가) → 같은 화면에서 무한반복하는 것을 막는 데 사용
@@ -271,6 +286,7 @@ function screenSig() {
           var b = null; try { b = n.bounds(); } catch (e2) {}
           parts.push(t + "@" + (b ? b.top : 0));
         }
+        try { n.recycle(); } catch (e3) {} // ★ 자식 노드 반드시 회수(3시간 런 누수/OOM 방지)
       }
     } finally { try { col.recycle(); } catch (e) {} }
     return parts.length ? parts.join("|") : null;
@@ -299,8 +315,9 @@ function tapCardButton(titleNode, btnList, label, noFallback) {
           var n = col.get(j), b = n.bounds();
           if (b && Math.abs(b.centerY() - tb.centerY()) < rowTol && b.centerX() > tb.centerX()) {
             log(label + " '" + btnList[i] + "' 클릭");
-            if (clickNode(n)) { sleep(jitter(cfg().timing.shortWait)); return true; }
+            if (clickNode(n)) { try { n.recycle(); } catch (e4) {} sleep(jitter(cfg().timing.shortWait)); return true; }
           }
+          try { n.recycle(); } catch (e5) {} // 안 누른 후보 노드 회수(누수 방지)
         }
       } finally { try { col.recycle(); } catch (e) {} }
     }
@@ -309,6 +326,11 @@ function tapCardButton(titleNode, btnList, label, noFallback) {
     //   우측 좌표를 눌러 엉뚱한 걸 탭하는 사고 방지)
     if (noFallback) { log(label + " 지정 버튼 없음 → 스킵(폴백 안 함)"); return false; }
     var x = Math.round(W * 0.80), y = tb.centerY();
+    // ★ 클램프 가드: RecyclerView 가상화로 카드 bounds가 화면 밖(y≈0 또는 하단 H)으로
+    //   클램프되면 이 좌표는 엉뚱한 곳(하단 게임카드 등)을 눌러 오탭 위험 → 폴백 스킵.
+    if (y > H * 0.90 || y < H * 0.06) {
+      log(label + " 카드 좌표 클램프(y=" + y + ") → 좌표폴백 스킵(오탭 방지)"); return false;
+    }
     log(label + " 우측버튼(좌표) → (" + x + ", " + y + ")");
     click(x, y); sleep(jitter(cfg().timing.shortWait)); return true;
   } catch (e) {
@@ -340,13 +362,13 @@ function findCard(titleList, maxScroll) {
 //   '페이지 밖'으로 오판하던 버그가 있었음(하단 게임 구역에서 헤맴). 그래서
 //   판정 전에 항상 맨 위로 올려 확인한다. 게임 카드가 보이면 = 페이지 안에 있는 것.
 function onRewardsPageNow() {
-  if (findAny(cfg().texts.pageMarker, 300)) return true;
+  if (exists(cfg().texts.pageMarker, 300)) return true;
   // 표식(상단 전용)이 안 보여도, 리워드 '콘텐츠'가 보이면 = 스크롤된 리워드 페이지.
   //   (게임 카드 / '포인트 받기' / '시청' 버튼 중 하나라도 보이면 페이지 안으로 인정)
   //   이때만 맨 위로 올려 표식을 재확인 → 피드/광고 화면에서 헛스크롤하지 않음.
   var t = cfg().texts;
-  if (atGameZone() || findAny(t.pageClaim, 150) || findAny(t.watchBtn, 150) ||
-      findAny(t.timerTitle, 150) || findAny(t.dailyAdCard, 150)) {
+  if (atGameZone() || exists(t.pageClaim, 150) || exists(t.watchBtn, 150) ||
+      exists(t.timerTitle, 150) || exists(t.dailyAdCard, 150)) {
     if (scrollRewardsTop()) return true;
     return true; // 리워드 콘텐츠가 확실히 보였으니 페이지 안으로 간주(표식만 못 올라온 경우)
   }
@@ -362,14 +384,25 @@ function onRewardsPageNow() {
 //    좋아요=더블탭이라 영향 없음). 출석 '출석하기' 버튼(≈0.69)·게임 '시작하기'(≈0.60)는
 //    후보(0.72/0.79)보다 위라 안 눌림(오탭·의도치 않은 출석수령 방지).
 function dismissFeedGamePopup() {
-  // ★ 피드 하단 '중앙 세로 라인'의 ✕ 후보만 누른다(우상단 등 다른 eventCloseSpots는
-  //   피드에서 검색/딴 화면을 열 수 있어 hot-path에선 제외). config에 feedModalCloseYs가
-  //   있으면 그 y들을, 없으면 게임팝업(0.72)·출석모달(0.79) 기본값을 x=0.50에서 시도.
+  // ★ 피드 하단 '중앙 세로 라인'의 ✕ 후보만 누른다(우상단 등은 검색/딴화면 위험이라 제외).
+  //   config feedModalCloseYs는 '안전한 순'(아래 0.79 → 0.72 → 위험대역 0.65). 안전장치:
+  //    · 캡차/보안 화면이면 블라인드 탭 금지(정지 유도)
+  //    · 위험대역(y<0.70, 예: 킥오프 0.65)은 다른 팝업 CTA와 겹칠 수 있어 → '포인트' 나브가
+  //      아직 안 보일 때(=여전히 막힘)만, 안전후보 뒤에 마지막으로 시도
+  //    · 위험대역 탭이 혹시 게임/이벤트로 진입시켰으면 즉시 back으로 자가복구
+  if (detectCaptcha()) return;
   var ys = cfg().coords.feedModalCloseYs;
-  if (!(ys && ys.length)) ys = [0.72, 0.79];
+  if (!(ys && ys.length)) ys = [0.79, 0.72, 0.65];
   for (var i = 0; i < ys.length; i++) {
+    var risky = ys[i] < 0.70;
+    if (risky && exists(cfg().texts.pointsTab, 150)) return; // 이미 나브 보임 → 위험탭 생략
     tapRatio({ x: 0.50, y: ys[i] }, "피드팝업 닫기 ✕후보" + (i + 1) + "(y" + ys[i] + ")");
     sleep(350);
+    if (detectCaptcha()) return;
+    if (risky && (exists(cfg().texts.gameScreen, 150) || onStuckActivity())) {
+      log("팝업 닫기 위험후보가 게임/이벤트 진입 유발 → back 탈출");
+      back(); sleep(700);
+    }
   }
 }
 
@@ -400,9 +433,7 @@ function ensureOnRewardsPage() {
       //             중앙 X(0.50,0.72)로 팝업을 닫고 '포인트' 재시도.
       if (!pointTried) {
         log("피드 → 포인트 탭(안전) 진입 " + i + "/5");
-        if (!tapText(cfg().texts.pointsTab, "포인트 탭", 400)) {
-          tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
-        }
+        tapPointsTab();
         pointTried = true;
       } else if (onStuckActivity() || inAdScreen()) {
         log("광고 화면 재감지 → 중앙탭 금지, 스택 탈출 " + i + "/5");
@@ -410,9 +441,7 @@ function ensureOnRewardsPage() {
       } else {
         log("포인트만으론 미진입 → 게임팝업 X 닫고 재시도 " + i + "/5");
         dismissFeedGamePopup();
-        if (!tapText(cfg().texts.pointsTab, "포인트 탭", 400)) {
-          tapRatio(cfg().coords.pointButton, "포인트 탭(좌표)");
-        }
+        tapPointsTab();
       }
       sleep(cfg().timing.afterTapReward);
     } else {
@@ -437,11 +466,13 @@ function ensureOnRewardsPage() {
 }
 
 // 버튼 위치 기반 키(같은 자리 버튼 중복 클릭 방지용)
+var _nodeKeySeq = 0;
 function nodeKey(f) {
   try {
     var b = f.node.bounds();
-    return f.matched + "@" + Math.round(b.centerX() / 20) + "," + Math.round(b.centerY() / 20);
-  } catch (e) { return f.matched; }
+    if (b) return f.matched + "@" + Math.round(b.centerX() / 20) + "," + Math.round(b.centerY() / 20);
+  } catch (e) {}
+  return f.matched + "#" + (++_nodeKeySeq); // bounds 없으면 유니크 키 → 중복병합(수령 누락) 방지
 }
 
 // 리워드 팝업 처리: (하단 '광고보기' 있으면 그 광고도 시청) → 확인/받기로 닫기.
@@ -456,7 +487,7 @@ function collectPopup() {
       if (fa) {
         adTried = true;
         log("팝업 광고보기 '" + fa.matched + "'");
-        clickNode(fa.node); sleep(cfg().timing.afterTapReward);
+        clickNode(fa.node); try { fa.node.recycle(); } catch (e) {} sleep(cfg().timing.afterTapReward);
         if (closeAd()) { stat.cycles++; log("팝업 보너스 광고 완료"); }
         sleep(cfg().timing.afterPopupClose); continue;
       }
@@ -468,13 +499,13 @@ function collectPopup() {
     if (seen[k]) break; // 같은 자리 버튼 재출현 = 안 닫힘 → 탈출
     seen[k] = 1;
     log("팝업 처리 '" + f.matched + "'");
-    clickNode(f.node); sleep(cfg().timing.afterPopupClose);
+    clickNode(f.node); try { f.node.recycle(); } catch (e) {} sleep(cfg().timing.afterPopupClose);
   }
 }
 
 // 광고 화면인지 확인(상단 "15초 시청하고 30포인트 받기")
 function inAdScreen() {
-  return !!findAny(cfg().texts.adMarker, 500);
+  return exists(cfg().texts.adMarker, 500);
 }
 
 // 광고를 시청하고 X로 닫기만 함(팝업 수령은 하지 않음 → collectPopup과 상호재귀 방지)
@@ -507,20 +538,29 @@ function closeAd() {
 //   제어판이 기본 좌상단(≈y 200~640px)을 덮는데, 예전엔 스와이프가 y=0.20H(≈528px)까지
 //   올라가 제어판 위를 지나면서 '터치 가능 오버레이'가 제스처를 가로채 스크롤이 먹히지
 //   않던 문제가 있었음. 양 끝점을 0.31H↔0.85H로 잡아 제어판을 피한다.
-function scrollRewardsUp()   { swipe(Math.round(W*0.5), Math.round(H*0.31), Math.round(W*0.5), Math.round(H*0.85), 350); sleep(350); }
-function scrollRewardsDown() { swipe(Math.round(W*0.5), Math.round(H*0.85), Math.round(W*0.5), Math.round(H*0.31), 350); sleep(350); }
+// humanize 시 x오프셋/궤적속도/대기를 매번 다르게(고정 좌표 반복 = 봇 지문 완화).
+//  y끝점은 상단 제어판(≈y<0.25H)을 피하려 그대로 유지(0.31↔0.85).
+function _rSwipe(y1r, y2r) {
+  var hz = cfg().humanize;
+  var ox1 = hz ? rnd(-W * 0.05, W * 0.05) : 0, ox2 = hz ? rnd(-W * 0.04, W * 0.04) : 0;
+  var dur = Math.round(hz ? rnd(300, 430) : 350);
+  swipe(Math.round(W * 0.5 + ox1), Math.round(H * y1r), Math.round(W * 0.5 + ox2), Math.round(H * y2r), dur);
+  sleep(Math.round(hz ? rnd(280, 430) : 350));
+}
+function scrollRewardsUp()   { _rSwipe(0.31, 0.85); }
+function scrollRewardsDown() { _rSwipe(0.85, 0.31); }
 // ★ 핵심 수정: '맨 위'는 고정 횟수가 아니라 상단 표식이 보일 때까지(또는 더 이상
 //   안 올라갈 때까지) 반복해서 올린다. 긴 페이지에서 위로 못 돌아오던 버그의 해결.
 function scrollRewardsTop() {
   var last = null;
   for (var i = 0; i < 14 && running; i++) {
-    if (findAny(cfg().texts.pageMarker, 150)) return true; // 최상단 도달
+    if (exists(cfg().texts.pageMarker, 150)) return true; // 최상단 도달
     scrollRewardsUp();
     var sig = screenSig();
     if (sig && sig === last) break; // 더 이상 안 올라감(최상단 or 스크롤 막힘)
     last = sig;
   }
-  return !!findAny(cfg().texts.pageMarker, 150);
+  return exists(cfg().texts.pageMarker, 150);
 }
 
 // 스크롤 내리며 '포인트 받기'만 수확. 매 패스 반드시 한 칸 스크롤(진행 보장),
@@ -534,13 +574,15 @@ function harvestClaimSweep() {
     checkAndClosePopup();   // 덮은 팝업만 텍스트로 빠르게(재진입 안 함 → 팝업 반복 방지)
     closeStickyBanner();
     var f = findAny(cfg().texts.pageClaim, 400, true); // "포인트 받기"만
-    if (f && !seen[nodeKey(f)]) {
-      seen[nodeKey(f)] = 1;
+    var k = f ? nodeKey(f) : null;
+    if (f && !seen[k]) {
+      seen[k] = 1;
       log("리워드 수령 '" + f.matched + "'");
-      clickNode(f.node); sleep(cfg().timing.afterTapReward);
+      clickNode(f.node); try { f.node.recycle(); } catch (e) {} sleep(cfg().timing.afterTapReward);
       collectPopup(); stat.cycles++;
       noFind = 0;
     } else {
+      if (f) { try { f.node.recycle(); } catch (e) {} }
       if (++noFind >= 4) { log("더 받을 것 없음 — 스윕 종료"); break; }
     }
     // 스크롤이 더 이상 안 움직이면(바닥) 종료 — 같은 화면 무한반복 방지
@@ -670,7 +712,7 @@ function watchLiveBatch() {
     closeStickyBanner(); scrollRewardsTop();
     var card = findCard(cfg().texts.liveTitle, 8);
     if (!card) { log("라이브 카드 없음 → 종료"); break; }
-    tapCardButton(card.node, cfg().texts.watchBtn, "라이브 '시청'");
+    tapCardButton(card.node, cfg().texts.watchBtn, "라이브 '시청'", true);
     sleep(cfg().timing.afterTapReward);
     if (detectCaptcha()) return;
     // 리워드 페이지 표식이 그대로면 라이브가 안 열린 것(한도/쿨다운) → 종료
@@ -736,10 +778,12 @@ var harvestDeadline = 0; // 한 번의 수확 시간 상한(무한루프 backsto
 function safe(name, fn) {
   try { fn(); }
   catch (e) {
+    // 사용자 정지(worker.interrupt)로 인한 예외는 '오류'가 아님 → 조용히 넘김
+    //  (제어판 lastError에 무서운 오류로 남지 않게 + 정지 후 앱 재실행/추가동작 방지)
+    if (!running || String(e).indexOf("Interrupt") >= 0) { log(name + " 중단(사용자 정지)"); return; }
     stat.lastError = name + ": " + e;
     log("⚠ " + name + " 오류: " + e);
-    // 정지(인터럽트)로 인한 예외면 복구 안 함 — 정지 후 앱 재실행/추가동작 방지
-    if (running) { try { ensureForeground(false); } catch (e2) {} }
+    try { ensureForeground(false); } catch (e2) {}
   }
 }
 function isRunningFlag() { return running; }
@@ -756,7 +800,7 @@ function runOnce() {
 // 영상 피드로 이동(리워드 페이지에서 빠져나옴)
 function gotoFeed() {
   for (var i = 0; i < 3; i++) {
-    if (!findAny(cfg().texts.pageMarker, 400)) return; // 이미 피드
+    if (!exists(cfg().texts.pageMarker, 400)) return; // 이미 피드
     back(); sleep(700);
   }
 }
@@ -830,6 +874,18 @@ function escapeIfGame() {
   return false;
 }
 
+// 영상 1개당 시청(체류) 시간 — 사람처럼 분포를 준다(고정 ~15초 반복 = 봇 지문 완화).
+//  기준(scrollIntervalMs, ~15초)을 '최빈값'으로 두되: 가끔 빨리 넘기고(스킵), 가끔 오래 본다.
+//  의뢰인 확정 "약 15초"는 중심경향으로 유지되고, 균일값만 피한다.
+function videoDwellMs() {
+  var base = cfg().timing.scrollIntervalMs;
+  if (!cfg().humanize) return base;
+  var r = Math.random();
+  if (r < 0.15) return Math.round(rnd(base * 0.25, base * 0.60)); // 15%: 빨리 넘김
+  if (r < 0.90) return Math.round(rnd(base * 0.85, base * 1.25)); // 75%: ~기준(약 15초)
+  return Math.round(rnd(base * 1.80, base * 3.50));               // 10%: 관심 영상 오래 봄
+}
+
 // 피드를 지정 시간만큼 스크롤하며 시청 + 주기적으로 남은 시간 로그.
 // ★ 멈춤 감지(2026-07-06 의뢰인 사진): 앱 재실행 직후 '14일 연속 출석' 같은 모달이
 //   피드를 덮으면 스와이프가 안 먹혀 몇 시간을 헛돌 수 있음. 스와이프를 했는데도
@@ -861,7 +917,7 @@ function scrollFeedUntil(untilMs) {
       log("영상 시청 중… 시청 종료까지 약 " + leftMin + "분");
       nextTick = Date.now() + 30000;
     }
-    napChunked(jitter(cfg().timing.scrollIntervalMs), isRunningFlag);
+    napChunked(videoDwellMs(), isRunningFlag);
   }
 }
 
@@ -1002,8 +1058,12 @@ function runFarm() {
     //    수집을 끝내고 남은 시간은 영상만 시청. (타이머는 시작+종료 1번씩 그대로 — 여기선 광고만.)
     safe("첫좋아요", function () {
       gotoFeed(); sleep(1500);
-      if (!findAny(cfg().texts.pageMarker, 300)) {
+      // ★ 리워드 페이지도, 광고/랜딩(스턱)도, 전면광고도, 캡차도 아닐 때만 좋아요.
+      //   (콜드 스타트가 전면광고/Temu 위로 뜨면 feedLike 좌표가 광고 CTA를 눌러 튕기는 것 방지)
+      if (!exists(cfg().texts.pageMarker, 300) && !onStuckActivity() && !inAdScreen() && !detectCaptcha()) {
         tapRatio(cfg().coords.feedLike, "첫 영상 좋아요");        // 좋아요 미션 활성화
+      } else {
+        log("첫 영상 좋아요 보류 — 피드 영상이 아닌 화면(광고/리워드/캡차) 감지");
       }
     });
 
@@ -1016,21 +1076,29 @@ function runFarm() {
       // (1) 매일광고 주기 수집 — 아직 하루 한도가 안 끝났을 때만
       if (!adsDone) {
         safe("매일광고수집", function () {
-          if (!ensureOnRewardsPage()) { log("매일광고 수집: 리워드 진입 실패 → 이번 방문 건너뜀"); return; }
-          harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
-          var n = watchDailyAdBatch();               // 이번 방문 시청 개수
+          var n = 0;
+          if (!ensureOnRewardsPage()) {
+            log("매일광고 수집: 리워드 진입 실패 → 이번 방문 0개(진입불가도 dry로 집계)");
+          } else {
+            harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
+            n = watchDailyAdBatch();                 // 이번 방문 시청 개수
+          }
           totalAds += n;
+          // ★ 진입 실패(0개)도 dry로 카운트 → 지속 실패 시 adMaxDryVisits로 종료(20분마다
+          //   무한 재진입 방지). 진입/광고가 다시 열리면 dry가 리셋돼 수집 재개.
           if (n > 0) dryVisits = 0; else dryVisits++;
           log("매일광고 누적 " + totalAds + "개" + (n === 0 ? " (이번 방문 0개 · 연속 " + dryVisits + "/" + maxDry + ")" : ""));
           if (totalAds >= adCap) { adsDone = true; log("매일광고 하루 상한(" + adCap + ") 도달 → 광고 수집 종료"); }
-          else if (dryVisits >= maxDry) { adsDone = true; log("매일광고 연속 " + maxDry + "회 0개 = 오늘 한도 소진 추정 → 광고 수집 종료(누적 " + totalAds + "개)"); }
+          else if (dryVisits >= maxDry) { adsDone = true; log("매일광고 연속 " + maxDry + "회 0개 = 한도 소진/진입불가 추정 → 광고 수집 종료(누적 " + totalAds + "개)"); }
         });
         if (!running || Date.now() >= end) break;
       }
       // (2) 다음 수집까지(광고 끝났으면 종료까지) 영상 시청
       safe("피드시청", function () {
         gotoFeed(); sleep(800);
-        var chunkEnd = adsDone ? end : Math.min(end, Date.now() + adEvery);
+        // 수집 간격에 지터(±25%) — 정확히 20분 주기 = 봇 지문이라 흐트러뜨림
+        var gap = cfg().humanize ? Math.round(adEvery * rnd(0.75, 1.25)) : adEvery;
+        var chunkEnd = adsDone ? end : Math.min(end, Date.now() + gap);
         scrollFeedUntil(chunkEnd);                    // 팝업 닫으며 시청
       });
     }
