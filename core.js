@@ -409,7 +409,11 @@ function dismissFeedGamePopup() {
 function ensureOnRewardsPage() {
   var extBounces = 0; // 외부 앱(Temu 등) 반복 튕김 횟수 — 무한 탭-재실행 루프 차단용
   var pointTried = false; // 안전한 '포인트' 탭을 이미 시도했는지(중앙 X는 그 뒤에만)
+  // ★ 벽시계 상한(무한루프는 아니지만, 외부앱/광고 튕김이 겹치면 한 번 진입에 수십초~분 단위로
+  //   조용히 매달릴 수 있음) → 예산 초과 시 깔끔히 실패 반환. 호출부는 실패를 안전 처리한다.
+  var entryDeadline = Date.now() + (cfg().timing.entryBudgetMs || 90000);
   for (var i = 1; i <= 5; i++) {
+    if (Date.now() > entryDeadline) { log("⚠ 리워드 진입 시간초과(" + Math.round((cfg().timing.entryBudgetMs || 90000) / 1000) + "초) → 실패 반환"); return false; }
     // 덮고 있는 팝업(광고 후 '광고 시청하고 추가 리워드[나중에 하기]' 등)부터 닫고 표식 확인
     clearAllPopups("진입 팝업");
     if (onRewardsPageNow()) return true;   // 스크롤 위치 무관하게 페이지 판정
@@ -893,24 +897,47 @@ function videoDwellMs() {
 //   좌표 ✕ 포함) → 그래도 그대로면 뒤로가기. 정상 시청 중엔 영상마다 지문이 바뀌므로
 //   오탐 없음(스와이프 실패가 2회 연속일 때만 발동).
 function scrollFeedUntil(untilMs) {
-  var nextTick = 0, lastSig = null, stuckN = 0;
+  var nextTick = 0, lastSig = null, stuckN = 0, blindN = 0;
+  // ★ '전진 없음' 워치독: 정상 1회전은 '스와이프로 다음 영상 진입'까지 도달한다. 포그라운드
+  //   이탈/광고 오버레이/게임루프 때문에 스와이프까지 못 가고 continue만 반복하면(깜빡여서
+  //   연속카운터로는 안 잡히는 경우 포함) noSwipe가 쌓인다 → 점진 복구, 그래도 안 되면 이
+  //   시청 청크를 조기 종료(다음 단계로). 긴 시청 나프는 스와이프 '후'라 오탐 없음.
+  var noSwipe = 0;
   while (running && Date.now() < untilMs) {
-    if (!ensureForeground(false)) { sleep(3000); continue; }
-    if (escapeIfGame()) continue;      // 스와이프 '전' 검사(광고 먼저 닫기)
+    if (noSwipe && noSwipe % 6 === 0) {  // ~비스와이프 6회마다 능동 복구
+      log("⚠ 피드 전진 없음(" + noSwipe + "회) → 복구(재실행/스택탈출/팝업정리)");
+      ensureForeground(true); bailFromAdStack(); clearAllPopups("피드 정체");
+    }
+    if (noSwipe >= 20) { log("⚠ 피드 정체 지속 → 이번 시청 청크 조기 종료(다음 단계로)"); return; }
+
+    if (!ensureForeground(false)) { noSwipe++; sleep(3000); continue; }
+    if (escapeIfGame()) { noSwipe++; continue; }   // 스와이프 '전' 검사(광고 먼저 닫기)
     checkAndClosePopup();
     swipeToNextVideo();
-    if (escapeIfGame()) continue;      // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 8초 안 기다리고 바로 탈출
+    if (escapeIfGame()) { noSwipe++; continue; }   // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 바로 탈출
+    noSwipe = 0;                                    // 스와이프 성공 = 전진
     // ── 멈춤 감지: 스와이프 후에도 화면이 그대로인가? ──
     var sig = screenSig();
-    if (sig && sig === lastSig) {
-      if (++stuckN >= 2) {
-        log("⚠ 피드 멈춤 감지(스와이프 후에도 화면 불변) → 팝업 정리");
-        clearAllPopups("피드 멈춤");
-        if (screenSig() === sig) { back(); sleep(800); } // 팝업 정리로도 그대로면 뒤로가기
-        stuckN = 0; lastSig = null;
-        continue;
+    if (sig === null) {
+      // 캔버스라 텍스트 지문이 없음 → '덮은 모달/스턱이 확실할 때만' 복구(정상 피드 오탐 방지).
+      if (++blindN >= 3 && (exists(cfg().texts.eventPopup, 150) || onStuckActivity())) {
+        log("⚠ 피드 지문 없음 + 덮개(모달/광고) 감지 → 정리/탈출");
+        clearAllPopups("피드 지문없음");
+        if (onStuckActivity()) { back(); sleep(800); }
+        blindN = 0;
       }
-    } else { stuckN = 0; }
+    } else {
+      blindN = 0;
+      if (sig === lastSig) {
+        if (++stuckN >= 2) {
+          log("⚠ 피드 멈춤 감지(스와이프 후에도 화면 불변) → 팝업 정리");
+          clearAllPopups("피드 멈춤");
+          if (screenSig() === sig) { back(); sleep(800); } // 팝업 정리로도 그대로면 뒤로가기
+          stuckN = 0; lastSig = null;
+          continue;
+        }
+      } else { stuckN = 0; }
+    }
     lastSig = sig;
     if (Date.now() > nextTick) {
       var leftMin = Math.max(0, Math.ceil((untilMs - Date.now()) / 60000));
