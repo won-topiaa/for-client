@@ -1000,7 +1000,19 @@ function scrollFeedUntil(untilMs) {
         if (++stuckN >= 2) {
           log("⚠ 피드 멈춤 감지(스와이프 후에도 화면 불변) → 팝업 정리");
           clearAllPopups("피드 멈춤");
-          if (screenSig() === sig) { back(); sleep(800); } // 팝업 정리로도 그대로면 뒤로가기
+          // ★ 오탐 방지(2026-07-09 실기기 검증): '자막 없는 영상'이 연속되면 화면 텍스트가
+          //   하단탭/UI 크롬만 남아 서로 다른 영상인데 screenSig 지문이 같아 보임(정상 피드인데
+          //   정체로 오판). 팝업 정리로도 그대로면 곧장 back()치지 말고 '확인용 스와이프'를 1회
+          //   더 해본다: 진짜 덮개(모달/스턱)면 스와이프가 안 먹혀 지문이 여전히 동일 → 그때만
+          //   뒤로가기. 자막 없는 정상 영상이면 이 스와이프로 다음 영상 진입 → 지문이 바뀌어
+          //   back()을 안 하므로, 정상 피드에서 불필요한 뒤로가기(홈 이탈)를 막는다.
+          if (screenSig() === sig) {
+            swipeToNextVideo();
+            if (screenSig() === sig) {
+              log("⚠ 피드 멈춤 확정(추가 스와이프에도 화면 불변) → 뒤로가기 탈출");
+              back(); sleep(800);
+            }
+          }
           stuckN = 0; lastSig = null;
           continue;
         }
