@@ -916,6 +916,13 @@ function scrollFeedUntil(untilMs) {
     swipeToNextVideo();
     if (escapeIfGame()) { noSwipe++; continue; }   // ★ 스와이프 '직후' 즉시 검사 → 게임 진입 바로 탈출
     noSwipe = 0;                                    // 스와이프 성공 = 전진
+    // ── 피드 '광고 영상'(배지 정확일치)은 시청 크레딧이 안 쌓임 → 즉시 다음 영상으로
+    //   (의뢰인 2026-07-08: 광고·팝업은 빨리 지나가게 — 시청시간으로 안 잡히므로) ──
+    if (exists(cfg().texts.feedAdBadge, 250, true)) {
+      log("피드 광고 영상 감지 → 바로 넘김");
+      sleep(Math.round(rnd(600, 1200)));           // 사람처럼 아주 잠깐 보고
+      continue;                                    // 시청 대기 없이 곧장 다음 스와이프
+    }
     // ── 멈춤 감지: 스와이프 후에도 화면이 그대로인가? ──
     var sig = screenSig();
     if (sig === null) {
@@ -987,14 +994,14 @@ function claimTimerOnce(label) {
   ensureOnRewardsPage(); closeStickyBanner();
 }
 
-// 종료 직전 1회 수확 (2026-07-06, 의뢰인 확정 항목 + 안정화 순서 조정):
+// 종료 직전 1회 수확 (의뢰인 확정 2026-07-08 + 안정화 순서):
 //  ① 타이머 받기(종료 1회분 — 시작 1회는 runFarm 초반 claimTimerOnce)
 //  ② 좋아요 미션 '포인트 받기' — 시청 중 좋아요를 눌러뒀으므로 활성화돼 있음
-//  ③ 출석체크 — 매일 광고보다 먼저(광고가 Temu로 튕겨도 출석은 확보)
-//  ④ '광고 보면 추가 보상' 1회 — 매일광고(40개)는 시작에 다 봤으므로 여기선 이 카드만 1회.
-//     (2026-07-07 의뢰인 확정: 매일광고 시작 몰아보기 + 추가보상은 마지막 1회)
+//  ③ 출석체크 1차 — 광고류보다 먼저(광고가 Temu로 튕겨도 출석은 확보, 의뢰인: 출석 필수)
+//  ④ 매일광고 '마무리 방문'(열리는 만큼) ⑤ '광고 보면 추가 보상' 1회
+//  ⑥ 출석 재확인(보험 — 이미 받았으면 no-op)
 function finalHarvest() {
-  log("⏰ 마무리 수확: 타이머 → 좋아요 → 출석 → 광고 추가보상 1회");
+  log("⏰ 마무리 수확: 타이머 → 좋아요 → 출석 → 매일광고 → 추가보상 → 출석확인");
   // 리워드 진입은 마무리 수확의 관문 — 진입만 성공하면 그 뒤 단계는 각자 실패해도 안전
   //  스킵되지만, 진입 자체가 실패하면 수확이 통째로 0이 된다. 광고(특히 Temu 전면광고)가
   //  화면을 잡고 있으면 진입이 실패할 수 있는데, 전면광고는 대개 수십 초 뒤 자동 종료되므로
@@ -1029,38 +1036,60 @@ function finalHarvest() {
     }
   }
 
-  // ③ 출석체크 — ★ 매일 광고보다 '먼저' 수행(2026-07-06 3차 검증).
+  // ③ 출석체크(1차) — ★ 광고류보다 '먼저' 수행(2026-07-06 3차 검증 + 의뢰인: 출석 필수).
   //   실측: 매일 광고가 'Temu 광고'인 경우가 있어, 시청 후 광고 랜딩이 외부 앱(Temu)을
-  //   띄우면 리워드 페이지 복귀가 어려워짐(복귀 탭이 광고 CTA를 다시 눌러 왕복). 그래서
-  //   위험이 적은 출석을 광고 '앞'에 두어, 광고가 Temu로 튕겨도 출석·타이머·좋아요는
-  //   이미 확보되게 한다. (의뢰인 확정 순서는 광고→출석이었으나, 광고를 마지막에 두는
-  //   편이 총 적립에 유리해 순서만 조정. 지급 항목은 동일)
+  //   띄우면 리워드 페이지 복귀가 어려워짐. 위험이 적은 출석을 광고 '앞'에 두어,
+  //   광고가 튕겨도 출석·타이머·좋아요는 이미 확보되게 한다.
   if (running) doAttendanceOnly();
 
-  // ④ '광고 보면 추가 보상' 1회 — 매일광고는 시청 중 주기 수집으로 처리했으므로 마무리엔 이 카드만.
-  //   claimAdBonus는 fail-safe: 카드가 없으면(복귀 프로모 등 이 버전에 카드 미존재) 즉시
-  //   no-op로 반환하고, Temu 등 외부앱 튕김은 ensureOnRewardsPage가 무한루프 없이 정리한다.
+  // ④ 매일광고 '마무리 방문' — 이번 방문에서 열리는 만큼 시청(시작 방문은 runFarm 초반).
+  //   의뢰인 확정(2026-07-08): 시작·마무리 두 번만, 하루 한도 다 안 채움.
+  if (running) {
+    harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
+    var nEnd = watchDailyAdBatch();
+    log("매일광고 마무리 방문 완료(" + nEnd + "개)");
+  }
+
+  // ⑤ '광고 보면 추가 보상' 1회 — fail-safe: 카드 없으면 즉시 no-op,
+  //   Temu 등 외부앱 튕김은 ensureOnRewardsPage가 무한루프 없이 정리한다.
   if (running) claimAdBonus();
+
+  // ⑥ 출석 재확인(보험) — ③이 어떤 이유로든 누락됐어도 한 번 더 시도(의뢰인: 출석 꼭!).
+  //   이미 받았으면 버튼이 없어 아무것도 안 누름(중복지급·오탭 없음).
+  if (running) doAttendanceOnly();
 }
 
-// 최종 플로우(의뢰인 확정 2026-07-07, 4차 수정):
-//   앱 실행 → 팝업 종료 → ★타이머 1회 수령(시작분) → 첫 영상 좋아요
-//   → 영상 시청 ↔ ★매일광고 주기 수집(~20분마다, 하루 상한까지) 반복
-//   → 시간 종료 후 포인트 페이지 1회 진입(finalHarvest: 타이머 종료분 + 광고 추가보상 1회) → 앱 종료.
-// ※ 타이머는 "시작 1번 + 종료 1번"만(20분마다 반복 = 봇 의심 우려, 의뢰인 확정).
-// ※ 매일광고는 세션당 개수 제한/쿨다운이 있어 한 번에 다 못 봄 → 시청 중 주기적으로 들러
-//   열리는 만큼 회수(하루 상한 dailyAdBatch까지, 연속 0개면 한도소진으로 판단해 종료).
-//   마무리엔 매일광고 대신 '광고 추가보상' 1회.
+// 최종 플로우(의뢰인 확정 2026-07-08, 5차 수정):
+//   앱 실행 → 팝업 종료 → ★타이머 1회 수령(시작분) → ★매일광고 '시작 방문'(열리는 만큼)
+//   → 첫 영상 좋아요 → 영상 시청만 쭉(60~100분 랜덤, 영상별 시간 랜덤, 광고영상 즉시 넘김)
+//   → 포인트 페이지 1회 진입(finalHarvest: 타이머 종료분 → 좋아요 → 출석 →
+//     매일광고 '마무리 방문' → 광고 추가보상 1회 → 출석 재확인) → 앱 종료.
+// ※ 타이머·매일광고 모두 "시작 1번 + 종료 1번"만 — 20분마다 페이지 복귀는 봇 의심
+//   우려로 의뢰인이 명시적으로 제외(2026-07-08). 매일광고는 세션 제한이 있어 방문당
+//   열리는 만큼만 보게 되며(자동 종료), 하루 한도(40)를 다 채우지 않는 게 의도.
 //   (레거시) 20분마다 '전체 수확' 반복은 config.harvestEveryCycle=true(기본 꺼짐).
 function runFarm() {
-  var total = cfg().timing.totalRunMs || (160 * 60 * 1000);
-  log("[최종 플로우] 시작 타이머 → 영상시청 " + Math.round(total / 60000) + "분(중 매일광고 ~20분마다 수집) → 종료 수확·출석");
+  // 시청 시간: watchMin~Max 사이 랜덤(매일 같은 시간 = 봇 티, 의뢰인 확정 60~100분).
+  var t = cfg().timing;
+  var total = (t.watchMinMs && t.watchMaxMs && t.watchMaxMs >= t.watchMinMs)
+    ? Math.round(rnd(t.watchMinMs, t.watchMaxMs))
+    : (t.totalRunMs || (160 * 60 * 1000));
+  log("[최종 플로우] 시작 타이머·광고 → 영상시청 " + Math.round(total / 60000) + "분(랜덤) → 종료 수확·출석");
 
   safe("실행", function () { ensureForeground(true); });          // 1. TikTok Lite 실행
   safe("팝업", function () { clearAllPopups("영상화면 팝업"); }); // 2. 영상화면 팝업 종료(출석팝업 ✕ 포함)
 
-  // 3. 시작 시 타이머 1회 수령(전날/이전에 충전된 분) → 피드로 복귀는 아래 gotoFeed가 수행
+  // 3. 시작 시 타이머 1회 수령(전날/이전에 충전된 분)
   safe("시작타이머", function () { log("⏰ 시작 타이머 수령"); claimTimerOnce("시작 타이머"); });
+
+  // 4. 매일광고 '시작 방문' — 이번 방문에서 열리는 만큼 시청(세션캡/한도에 닿으면 자동 종료)
+  safe("시작광고", function () {
+    if (!ensureOnRewardsPage()) { log("매일광고 시작 방문: 리워드 진입 실패 → 스킵"); return; }
+    harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
+    log("⏰ 매일광고 시작 방문");
+    var n = watchDailyAdBatch();
+    log("매일광고 시작 방문 완료(" + n + "개)");
+  });
 
   var end = Date.now() + total;
 
@@ -1078,11 +1107,7 @@ function runFarm() {
       safe("수확", function () { log("⏰ 리워드 수확"); harvestRewards(false); });
     }
   } else {
-    // 기본(의뢰인 확정 2026-07-07, 4차): 첫 영상 좋아요 → (영상 시청 ↔ 매일광고 주기 수집) 반복.
-    //  ★ 매일광고는 '한 세션에 N개 제한/쿨다운'이 있어 시작에 40개를 한 번에 못 본다 → 시청 중
-    //    ~adHarvestEveryMs(기본 20분)마다 잠깐 들러 그때 열리는 만큼 보고 복귀. 하루 상한
-    //    (dailyAdBatch)에 도달하거나, 연속 adMaxDryVisits회 '0개'(=오늘 한도 소진 추정)면 광고
-    //    수집을 끝내고 남은 시간은 영상만 시청. (타이머는 시작+종료 1번씩 그대로 — 여기선 광고만.)
+    // 기본: 5. 첫 영상 좋아요 → 6. 영상 시청만 쭉(중간에 포인트 페이지 안 감)
     safe("첫좋아요", function () {
       gotoFeed(); sleep(1500);
       // ★ 리워드 페이지도, 광고/랜딩(스턱)도, 전면광고도, 캡차도 아닐 때만 좋아요.
@@ -1093,42 +1118,7 @@ function runFarm() {
         log("첫 영상 좋아요 보류 — 피드 영상이 아닌 화면(광고/리워드/캡차) 감지");
       }
     });
-
-    var adCap = cfg().dailyAdBatch || 0;
-    var adEvery = cfg().timing.adHarvestEveryMs || (20 * 60 * 1000);
-    var maxDry = cfg().adMaxDryVisits || 3;
-    var totalAds = 0, dryVisits = 0, adsDone = (adCap <= 0);
-
-    while (running && Date.now() < end) {
-      // (1) 매일광고 주기 수집 — 아직 하루 한도가 안 끝났을 때만
-      if (!adsDone) {
-        safe("매일광고수집", function () {
-          var n = 0;
-          if (!ensureOnRewardsPage()) {
-            log("매일광고 수집: 리워드 진입 실패 → 이번 방문 0개(진입불가도 dry로 집계)");
-          } else {
-            harvestDeadline = Date.now() + (cfg().timing.harvestBudgetMs || 480000);
-            n = watchDailyAdBatch();                 // 이번 방문 시청 개수
-          }
-          totalAds += n;
-          // ★ 진입 실패(0개)도 dry로 카운트 → 지속 실패 시 adMaxDryVisits로 종료(20분마다
-          //   무한 재진입 방지). 진입/광고가 다시 열리면 dry가 리셋돼 수집 재개.
-          if (n > 0) dryVisits = 0; else dryVisits++;
-          log("매일광고 누적 " + totalAds + "개" + (n === 0 ? " (이번 방문 0개 · 연속 " + dryVisits + "/" + maxDry + ")" : ""));
-          if (totalAds >= adCap) { adsDone = true; log("매일광고 하루 상한(" + adCap + ") 도달 → 광고 수집 종료"); }
-          else if (dryVisits >= maxDry) { adsDone = true; log("매일광고 연속 " + maxDry + "회 0개 = 한도 소진/진입불가 추정 → 광고 수집 종료(누적 " + totalAds + "개)"); }
-        });
-        if (!running || Date.now() >= end) break;
-      }
-      // (2) 다음 수집까지(광고 끝났으면 종료까지) 영상 시청
-      safe("피드시청", function () {
-        gotoFeed(); sleep(800);
-        // 수집 간격에 지터(±25%) — 정확히 20분 주기 = 봇 지문이라 흐트러뜨림
-        var gap = cfg().humanize ? Math.round(adEvery * rnd(0.75, 1.25)) : adEvery;
-        var chunkEnd = adsDone ? end : Math.min(end, Date.now() + gap);
-        scrollFeedUntil(chunkEnd);                    // 팝업 닫으며 시청
-      });
-    }
+    safe("피드시청", function () { scrollFeedUntil(end); });      // 팝업 닫으며 끝까지 시청
   }
 
   // 시간이 만료되어 끝난 경우에만(사용자 정지가 아님) 마무리 단계 수행
