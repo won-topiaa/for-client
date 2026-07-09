@@ -862,6 +862,41 @@ function bailFromAdStack() {
   return false;
 }
 
+// ★★ 범용 안전판(의뢰인 확정 2026-07-09): "돌리는 어떤 상황에서든 잘못된 화면에 들어가면
+//   무조건 back으로 피드(또는 리워드 페이지)까지 나온다"의 단일 진입점.
+//   처리 대상: 외부 앱(Temu/스토어) 튕김 · 리워드광고/Spark/웹뷰 랜딩(스턱 액티비티) ·
+//             게임 프로모 팝업 · 게임 진입/보드 화면 · 그 밖의 알 수 없는 우리앱 화면.
+//   설계: 시간·횟수로 반드시 종료(무한루프 불가). 위험 탭 없음(back·알려진 X 좌표·
+//         알려진 닫기 텍스트만 — '바로구매/장바구니' 등은 절대 안 누름).
+//   @return true = 피드/리워드 도달, false = 한도 내 실패(호출부가 안전 처리)
+function escapeToFeed(reason) {
+  // 이미 정상(피드=포인트탭 보임 / 리워드=페이지 표식)이면 즉시 종료
+  if (exists(cfg().texts.pointsTab, 150) || exists(cfg().texts.pageMarker, 150)) return true;
+  if (running) log("↩ 피드로 탈출 시도(" + (reason || "안전판") + ")");
+  var deadline = Date.now() + 45 * 1000;   // 벽시계 상한(무한루프 불가)
+  for (var i = 0; i < 10 && running; i++) {
+    if (Date.now() > deadline) { log("↩ 탈출 시간초과 → 앱 재실행 복귀"); launchApp(true); break; }
+    if (detectCaptcha()) return false;     // 캡차면 자동 정지
+    // 정상 화면 도달?
+    if (exists(cfg().texts.pointsTab, 150) || exists(cfg().texts.pageMarker, 150)) return true;
+    // 1) 외부 앱으로 튕김 → back으론 복귀 불가 → 우리 앱 재실행
+    if (!isOurApp(currentPackage())) { log("탈출: 외부앱 '" + currentPackage() + "' → 재실행"); launchApp(true); continue; }
+    // 2) 피드에 낀 게임 프로모 팝업 → '관심 없음' 등으로 닫기(스와이프로 게임 진입 방지)
+    if (tapText(cfg().texts.gamePromoClose, "게임광고 닫기", 150)) { sleep(400); continue; }
+    // 3) 게임 진입/보드 화면(텍스트 감지) → back
+    if (findAny(cfg().texts.gameScreen, 150)) { log("게임 화면 → 뒤로가기"); back(); sleep(900); continue; }
+    // 4) 광고/랜딩/스턱 액티비티나 광고 화면 → bail(리워드광고는 좌표X, 나머지는 back; 한 겹씩)
+    if (onStuckActivity() || inAdScreen()) { bailFromAdStack(); continue; }
+    // 5) 덮은 팝업만 있으면 닫기
+    if (findAny(cfg().texts.close, 200)) { clearAllPopups("탈출 팝업"); continue; }
+    // 6) 그 밖의 알 수 없는 우리앱 화면 → back 한 겹
+    log("알 수 없는 화면 → 뒤로가기"); back(); sleep(800);
+  }
+  // 최후 안전판: 외부 앱에 남아 있으면 재실행, 그래도 판정
+  if (running && !isOurApp(currentPackage())) launchApp(true);
+  return exists(cfg().texts.pointsTab, 200) || exists(cfg().texts.pageMarker, 200);
+}
+
 // ★ 피드 시청 중 '게임 광고/게임 화면/광고 랜딩'에 잘못 들어갔는지 즉시 감지·탈출.
 //   1) 피드에 낀 게임 광고 → '관심 없음' 등으로 닫음(스와이프로 게임 진입 방지)
 //   2) 게임 화면(진입/보드) 텍스트 감지 → 뒤로가기로 피드 복귀
@@ -910,11 +945,18 @@ function scrollFeedUntil(untilMs) {
   //   시청 청크를 조기 종료(다음 단계로). 긴 시청 나프는 스와이프 '후'라 오탐 없음.
   var noSwipe = 0;
   while (running && Date.now() < untilMs) {
-    if (noSwipe && noSwipe % 6 === 0) {  // ~비스와이프 6회마다 능동 복구
-      log("⚠ 피드 전진 없음(" + noSwipe + "회) → 복구(재실행/스택탈출/팝업정리)");
-      ensureForeground(true); bailFromAdStack(); clearAllPopups("피드 정체");
+    if (noSwipe && noSwipe % 6 === 0) {  // ~비스와이프 6회마다 능동 복구(범용 안전판)
+      escapeToFeed("피드 전진 없음 " + noSwipe + "회");
     }
     if (noSwipe >= 20) { log("⚠ 피드 정체 지속 → 이번 시청 청크 조기 종료(다음 단계로)"); return; }
+
+    // ★★ 기본 안전판(매 회전): 우리 앱 피드가 아닌 '잘못 들어간 화면'(외부앱/광고/랜딩/스턱)
+    //   이면 무조건 피드로 탈출한다. cheap한 판정(패키지·액티비티만, 접근성 조회 없음)이라
+    //   정상 시청 중엔 오버헤드 무시 가능. 게임 프로모 팝업 등 '우리앱 안'의 케이스는 아래
+    //   escapeIfGame이 담당.
+    if (!isOurApp(currentPackage()) || onStuckActivity()) {
+      escapeToFeed("피드 이탈"); noSwipe++; continue;
+    }
 
     if (!ensureForeground(false)) { noSwipe++; sleep(3000); continue; }
     if (escapeIfGame()) { noSwipe++; continue; }   // 스와이프 '전' 검사(광고 먼저 닫기)
