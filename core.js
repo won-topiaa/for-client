@@ -848,8 +848,14 @@ function bailFromAdStack() {
       // 리워드광고 upsell 팝업 → 상단/하단 X 좌표로 닫기(Lynx라 텍스트 불가)
       tapRatio(cfg().coords.adClose, "광고 X(상단)"); sleep(350);
       tapRatio(cfg().coords.adRewardClose, "광고리워드 X(하단)"); sleep(650);
+      // ★ 실측(2026-07-09): 매일광고(올리브영/Temu 등)가 RewardAd→인앱 웹뷰 랜딩
+      //   (AdLandingPageFullScreenActivity)까지 여는 경우, 그 랜딩의 닫기 X는 '좌상단'이라
+      //   위 우상단/하단 좌표로는 안 닫힘. 이 광고 스택은 back이 한 겹씩 확실히 벗겨
+      //   (Landing→RewardAd→Spark→피드, 실측 back 3회면 피드 도달) 주므로, 좌표 X로도
+      //   여전히 광고/랜딩에 갇혀 있으면 back으로 한 겹 벗긴다.
+      if (onStuckActivity() || inAdScreen()) { back(); sleep(800); }
     } else {
-      // Spark 랜딩 등 → back으로 탈출
+      // Spark 랜딩/웹뷰 랜딩 등 → back으로 탈출
       back(); sleep(800);
     }
   }

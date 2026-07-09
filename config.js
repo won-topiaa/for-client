@@ -34,8 +34,13 @@ var DEFAULTS = {
   //   접근성 미노출(Lynx/Spark) 화면에 갇힌 것 → back으로 탈출한다.
   //   (텍스트로는 안 잡히므로 currentActivity()로 판정. 피드/리워드 페이지 액티비티와는
   //    안 겹치는 광고/하이브리드 전용 클래스명만.)
+  //   ★ 실측(2026-07-09): 매일광고(Temu/올리브영 등)가 시청 후 인앱 웹뷰 랜딩
+  //     'AdLandingPageFullScreenActivity'를 띄우는데, 예전 'LandingPageActivity'로는
+  //     매칭이 안 돼(=onStuckActivity false) 진입 로직이 이 화면을 '정상'으로 보고 '닫기'를
+  //     수십 번 헛클릭하다 마무리 방문 광고/추가보상을 통째로 놓쳤음. → 'LandingPage'로
+  //     넓혀 back 탈출(bailFromAdStack)이 발동하게 함. (피드/리워드 액티비티엔 이 조각 없음)
   stuckActivities: ["RewardAdActivity", "SparkActivity", "reward.ui", "hybrid.spark",
-                    "AdActivity", "LandingPageActivity"],
+                    "AdActivity", "LandingPage"],
 
   // ── 실행 모드 ──
   //  "farm" = 최종 플로우(의뢰인 확정 2026-07-08, 5차):
