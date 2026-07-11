@@ -2,14 +2,32 @@
 (function () {
   "use strict";
 
-  const MA_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#22d3ee"];
   const TF_LABEL = { day: "일봉", week: "주봉", month: "월봉" };
-  // 이벤트 종류별 마커 색 (이평선 색과 무관하게 사건의 성격을 표시)
-  // breakDown = 지지 이탈(아래로 뚫림, 파랑=하락) / breakUp = 저항 돌파(위로 뚫음, 빨강=상승)
-  const EVENT_COLORS = {
-    support: "#22c55e", resistance: "#f97316",
-    breakDown: "#38bdf8", breakUp: "#f43f5e",
-  };
+
+  // 라이트/다크 자동 대응 차트 테마 (에메랄드=상승 · 빨강=하락, 사이트 공통 규약)
+  // 마커 색 = 사건 후 방향: 상승성(지지 성공·저항 돌파)=에메랄드, 하락성(저항 성공·지지 이탈)=빨강.
+  // 모양이 종류를 구분: 화살표=이평선이 버팀, 원=뚫림.
+  const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+  function chartTheme() {
+    const dark = darkMq.matches;
+    return {
+      text: dark ? "#a1a1aa" : "#71717a",
+      grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
+      border: dark ? "#27272a" : "#e4e4e7",
+      up: dark ? "#34d399" : "#059669",
+      down: dark ? "#f87171" : "#dc2626",
+      // 이평선: 캔들(에메랄드/빨강)과 겹치지 않는 인디고·앰버·시안 계열
+      ma: dark ? ["#818cf8", "#fbbf24", "#22d3ee", "#f472b6", "#a3e635"]
+               : ["#4f46e5", "#d97706", "#0891b2", "#db2777", "#65a30d"],
+      events: dark
+        ? { support: "#34d399", resistance: "#f87171", breakDown: "#f87171", breakUp: "#34d399" }
+        : { support: "#059669", resistance: "#dc2626", breakDown: "#dc2626", breakUp: "#059669" },
+    };
+  }
+  // OS 테마가 바뀌면 차트를 새 팔레트로 다시 그린다
+  function onThemeChange() { if (analysis) renderTimeframe(currentTf); }
+  if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);
+  else if (darkMq.addListener) darkMq.addListener(onThemeChange);
 
   // 서버/업스트림에서 온 문자열을 innerHTML 에 넣기 전 이스케이프
   function esc(s) {
@@ -95,6 +113,7 @@
 
   el.search.addEventListener("input", () => {
     selected = null;
+    syncQuickPicks();
     el.analyze.disabled = true;
     clearTimeout(searchTimer);
     const q = el.search.value.trim();
@@ -166,6 +185,16 @@
     el.search.value = `${item.name} (${item.symbol})`;
     el.analyze.disabled = false;
     hideSuggest();
+    syncQuickPicks();
+  }
+
+  // 지금 선택된 종목과 같은 대표 종목 칩을 반전 표시 (참고 사이트의 '빠른 선택' 패턴)
+  function syncQuickPicks() {
+    if (!quickPicks) return;
+    quickPicks.querySelectorAll("button[data-symbol]").forEach((btn) => {
+      btn.classList.toggle(
+        "active", !!selected && btn.dataset.symbol === selected.symbol);
+    });
   }
 
   /* ---------- 분석 ---------- */
@@ -200,7 +229,7 @@
       analysis = body;
       focusPeriod = null; // 새 분석 -> 전체 보기로 초기화
       el.status.textContent = "";
-      el.result.style.display = "block";
+      el.result.style.display = "flex";
       renderTimeframe(currentTf);
     } catch (err) {
       if (seq === analyzeSeq) el.status.textContent = "분석 실패: " + err.message;
@@ -237,6 +266,7 @@
 
   function renderTimeframe(tf, refocusKey) {
     if (!analysis) return;
+    const T = chartTheme();
     const data = analysis.timeframes[tf];
     el.recoCards.innerHTML = "";
     el.statsBody.innerHTML = "";
@@ -256,7 +286,7 @@
       allCard.className = "reco-card all-card";
       if (focusPeriod === null) allCard.classList.add("focused");
       const dots = data.recommended.map((_, i) =>
-        `<span class="dot" style="background:${MA_COLORS[i % MA_COLORS.length]}"></span>`
+        `<span class="dot" style="background:${T.ma[i % T.ma.length]}"></span>`
       ).join("");
       const n = data.recommended.length;
       allCard.innerHTML =
@@ -273,7 +303,7 @@
 
     // 추천 카드 (클릭 = 해당 이평선만 보기, 다시 클릭 = 전체)
     data.recommended.forEach((rec, i) => {
-      const color = MA_COLORS[i % MA_COLORS.length];
+      const color = T.ma[i % T.ma.length];
       const card = document.createElement("div");
       card.className = "reco-card";
       if (focusPeriod !== null) {
@@ -289,10 +319,10 @@
         `<div class="period"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>` +
         `<div class="meta">터치 ${rec.touches}회 · 성공률 ${rate}%</div>` +
         `<div class="meta">` +
-        `<span style="color:${EVENT_COLORS.support}">지지 ${rec.supportBounces}</span> · ` +
-        `<span style="color:${EVENT_COLORS.resistance}">저항 ${rec.resistanceBounces}</span> · ` +
-        `<span style="color:${EVENT_COLORS.breakDown}">이탈 ${breakDown}</span> · ` +
-        `<span style="color:${EVENT_COLORS.breakUp}">돌파 ${breakUp}</span></div>` +
+        `<span style="color:${T.events.support}">지지 ${rec.supportBounces}</span> · ` +
+        `<span style="color:${T.events.resistance}">저항 ${rec.resistanceBounces}</span> · ` +
+        `<span style="color:${T.events.breakDown}">이탈 ${breakDown}</span> · ` +
+        `<span style="color:${T.events.breakUp}">돌파 ${breakUp}</span></div>` +
         (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`) +
         `<div class="card-hint">${focusPeriod === rec.period ? "클릭하면 전체 보기" : "클릭하면 이 선만 보기"}</div>`;
       card.dataset.cardKey = String(rec.period);
@@ -332,23 +362,24 @@
 
   function buildChart(data) {
     const LWC = window.LightweightCharts;
+    const T = chartTheme();
     chart = LWC.createChart(el.chart, {
       autoSize: true,
       layout: {
         background: { type: "solid", color: "transparent" },
-        textColor: "#8b93a7",
+        textColor: T.text,
       },
       grid: {
-        vertLines: { color: "rgba(42,47,64,.5)" },
-        horzLines: { color: "rgba(42,47,64,.5)" },
+        vertLines: { color: T.grid },
+        horzLines: { color: T.grid },
       },
       crosshair: { mode: LWC.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#2a2f40" },
-      timeScale: { borderColor: "#2a2f40" },
+      rightPriceScale: { borderColor: T.border },
+      timeScale: { borderColor: T.border },
     });
     candleSeries = chart.addSeries(LWC.CandlestickSeries, {
-      upColor: "#ef4444", downColor: "#3b82f6",
-      wickUpColor: "#ef4444", wickDownColor: "#3b82f6",
+      upColor: T.up, downColor: T.down,
+      wickUpColor: T.up, wickDownColor: T.down,
       borderVisible: false,
     });
     candleSeries.setData(data.candles);
@@ -360,7 +391,7 @@
 
     data.recommended.forEach((rec, i) => {
       if (focusPeriod !== null && rec.period !== focusPeriod) return;
-      const color = MA_COLORS[i % MA_COLORS.length];
+      const color = T.ma[i % T.ma.length];
       const line = chart.addSeries(LWC.LineSeries, {
         color, lineWidth: focusPeriod === null ? 2 : 3,
         priceLineVisible: false,
@@ -382,20 +413,22 @@
 
   function collectMarkers(recList) {
     const markers = [];
+    const T = chartTheme();
     recList.forEach((rec) => {
       rec.events.forEach((ev) => {
         if (ev.outcome === "undecided") return;
         const isSupport = ev.side === "support";
         const failed = ev.outcome === "break";
-        // 색 = 사건 종류: 지지 성공(초록▲) / 저항 성공(주황▼)
-        //            지지 이탈(파랑●, 아래로 뚫림) / 저항 돌파(빨강●, 위로 뚫음)
+        // 색 = 사건 후 방향(에메랄드=상승성/빨강=하락성), 모양 = 버팀(화살표)/뚫림(원)
+        //   지지 성공(에메랄드▲) / 저항 성공(빨강▼)
+        //   지지 이탈(빨강●, 아래로 뚫림) / 저항 돌파(에메랄드●, 위로 뚫음)
         markers.push({
           time: ev.time,
           position: isSupport ? "belowBar" : "aboveBar",
           shape: failed ? "circle" : (isSupport ? "arrowUp" : "arrowDown"),
           color: failed
-            ? (isSupport ? EVENT_COLORS.breakDown : EVENT_COLORS.breakUp)
-            : (isSupport ? EVENT_COLORS.support : EVENT_COLORS.resistance),
+            ? (isSupport ? T.events.breakDown : T.events.breakUp)
+            : (isSupport ? T.events.support : T.events.resistance),
           size: 1,
         });
       });
