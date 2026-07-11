@@ -52,6 +52,23 @@
     })
     .catch(() => {});
 
+  // 패턴 스크리너 등에서 /?symbol=005930 으로 진입하면 자동으로 선택·분석
+  (function autoloadFromQuery() {
+    const sym = new URLSearchParams(location.search).get("symbol");
+    if (!sym || !/^[A-Za-z0-9.\-]{1,20}$/.test(sym)) return;
+    fetch(`/api/search?q=${encodeURIComponent(sym)}`)
+      .then((r) => r.json())
+      .then((body) => {
+        const hit = (body.results || []).find((x) => x.symbol === sym)
+          || (body.results || [])[0];
+        if (hit) {
+          pick(hit);
+          runAnalysis();
+        }
+      })
+      .catch(() => {});
+  })();
+
   /* ---------- 종목 검색 ---------- */
   let searchTimer = null;
   let suggestItems = [];

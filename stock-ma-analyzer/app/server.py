@@ -45,12 +45,38 @@ def build_provider(settings: Settings) -> Provider:
     return FreeDataProvider(data_dir=settings.data_dir)
 
 
+def _scan_universe(settings: Settings, provider: Provider) -> list:
+    """패턴 스캔 대상 종목: 샘플 모드면 샘플 유니버스, 아니면 내장 주요
+    종목 사전 (+ data/symbols.csv 확장분은 사전 클래스가 병합)."""
+    from .providers.base import SymbolInfo
+    if provider.name == "sample":
+        from .providers.sample import UNIVERSE
+        return list(UNIVERSE)
+    from .providers.kr_symbols import BUILTIN_KR_SYMBOLS, SymbolDictionary
+    seen: set[str] = set()
+    out: list[SymbolInfo] = []
+    for sym, name, market in BUILTIN_KR_SYMBOLS:
+        if sym not in seen:
+            seen.add(sym)
+            out.append(SymbolInfo(sym, name, market))
+    for sym, name, market in SymbolDictionary(settings.data_dir)._csv_entries():
+        if sym not in seen:
+            seen.add(sym)
+            out.append(SymbolInfo(sym, name, market))
+    return out
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .pattern_scan import PatternScanner
+
     settings = load_settings()
     app.state.settings = settings
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
     app.state.provider = CachingProvider(build_provider(settings))
+    app.state.scanner = PatternScanner(
+        app.state.provider, _scan_universe(settings, app.state.provider)
+    )
     yield
     if hasattr(app.state.provider, "aclose"):
         await app.state.provider.aclose()
@@ -151,9 +177,37 @@ async def analyze(
         raise HTTPException(status_code=502, detail=f"분석 실패: {exc}") from exc
 
 
+@app.get("/api/patterns")
+async def patterns_api(
+    pattern: str = Query("stage", pattern=r"^(stage|triangle|head_shoulders|inv_head_shoulders|cup_handle)$"),
+    stage: int = Query(2, ge=1, le=4),
+):
+    """패턴 스크리너: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링)."""
+    snap = await app.state.scanner.snapshot()
+    if snap["status"] != "done":
+        return snap
+    data = snap["patterns"].get(pattern)
+    matches = data.get(str(stage), []) if pattern == "stage" else (data or [])
+    return {
+        "status": "done",
+        "pattern": pattern,
+        "stage": stage if pattern == "stage" else None,
+        "scanned": snap.get("scanned"),
+        "universe": snap.get("universe"),
+        "elapsedSec": snap.get("elapsedSec"),
+        "matches": matches[:4],  # 요청 스펙: 3~4개
+        "totalMatches": len(matches),
+    }
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/patterns")
+async def patterns_page():
+    return FileResponse(STATIC_DIR / "patterns.html")
