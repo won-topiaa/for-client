@@ -66,6 +66,8 @@ class TouchEpisode:
     outcome: Outcome
     decided_at: int | None
     weight: float = 1.0
+    # 차트 마커를 붙일 봉: 반등이면 선을 가장 깊게 찍은 봉, 돌파면 확정된 봉
+    anchor: int | None = None
 
     @property
     def success(self) -> bool:
@@ -246,28 +248,59 @@ def analyze_ma(
     ]
     last_index = n - 1
 
-    for start, end in episodes:
-        side = _episode_side(close, ma, start, p.trend_context_bars)
-        if side is None:
-            continue
-        outcome, decided_at = _decide_outcome(
-            close, ma, atr_arr, band, start, end, side, p
-        )
-        weight = 0.5 ** ((last_index - end) / half_life) if half_life > 0 else 1.0
-        ep = TouchEpisode(start=start, end=end, side=side,
-                          outcome=outcome, decided_at=decided_at, weight=weight)
-        stat.episodes.append(ep)
-        stat.touches += 1
-        stat.last_touch_index = end
-        if outcome == "bounce":
-            if side == "support":
-                stat.support_bounces += 1
+    for g_start, g_end in episodes:
+        # 군집에 속한 터치 봉들. 판정이 군집 중간에 확정되면 그 뒤의 터치는
+        # '새로운 시험'으로 분리해 각각 독립적으로 판정한다 — 반등 확정 후
+        # 다시 선까지 미끄러진 구간이 이전 성공에 흡수되는 것을 막기 위함.
+        members = touch_idx[(touch_idx >= g_start) & (touch_idx <= g_end)]
+        pos = 0
+        while pos < len(members):
+            seg_start = int(members[pos])
+            side = _episode_side(close, ma, seg_start, p.trend_context_bars)
+            if side is None:
+                break
+            outcome, decided_at = _decide_outcome(
+                close, ma, atr_arr, band, seg_start, int(g_end), side, p
+            )
+            if outcome == "undecided" or decided_at is None:
+                seg_members = [int(t) for t in members[pos:]]
+                next_pos = len(members)
             else:
-                stat.resistance_bounces += 1
-        elif outcome == "break":
-            stat.breaks += 1
-        else:
-            stat.undecided += 1
+                seg_members = [int(t) for t in members[pos:] if t <= decided_at]
+                if not seg_members:
+                    seg_members = [seg_start]
+                next_pos = pos + len(seg_members)
+            seg_end = seg_members[-1]
+
+            # 마커 위치: 반등 = 선을 가장 깊게 찍은 봉 / 돌파 = 확정된 봉
+            if outcome == "bounce":
+                anchor = (min(seg_members, key=lambda i: low[i]) if side == "support"
+                          else max(seg_members, key=lambda i: high[i]))
+            elif outcome == "break":
+                anchor = int(decided_at)
+            else:
+                anchor = seg_end
+
+            pos = next_pos
+            if seg_end < window_start:
+                continue  # 분석 창 밖에서 끝난 시험은 집계 제외
+
+            weight = 0.5 ** ((last_index - seg_end) / half_life) if half_life > 0 else 1.0
+            ep = TouchEpisode(start=seg_start, end=seg_end, side=side,
+                              outcome=outcome, decided_at=decided_at,
+                              weight=weight, anchor=anchor)
+            stat.episodes.append(ep)
+            stat.touches += 1
+            stat.last_touch_index = seg_end
+            if outcome == "bounce":
+                if side == "support":
+                    stat.support_bounces += 1
+                else:
+                    stat.resistance_bounces += 1
+            elif outcome == "break":
+                stat.breaks += 1
+            else:
+                stat.undecided += 1
 
     decided = [e for e in stat.episodes if e.outcome in ("bounce", "break")]
     if decided:
