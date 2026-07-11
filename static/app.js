@@ -194,6 +194,26 @@
       return;
     }
 
+    // "동시 보기" 카드 — 클릭하면 추천 이평선 전체를 한 번에 표시
+    if (data.recommended.length > 1) {
+      const allCard = document.createElement("div");
+      allCard.className = "reco-card all-card";
+      if (focusPeriod === null) allCard.classList.add("focused");
+      const dots = data.recommended.map((_, i) =>
+        `<span class="dot" style="background:${MA_COLORS[i % MA_COLORS.length]}"></span>`
+      ).join("");
+      const n = data.recommended.length;
+      allCard.innerHTML =
+        `<div class="period">${dots}${n === 3 ? "세 개" : n + "개"} 동시</div>` +
+        `<div class="meta">추천 이평선 전체 보기</div>` +
+        `<div class="card-hint">${focusPeriod === null ? "지금 보는 중" : "클릭하면 전체 표시"}</div>`;
+      allCard.addEventListener("click", () => {
+        focusPeriod = null;
+        renderTimeframe(currentTf);
+      });
+      el.recoCards.appendChild(allCard);
+    }
+
     // 추천 카드 (클릭 = 해당 이평선만 보기, 다시 클릭 = 전체)
     data.recommended.forEach((rec, i) => {
       const color = MA_COLORS[i % MA_COLORS.length];
