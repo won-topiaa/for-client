@@ -206,6 +206,7 @@
         showParty(false);
         destroyCharts();
         el.matches.innerHTML = "";
+        lastBody = null; // 테마 변경 시 지워진 옛 결과가 되살아나지 않게
         el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
         pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
         return;

@@ -625,3 +625,20 @@ def test_stage2_dropped_after_failed_breakout():
     volume2 = np.concatenate([volume, np.full(30, 1000.0)])
     hit = detect_stage2_early(_prep(_df(closes2, volume=volume2)))
     assert not hit.matched
+
+
+def test_inv_hs_band_measured_from_neckline():
+    """5% 소진 밴드는 돌파가(넥라인) 기준으로 재야 한다 (Bulkowski 5% 룰).
+
+    머리가 깊은 역H&S에서 머리 가격을 분모로 쓰면 밴드가 비정상적으로
+    좁아져(예: 머리 60·넥라인 100이면 5%가 실제로는 3%), 넥라인 +4%의
+    멀쩡한 진입 후보가 부당하게 탈락한다.
+    """
+    parts = [
+        _seg(100, 80, 25), _seg(80, 100, 25),   # 왼어깨(80) -> 넥라인(100)
+        _seg(100, 60, 30), _seg(60, 100, 30),   # 깊은 머리(60) -> 넥라인(100)
+        _seg(100, 82, 25), _seg(82, 104, 25),   # 오른어깨(82) -> 넥라인 +4%
+    ]
+    ctx = _prep(_df(np.concatenate(parts), noise_seed=28))
+    hit = detect_head_shoulders(ctx, inverse=True)
+    assert hit.matched, "넥라인 +4%는 5% 밴드 안 — 머리 깊이 때문에 탈락하면 안 됨"
