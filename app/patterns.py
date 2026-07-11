@@ -129,7 +129,9 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
         #    이미 소진된 것 — 5% 룰(Bulkowski 2005) + 패턴 정보력은 완성 직후에
         #    집중된다는 실증(Lo·Mamaysky·Wang 2000). 되돌림(throwback)은 보통
         #    넥라인 부근까지라 ±5~6% 밴드가 실전 유효 구간이다.
-        dist_now = sign * (close[-1] - neck_now) / ref
+        # 분모는 넥라인(=돌파 기준가) — 5% 룰이 돌파가 기준이기 때문. 머리를
+        # 분모로 쓰면 머리가 깊은 역H&S에서 밴드가 비정상적으로 좁아진다.
+        dist_now = sign * (close[-1] - neck_now) / max(abs(neck_now), 1e-9)
         if dist_now > 0.06 or dist_now < -0.05:
             continue
         score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
