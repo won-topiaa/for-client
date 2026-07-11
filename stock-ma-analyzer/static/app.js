@@ -4,6 +4,8 @@
 
   const MA_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#22d3ee"];
   const TF_LABEL = { day: "일봉", week: "주봉", month: "월봉" };
+  // 이벤트 종류별 마커 색 (이평선 색과 무관하게 사건의 성격을 표시)
+  const EVENT_COLORS = { support: "#22c55e", resistance: "#f97316", break: "#9ca3af" };
 
   // 서버/업스트림에서 온 문자열을 innerHTML 에 넣기 전 이스케이프
   function esc(s) {
@@ -33,6 +35,7 @@
   let selected = null;        // {symbol, name}
   let analysis = null;        // /api/analyze 응답
   let currentTf = "day";
+  let focusPeriod = null;     // 카드 클릭으로 한 이평선만 보기 (null = 전체)
   let chart = null;
   let candleSeries = null;
   let maSeriesList = [];
@@ -150,6 +153,7 @@
       const body = await r.json();
       if (seq !== analyzeSeq) return;
       analysis = body;
+      focusPeriod = null; // 새 분석 -> 전체 보기로 초기화
       el.status.textContent = "";
       el.result.style.display = "block";
       renderTimeframe(currentTf);
@@ -165,6 +169,7 @@
     const btn = e.target.closest("button[data-tf]");
     if (!btn) return;
     currentTf = btn.dataset.tf;
+    focusPeriod = null; // 탭 전환 -> 전체 보기로 초기화
     Array.from(el.tabs.children).forEach((b) =>
       b.classList.toggle("active", b === btn)
     );
@@ -189,17 +194,28 @@
       return;
     }
 
-    // 추천 카드
+    // 추천 카드 (클릭 = 해당 이평선만 보기, 다시 클릭 = 전체)
     data.recommended.forEach((rec, i) => {
       const color = MA_COLORS[i % MA_COLORS.length];
       const card = document.createElement("div");
       card.className = "reco-card";
+      if (focusPeriod !== null) {
+        card.classList.add(focusPeriod === rec.period ? "focused" : "dimmed");
+      }
       const rate = (rec.successRate * 100).toFixed(0);
       card.innerHTML =
         `<div class="period"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>` +
         `<div class="meta">터치 ${rec.touches}회 · 성공률 ${rate}%</div>` +
-        `<div class="meta">지지 ${rec.supportBounces} · 저항 ${rec.resistanceBounces} · 돌파 ${rec.breaks}</div>` +
-        (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`);
+        `<div class="meta">` +
+        `<span style="color:${EVENT_COLORS.support}">지지 ${rec.supportBounces}</span> · ` +
+        `<span style="color:${EVENT_COLORS.resistance}">저항 ${rec.resistanceBounces}</span> · ` +
+        `<span style="color:${EVENT_COLORS.break}">돌파 ${rec.breaks}</span></div>` +
+        (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`) +
+        `<div class="card-hint">${focusPeriod === rec.period ? "클릭하면 전체 보기" : "클릭하면 이 선만 보기"}</div>`;
+      card.addEventListener("click", () => {
+        focusPeriod = focusPeriod === rec.period ? null : rec.period;
+        renderTimeframe(currentTf);
+      });
       el.recoCards.appendChild(card);
     });
     if (!data.recommended.length) {
@@ -246,10 +262,17 @@
     });
     candleSeries.setData(data.candles);
 
+    // 카드에서 이평선 하나를 선택했으면 그것만, 아니면 전체 표시
+    const visible = focusPeriod === null
+      ? data.recommended
+      : data.recommended.filter((r) => r.period === focusPeriod);
+
     data.recommended.forEach((rec, i) => {
+      if (focusPeriod !== null && rec.period !== focusPeriod) return;
       const color = MA_COLORS[i % MA_COLORS.length];
       const line = chart.addSeries(LWC.LineSeries, {
-        color, lineWidth: 2, priceLineVisible: false,
+        color, lineWidth: focusPeriod === null ? 2 : 3,
+        priceLineVisible: false,
         lastValueVisible: false, crosshairMarkerVisible: false,
         title: `MA${rec.period}`,
       });
@@ -258,7 +281,7 @@
     });
 
     if (el.markerToggle.checked) {
-      const markers = collectMarkers(data);
+      const markers = collectMarkers(visible);
       if (markers.length) {
         markersApi = LWC.createSeriesMarkers(candleSeries, markers);
       }
@@ -266,19 +289,21 @@
     chart.timeScale().fitContent();
   }
 
-  function collectMarkers(data) {
+  function collectMarkers(recList) {
     const markers = [];
-    data.recommended.forEach((rec, i) => {
-      const color = MA_COLORS[i % MA_COLORS.length];
+    recList.forEach((rec) => {
       rec.events.forEach((ev) => {
         if (ev.outcome === "undecided") return;
         const isSupport = ev.side === "support";
         const failed = ev.outcome === "break";
+        // 색 = 사건 종류: 지지 성공(초록▲) / 저항 성공(주황▼) / 돌파 실패(회색●)
         markers.push({
           time: ev.time,
           position: isSupport ? "belowBar" : "aboveBar",
           shape: failed ? "circle" : (isSupport ? "arrowUp" : "arrowDown"),
-          color: failed ? "#6b7280" : color,
+          color: failed
+            ? EVENT_COLORS.break
+            : (isSupport ? EVENT_COLORS.support : EVENT_COLORS.resistance),
           size: 1,
         });
       });
