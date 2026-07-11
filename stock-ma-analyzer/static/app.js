@@ -5,7 +5,11 @@
   const MA_COLORS = ["#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#22d3ee"];
   const TF_LABEL = { day: "일봉", week: "주봉", month: "월봉" };
   // 이벤트 종류별 마커 색 (이평선 색과 무관하게 사건의 성격을 표시)
-  const EVENT_COLORS = { support: "#22c55e", resistance: "#f97316", break: "#9ca3af" };
+  // breakDown = 지지 이탈(아래로 뚫림, 파랑=하락) / breakUp = 저항 돌파(위로 뚫음, 빨강=상승)
+  const EVENT_COLORS = {
+    support: "#22c55e", resistance: "#f97316",
+    breakDown: "#38bdf8", breakUp: "#f43f5e",
+  };
 
   // 서버/업스트림에서 온 문자열을 innerHTML 에 넣기 전 이스케이프
   function esc(s) {
@@ -223,13 +227,19 @@
         card.classList.add(focusPeriod === rec.period ? "focused" : "dimmed");
       }
       const rate = (rec.successRate * 100).toFixed(0);
+      // 이탈(지지가 아래로 뚫림) / 돌파(저항이 위로 뚫림) 를 나눠서 표시
+      const breakDown = rec.events.filter(
+        (e) => e.outcome === "break" && e.side === "support").length;
+      const breakUp = rec.events.filter(
+        (e) => e.outcome === "break" && e.side === "resistance").length;
       card.innerHTML =
         `<div class="period"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>` +
         `<div class="meta">터치 ${rec.touches}회 · 성공률 ${rate}%</div>` +
         `<div class="meta">` +
         `<span style="color:${EVENT_COLORS.support}">지지 ${rec.supportBounces}</span> · ` +
         `<span style="color:${EVENT_COLORS.resistance}">저항 ${rec.resistanceBounces}</span> · ` +
-        `<span style="color:${EVENT_COLORS.break}">돌파 ${rec.breaks}</span></div>` +
+        `<span style="color:${EVENT_COLORS.breakDown}">이탈 ${breakDown}</span> · ` +
+        `<span style="color:${EVENT_COLORS.breakUp}">돌파 ${breakUp}</span></div>` +
         (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`) +
         `<div class="card-hint">${focusPeriod === rec.period ? "클릭하면 전체 보기" : "클릭하면 이 선만 보기"}</div>`;
       card.addEventListener("click", () => {
@@ -316,13 +326,14 @@
         if (ev.outcome === "undecided") return;
         const isSupport = ev.side === "support";
         const failed = ev.outcome === "break";
-        // 색 = 사건 종류: 지지 성공(초록▲) / 저항 성공(주황▼) / 돌파 실패(회색●)
+        // 색 = 사건 종류: 지지 성공(초록▲) / 저항 성공(주황▼)
+        //            지지 이탈(파랑●, 아래로 뚫림) / 저항 돌파(빨강●, 위로 뚫음)
         markers.push({
           time: ev.time,
           position: isSupport ? "belowBar" : "aboveBar",
           shape: failed ? "circle" : (isSupport ? "arrowUp" : "arrowDown"),
           color: failed
-            ? EVENT_COLORS.break
+            ? (isSupport ? EVENT_COLORS.breakDown : EVENT_COLORS.breakUp)
             : (isSupport ? EVENT_COLORS.support : EVENT_COLORS.resistance),
           size: 1,
         });
