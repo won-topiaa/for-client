@@ -1,0 +1,336 @@
+"""고전 차트 패턴 탐지기 (규칙 기반).
+
+'학습된 AI 모델'이 아니라 각 패턴의 교과서 정의를 기하학적 규칙으로 옮긴
+탐지기다 — 결정적이고, 어떤 근거로 매칭됐는지 수치로 설명할 수 있다.
+모든 탐지는 일봉 위에서 동작하며, ATR 적응형 지그재그 피벗(추세 전환점)을
+공통 기반으로 쓴다.
+
+지원 패턴:
+- head_shoulders / inv_head_shoulders : 헤드 앤 숄더 (천장형/바닥형)
+- triangle                            : 삼각수렴 (대칭/상승/하락)
+- cup_handle                          : 컵 앤 핸들
+- stage                               : 와인스타인 4단계 (1 바닥다지기 /
+                                        2 상승 / 3 천장다지기 / 4 하락)
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from .analysis import atr as atr_fn, sma
+
+PATTERN_KEYS = ("head_shoulders", "inv_head_shoulders", "triangle", "cup_handle", "stage")
+
+
+@dataclass
+class PatternHit:
+    pattern: str
+    matched: bool
+    score: float = 0.0
+    summary: str = ""
+    detail: dict[str, Any] = field(default_factory=dict)
+    # 차트에 그릴 보조선: [{"name", "points": [(bar_idx, price), ...]}]
+    overlays: list[dict[str, Any]] = field(default_factory=list)
+
+
+# ---------- 공통 도구 ----------
+
+def zigzag(close: np.ndarray, thr: np.ndarray) -> list[tuple[int, float, int]]:
+    """ATR 적응형 지그재그. 반환: (봉 인덱스, 가격, +1=고점 / -1=저점)."""
+    n = len(close)
+    if n < 3:
+        return []
+    pivots: list[tuple[int, float, int]] = []
+    direction = 0  # +1 고점 탐색, -1 저점 탐색, 0 미정
+    ext_i, ext_p = 0, close[0]
+    for i in range(1, n):
+        p = close[i]
+        t = thr[i] if np.isfinite(thr[i]) else 0.0
+        if direction >= 0:
+            if p >= ext_p:
+                ext_i, ext_p = i, p
+            elif ext_p - p >= t and t > 0:
+                pivots.append((ext_i, float(ext_p), +1))
+                direction, ext_i, ext_p = -1, i, p
+            elif direction == 0 and t > 0 and p <= ext_p - t:
+                direction = -1
+        else:
+            if p <= ext_p:
+                ext_i, ext_p = i, p
+            elif p - ext_p >= t and t > 0:
+                pivots.append((ext_i, float(ext_p), -1))
+                direction, ext_i, ext_p = +1, i, p
+    return pivots
+
+
+def _fit_line(xs: np.ndarray, ys: np.ndarray) -> tuple[float, float, float]:
+    """1차 적합. 반환: (기울기, 절편, 평균절대잔차)."""
+    slope, intercept = np.polyfit(xs, ys, 1)
+    resid = float(np.mean(np.abs(ys - (slope * xs + intercept))))
+    return float(slope), float(intercept), resid
+
+
+def _prep(df: pd.DataFrame) -> dict[str, Any]:
+    close = df["close"].to_numpy(float)
+    high = df["high"].to_numpy(float)
+    low = df["low"].to_numpy(float)
+    a = atr_fn(high, low, close, 14)
+    # 워밍업 NaN 은 앞쪽 유효값으로 채움 (지그재그 문턱용)
+    a = pd.Series(a).bfill().ffill().to_numpy()
+    thr = np.maximum(2.5 * a, 0.03 * close)
+    return {
+        "close": close, "high": high, "low": low, "atr": a,
+        "pivots": zigzag(close, thr), "n": len(close),
+    }
+
+
+# ---------- 헤드 앤 숄더 ----------
+
+def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
+    key = "inv_head_shoulders" if inverse else "head_shoulders"
+    close, n = ctx["close"], ctx["n"]
+    sign = -1 if inverse else +1
+    # 역헤드앤숄더는 저점 3개(-1), 정형은 고점 3개(+1) 가 골격
+    want = [sign, -sign, sign, -sign, sign]
+    pivots = ctx["pivots"]
+    best: PatternHit | None = None
+    for i in range(len(pivots) - 4):
+        window = pivots[i:i + 5]
+        if [k for _, _, k in window] != want:
+            continue
+        (i1, p1, _), (t1i, t1p, _), (hi, hp, _), (t2i, t2p, _), (i3, p3, _) = window
+        if i3 < n - 90:  # 오른어깨가 최근 90봉 안이어야 '지금' 유효
+            continue
+        ref = abs(hp)
+        # 머리가 양쪽 어깨보다 유의미하게 돌출 (3% 이상)
+        prom1 = sign * (hp - p1) / ref
+        prom3 = sign * (hp - p3) / ref
+        if prom1 < 0.03 or prom3 < 0.03:
+            continue
+        # 어깨 높이 대칭 (가격의 5% 이내)
+        sym = abs(p1 - p3) / ref
+        if sym > 0.05:
+            continue
+        # 넥라인 (두 되돌림점 연결), 과한 기울기 배제
+        nk_slope = (t2p - t1p) / max(t2i - t1i, 1)
+        if abs(nk_slope) * (n - t1i) / ref > 0.10:
+            continue
+        neck_now = t1p + nk_slope * (n - 1 - t1i)
+        # 현재가가 넥라인 부근/이탈 구간이어야 실전 의미가 있음
+        dist_now = sign * (close[-1] - neck_now) / ref
+        if dist_now > 0.06:  # 아직 패턴 몸통 한복판이면 미완성
+            continue
+        score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
+        head_txt = f"{hp:,.0f}"
+        summary = (
+            f"{'바닥' if inverse else '천장'} 머리 {head_txt} · "
+            f"어깨 대칭 {100 - sym * 100 / 0.05 * 5:.0f}점 · 넥라인 {neck_now:,.0f}"
+        )
+        hit = PatternHit(
+            pattern=key, matched=True, score=round(float(score), 4),
+            summary=summary,
+            detail={"head": hp, "shoulders": [p1, p3], "neckline": neck_now},
+            overlays=[
+                {"name": "넥라인", "points": [(t1i, t1p), (n - 1, neck_now)]},
+                {"name": "골격", "points": [(i1, p1), (t1i, t1p), (hi, hp),
+                                            (t2i, t2p), (i3, p3)]},
+            ],
+        )
+        if best is None or hit.score > best.score:
+            best = hit
+    return best or PatternHit(pattern=key, matched=False)
+
+
+# ---------- 삼각수렴 ----------
+
+def detect_triangle(ctx: dict) -> PatternHit:
+    close, n = ctx["close"], ctx["n"]
+    win_start = max(0, n - 130)
+    pivots = [p for p in ctx["pivots"] if p[0] >= win_start]
+    highs = [(i, p) for i, p, k in pivots if k > 0]
+    lows = [(i, p) for i, p, k in pivots if k < 0]
+    if len(highs) < 2 or len(lows) < 2 or len(highs) + len(lows) < 5:
+        return PatternHit(pattern="triangle", matched=False)
+    hx = np.array([i for i, _ in highs], float)
+    hy = np.array([p for _, p in highs], float)
+    lx = np.array([i for i, _ in lows], float)
+    ly = np.array([p for _, p in lows], float)
+    su, bu, ru = _fit_line(hx, hy)   # 상단 저항선
+    sl, bl, rl = _fit_line(lx, ly)   # 하단 지지선
+    price = float(np.mean(close[win_start:]))
+    atr_mean = float(np.mean(ctx["atr"][win_start:]))
+    # 피벗들이 추세선에 잘 붙어야 함
+    if ru > 1.6 * atr_mean or rl > 1.6 * atr_mean:
+        return PatternHit(pattern="triangle", matched=False)
+    x0, x1 = float(min(hx.min(), lx.min())), float(n - 1)
+    w0 = (su * x0 + bu) - (sl * x0 + bl)
+    w1 = (su * x1 + bu) - (sl * x1 + bl)
+    if w0 <= 0 or w1 <= 0:
+        return PatternHit(pattern="triangle", matched=False)
+    ratio = w1 / w0
+    if not (0.15 <= ratio <= 0.80):  # 뚜렷하게 좁아지는 중이어야 함
+        return PatternHit(pattern="triangle", matched=False)
+    # 유형 분류 (기울기를 %/봉으로 정규화)
+    nu = su / price * 100
+    nl = sl / price * 100
+    eps = 0.02
+    if nu < -eps and nl > eps:
+        kind = "대칭 삼각수렴"
+    elif abs(nu) <= eps and nl > eps:
+        kind = "상승 삼각형 (수평 저항 + 저점 상승)"
+    elif nu < -eps and abs(nl) <= eps:
+        kind = "하락 삼각형 (수평 지지 + 고점 하락)"
+    else:
+        return PatternHit(pattern="triangle", matched=False)
+    # 현재가가 삼각형 안
+    up_now, lo_now = su * x1 + bu, sl * x1 + bl
+    if not (lo_now - atr_mean <= close[-1] <= up_now + atr_mean):
+        return PatternHit(pattern="triangle", matched=False)
+    score = (0.80 - ratio) * 3 + (len(highs) + len(lows)) * 0.1
+    return PatternHit(
+        pattern="triangle", matched=True, score=round(float(score), 4),
+        summary=f"{kind} · 폭 {ratio * 100:.0f}%까지 수렴 · 꼭짓점 접근 중",
+        detail={"ratio": ratio, "kind": kind},
+        overlays=[
+            {"name": "저항선", "points": [(int(x0), su * x0 + bu), (n - 1, up_now)]},
+            {"name": "지지선", "points": [(int(x0), sl * x0 + bl), (n - 1, lo_now)]},
+        ],
+    )
+
+
+# ---------- 컵 앤 핸들 ----------
+
+def detect_cup_handle(ctx: dict) -> PatternHit:
+    close, n = ctx["close"], ctx["n"]
+    best: PatternHit | None = None
+    rims = [(i, p) for i, p, k in ctx["pivots"] if k > 0 and i < n - 40]
+    for li, lp in rims:
+        # 컵의 오른쪽 테두리: 왼쪽 테두리의 95% 이상 회복한 첫 지점
+        seg = close[li:]
+        rel = np.flatnonzero(seg[20:] >= lp * 0.95)
+        if rel.size == 0:
+            continue
+        ri = li + 20 + int(rel[0])
+        length = ri - li
+        if not (30 <= length <= 220) or n - 1 - ri > 45:
+            continue
+        cup = close[li:ri + 1]
+        bottom = float(cup.min())
+        depth = (lp - bottom) / lp
+        if not (0.12 <= depth <= 0.50):
+            continue
+        bpos = int(np.argmin(cup)) / length
+        if not (0.25 <= bpos <= 0.75):  # 바닥이 가운데 있어야 U자
+            continue
+        # 둥근 바닥: 2차 곡선 적합도
+        xs = np.linspace(-1, 1, len(cup))
+        coef = np.polyfit(xs, cup, 2)
+        fit = np.polyval(coef, xs)
+        ss_res = float(np.sum((cup - fit) ** 2))
+        ss_tot = float(np.sum((cup - cup.mean()) ** 2)) or 1.0
+        r2 = 1 - ss_res / ss_tot
+        if coef[0] <= 0 or r2 < 0.70:  # 위로 볼록(V자·직선) 배제
+            continue
+        # 핸들: 테두리 회복 후 얕은 되돌림, 현재가는 테두리 부근
+        handle = close[ri:]
+        h_low = float(handle.min())
+        h_depth = (close[ri] - h_low) / lp
+        if h_depth > depth * 0.5 or h_depth > 0.15:
+            continue
+        if not (lp * 0.85 <= close[-1] <= lp * 1.05):
+            continue
+        score = r2 * 2 + (0.5 - abs(bpos - 0.5)) + (0.15 - h_depth)
+        hit = PatternHit(
+            pattern="cup_handle", matched=True, score=round(float(score), 4),
+            summary=(f"컵 깊이 {depth * 100:.0f}% · 둥근바닥 적합도 {r2 * 100:.0f}% · "
+                     f"핸들 조정 {h_depth * 100:.1f}% · 테두리 {lp:,.0f}"),
+            detail={"rim": lp, "depth": depth, "r2": r2, "handle_depth": h_depth},
+            overlays=[{"name": "컵 테두리", "points": [(li, lp), (n - 1, lp)]}],
+        )
+        if best is None or hit.score > best.score:
+            best = hit
+    return best or PatternHit(pattern="cup_handle", matched=False)
+
+
+# ---------- 와인스타인 4단계 ----------
+
+STAGE_NAMES = {1: "1단계 (바닥 다지기)", 2: "2단계 (상승 추세)",
+               3: "3단계 (천장 다지기)", 4: "4단계 (하락 추세)"}
+
+
+def detect_stage(ctx: dict) -> PatternHit:
+    """30주선(≈150일선) 기울기와 가격 위치로 현재 단계를 분류."""
+    close, n = ctx["close"], ctx["n"]
+    if n < 220:
+        return PatternHit(pattern="stage", matched=False,
+                          summary="데이터 부족 (150일선 계산 불가)")
+    ma150 = sma(close, 150)
+    ma_now, ma_m1 = ma150[-1], ma150[-22]
+    slope_m = (ma_now / ma_m1 - 1)          # 최근 1개월 기울기
+    ma_q = ma150[-66] if n >= 216 else ma_m1
+    prior = (ma_m1 / ma_q - 1)              # 그 이전 분기 흐름 (전 단계 문맥)
+    pos = close[-1] / ma_now - 1
+    # 최근 40봉 동안 가격이 150일선을 몇 번 넘나들었나 (횡보 판별)
+    diffs = np.sign(close[-40:] - ma150[-40:])
+    crosses = int(np.sum(diffs[1:] != diffs[:-1]))
+    flat = abs(slope_m) < 0.005
+
+    if flat and crosses >= 3:
+        stage = 3 if prior > 0.01 else 1
+        conf = min(1.0, crosses / 6) * (1 - abs(slope_m) / 0.005 * 0.3)
+    elif slope_m >= 0.005 and pos > 0:
+        stage, conf = 2, min(1.0, slope_m / 0.02) * 0.6 + min(0.4, pos)
+    elif slope_m <= -0.005 and pos < 0:
+        stage, conf = 4, min(1.0, -slope_m / 0.02) * 0.6 + min(0.4, -pos)
+    elif pos > 0:
+        # 하락 중인 30주선 '위'로 올라온 상태 = 바닥 전환 시도 (1단계).
+        # 선이 이미 오르고 있을 때만 2단계로 본다 (와인스타인 정의).
+        stage, conf = (1, 0.3) if slope_m < 0 else (2, 0.3)
+    else:
+        # 상승 중인 선 '아래'로 내려간 상태 = 천장 형성 신호 (3단계)
+        stage, conf = (3, 0.3) if slope_m > 0 else (4, 0.3)
+    # 52주 신고가 근접도 (2단계 초입 판별에 유용)
+    yr = close[-min(250, n):]
+    near_high = close[-1] / float(yr.max())
+    if stage == 2:
+        conf += max(0.0, near_high - 0.85)
+    summary = (f"{STAGE_NAMES[stage]} · 150일선 월기울기 {slope_m * 100:+.1f}% · "
+               f"이격 {pos * 100:+.1f}% · 52주고점 대비 {near_high * 100:.0f}%")
+    idx0 = max(0, n - 260)
+    return PatternHit(
+        pattern="stage", matched=True, score=round(float(conf), 4),
+        summary=summary,
+        detail={"stage": stage, "slope_month": slope_m, "pos": pos,
+                "near_52w_high": near_high},
+        overlays=[{"name": "150일선(≈30주선)",
+                   "points": [(i, float(ma150[i])) for i in range(idx0, n, 5)
+                              if np.isfinite(ma150[i])]}],
+    )
+
+
+def run_all(df: pd.DataFrame) -> dict[str, PatternHit]:
+    """한 종목의 일봉에 모든 탐지기를 실행."""
+    tail = df.tail(300).reset_index(drop=True) if len(df) > 300 else df
+    ctx = _prep(tail)
+    # stage 는 더 긴 문맥이 필요해 원본으로 계산
+    ctx_full = _prep(df.tail(500).reset_index(drop=True)) if len(df) > len(tail) else ctx
+    offset = len(df.tail(500)) - len(tail) if len(df) > 300 else 0
+    hits = {
+        "head_shoulders": detect_head_shoulders(ctx, inverse=False),
+        "inv_head_shoulders": detect_head_shoulders(ctx, inverse=True),
+        "triangle": detect_triangle(ctx),
+        "cup_handle": detect_cup_handle(ctx),
+        "stage": detect_stage(ctx_full),
+    }
+    # stage 오버레이 인덱스를 tail(300) 좌표계로 보정
+    st = hits["stage"]
+    if st.matched and offset:
+        for ov in st.overlays:
+            ov["points"] = [(i - offset, v) for i, v in ov["points"] if i - offset >= 0]
+    # 오버레이 좌표계 길이를 기록 (차트 좌표 변환용)
+    for hit in hits.values():
+        hit.detail["_ctx_len"] = len(tail)
+    return hits
