@@ -84,10 +84,12 @@
     background: var(--panel); position: relative;
   }
   .chart-note { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; margin: 6px 2px 18px; flex-wrap: wrap; gap: 6px;}
+  /* 좁은 화면(모바일)에서 페이지 대신 테이블만 가로 스크롤 */
+  .table-wrap { overflow-x: auto; border-radius: 12px; }
   table {
     width: 100%; border-collapse: collapse; background: var(--panel);
     border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-    font-size: 13px;
+    font-size: 13px; min-width: 640px;
   }
   th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
   th { background: var(--panel2); color: var(--muted); font-weight: 600; }
@@ -115,8 +117,8 @@
   </header>
 
   <div class="banner" id="sampleBanner">
-    ⚠️ 지금은 <b>샘플 데이터 모드</b>입니다 (합성 데이터). 토스증권 API 키를
-    설정하면 실제 시세로 분석합니다 — README 참고.
+    ⚠️ 지금은 <b>샘플 데이터 모드</b>입니다 (합성 데이터). MA_PROVIDER 설정을
+    기본값(auto)으로 두면 무료 실시세(FinanceDataReader/Yahoo)로 분석합니다 — README 참고.
   </div>
 
   <div class="controls">
@@ -127,15 +129,15 @@
     </div>
     <div class="field">
       <label>일봉 기간(년)</label>
-      <input class="years-input" id="yearsDay" type="number" min="0" step="0.5" value="3">
+      <input class="years-input" id="yearsDay" type="number" min="0" max="50" step="0.5" value="3">
     </div>
     <div class="field">
       <label>주봉 기간(년)</label>
-      <input class="years-input" id="yearsWeek" type="number" min="0" step="0.5" value="7">
+      <input class="years-input" id="yearsWeek" type="number" min="0" max="50" step="0.5" value="7">
     </div>
     <div class="field">
       <label>월봉 기간(년)</label>
-      <input class="years-input" id="yearsMonth" type="number" min="0" step="1" value="0">
+      <input class="years-input" id="yearsMonth" type="number" min="0" max="50" step="1" value="0">
     </div>
     <div class="field">
       <button class="primary" id="analyzeBtn" disabled>분석</button>
@@ -164,6 +166,7 @@
       </span>
     </div>
     <h3 style="margin:8px 0 8px">전체 후보 이평선 성적표</h3>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
@@ -173,6 +176,7 @@
       </thead>
       <tbody id="statsBody"></tbody>
     </table>
+    </div>
     <div class="hint">* 성공률은 최근 사건에 더 큰 가중치를 준 가중 성공률입니다. 점수 = 성공률 신뢰하한 × log(1+가중 성공 횟수) — "자주 그리고 믿을 만하게" 지지/저항이 된 순서.</div>
   </div>
 

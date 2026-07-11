@@ -74,6 +74,31 @@ def test_cache_exhausted_history_serves_bigger_requests():
     assert inner.candle_calls == 1
 
 
+def test_cache_truncated_data_not_treated_as_exhausted():
+    """시간 예산 초과로 잘린 데이터(truncated)는 '히스토리 소진'이 아니므로
+    더 큰 요청이 오면 재요청해야 한다."""
+
+    class TruncatingProvider(CountingProvider):
+        async def candles(self, symbol, timeframe, max_bars):
+            df = await super().candles(symbol, timeframe, max_bars)
+            if self.candle_calls == 1:
+                df = df.head(400)          # 첫 호출: 잘린 부분 응답
+                df.attrs["truncated"] = True
+            return df
+
+    inner = TruncatingProvider(total_bars=5000)
+    p = CachingProvider(inner)
+
+    async def go():
+        a = await p.candles("005930", "day", 5000)   # 잘림 (400개)
+        b = await p.candles("005930", "day", 5000)   # 재요청되어야 함
+        return a, b
+
+    a, b = _run(go())
+    assert inner.candle_calls == 2, "잘린 데이터가 소진으로 캐시돼 재요청 안 됨"
+    assert len(b) == 5000
+
+
 def test_cache_concurrent_requests_single_flight():
     inner = CountingProvider()
     p = CachingProvider(inner)

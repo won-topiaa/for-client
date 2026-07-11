@@ -56,9 +56,11 @@ def _events_for_chart(s: MAStat, dates: pd.Series, window_start: int) -> list[di
         if e.end < window_start:
             continue
         # 마커는 사건이 실제로 일어난 봉(반등: 최심 터치봉, 돌파: 확정봉)에.
-        # 분석 창 시작 이전이면 차트 범위 밖이므로 창 안으로 보정.
+        # 사건 봉이 분석 창(차트 표시 범위) 이전이면 마커를 생략한다 —
+        # 창 첫 봉으로 옮겨 붙이면 엉뚱한 봉에 표시되는 왜곡이 생긴다.
         marker_at = e.anchor if e.anchor is not None else e.end
-        marker_at = max(marker_at, window_start)
+        if marker_at < window_start:
+            continue
         events.append({
             "time": dates.iloc[marker_at],
             "side": e.side,

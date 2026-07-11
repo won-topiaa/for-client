@@ -152,7 +152,13 @@
       if (seq !== analyzeSeq) return; // 더 최신 분석이 시작됨 -> 이 응답 폐기
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${r.status}`);
+        // FastAPI 검증 오류(422)의 detail 은 객체 배열이라 그대로 쓰면
+        // "[object Object]" 로 표시됨 -> 사람이 읽을 문장으로 변환
+        const d = err.detail;
+        const msg = typeof d === "string" ? d
+          : Array.isArray(d) ? d.map((x) => x.msg || String(x)).join(", ")
+          : `HTTP ${r.status}`;
+        throw new Error(msg);
       }
       const body = await r.json();
       if (seq !== analyzeSeq) return;

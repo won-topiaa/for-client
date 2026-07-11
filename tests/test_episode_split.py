@@ -88,3 +88,72 @@ def test_break_marker_anchored_to_decision_bar():
                       half_life=100.0)
     brk = next(e for e in stat.episodes if e.outcome == "break")
     assert brk.anchor == brk.decided_at
+
+
+def test_gap_crash_retest_not_double_counted_as_support():
+    """반등 확정 -> 갭 하락(비터치 봉으로 MA 결정적 이탈) -> 아래에서 재터치.
+
+    재시험의 방향 컨텍스트가 이전 세그먼트의 상승 봉에 오염되면
+    '지지 성공 2회'로 이중 계상된다 (리뷰에서 재현된 결함). 올바른 판정:
+    반등 1회 + 아래에서의 재접근은 저항 시험 -> 위로 뚫림(break) 1회.
+    """
+    closes: list[float] = []
+    lows: list[float] = []
+    highs: list[float] = []
+    for i in range(40):  # 상승 추세
+        c = 100.0 + 2.0 * i
+        closes.append(c)
+        lows.append(c - 1.0)
+        highs.append(c + 1.0)
+
+    def push(target_dist, *, deep_wick=False, gap_down=False, wick_touch=False):
+        s9 = sum(closes[-9:])
+        c = (10 * target_dist + s9) / 9.0
+        ma = (s9 + c) / 10.0
+        closes.append(c)
+        if gap_down:      # 봉 전체가 밴드 아래 (비터치 폭락 봉)
+            highs.append(ma - 2.5)
+            lows.append(c - 1.0)
+        elif wick_touch:  # 아래에서 위꼬리로 선 재터치
+            highs.append(c + 1.0)
+            lows.append(ma - 1.0)
+        elif deep_wick:   # 위에서 아래꼬리로 선 터치
+            highs.append(c + 1.0)
+            lows.append(ma - 1.0)
+        else:
+            highs.append(c + 1.0)
+            lows.append(c - 1.0)
+
+    push(8.0, deep_wick=True)    # bar 40: 터치 + 즉시 반등 확정
+    push(-6.0, gap_down=True)    # bar 41: 갭 이탈 (비터치)
+    push(-6.0, gap_down=True)    # bar 42: 갭 이탈 지속 (비터치)
+    push(5.0, wick_touch=True)   # bar 43: 재터치, 종가는 MA 위로
+
+    df = make_df(np.array(closes), highs=np.array(highs), lows=np.array(lows))
+    stat = analyze_ma(df, 10, EngineParams(min_touches=1), window_start=15,
+                      half_life=100.0)
+    assert stat.support_bounces <= 1, (
+        f"지지 성공 이중 계상: {[(e.side, e.outcome) for e in stat.episodes]}"
+    )
+    # 재터치는 아래에서의 접근 -> 저항 시험으로 분류되어야 한다
+    retest = [e for e in stat.episodes if e.start >= 43]
+    assert retest and retest[0].side == "resistance", (
+        [(e.start, e.side, e.outcome) for e in stat.episodes]
+    )
+
+
+def test_marker_omitted_when_anchor_before_window():
+    """anchor 가 분석 창 이전이면 마커를 창 첫 봉으로 옮기지 말고 생략."""
+    import pandas as pd
+    from app.service import _events_for_chart
+
+    df = _build_bounce_then_slide(extra_below=2)
+    ws = 41  # 반등 anchor(40) 직후로 창 시작
+    stat = analyze_ma(df, 10, EngineParams(min_touches=1), window_start=ws,
+                      half_life=100.0)
+    dates = df["date"].dt.strftime("%Y-%m-%d")
+    events = _events_for_chart(stat, dates, ws)
+    bounce_events = [ev for ev in events if ev["outcome"] == "bounce"]
+    assert not bounce_events, (
+        f"창 밖 반등 마커가 창 안 봉으로 옮겨 붙음: {bounce_events}"
+    )
