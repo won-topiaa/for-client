@@ -159,7 +159,7 @@ def test_candles_tails_and_uses_fetch(monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_fetch(symbol):
+    def fake_fetch(symbol, max_bars=None):
         calls["n"] += 1
         return synthetic
 
@@ -181,10 +181,10 @@ def test_fetch_daily_falls_back_to_yahoo(monkeypatch):
         "Close": [1.5, 2.5, 3.5], "Volume": [10, 20, 30],
     }, index=dates)
 
-    def boom(symbol):
+    def boom(symbol, start="1990-01-01"):
         raise RuntimeError("FDR down")
 
-    def fake_yahoo(symbol, market=""):
+    def fake_yahoo(symbol, market="", period="max"):
         return yahoo_df
 
     monkeypatch.setattr(mod, "_fetch_fdr_sync", boom)

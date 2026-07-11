@@ -68,7 +68,7 @@ def normalize_ohlcv(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
-    """fdr.StockListing('KRX') -> symbol/name/market 표준 목록."""
+    """fdr.StockListing('KRX') -> symbol/name/market (+선택: amount/marcap) 목록."""
     code = _pick_col(raw, "code", "symbol", "종목코드")
     name = _pick_col(raw, "name", "종목명")
     market = _pick_col(raw, "market", "시장구분")
@@ -80,6 +80,13 @@ def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
         "name": raw[name].astype(str).str.strip(),
         "market": (raw[market].astype(str).str.strip() if market else ""),
     })
+    # 스크리너 유니버스 선정용 부가 컬럼 (있을 때만)
+    amount = _pick_col(raw, "amount", "거래대금")
+    marcap = _pick_col(raw, "marcap", "시가총액")
+    if amount:
+        out["amount"] = pd.to_numeric(raw[amount], errors="coerce")
+    if marcap:
+        out["marcap"] = pd.to_numeric(raw[marcap], errors="coerce")
     # 유효 코드만: 순수 숫자(1~6자리) 또는 2024.1 개편 이후의 영문 포함
     # 신형 코드(예: 00088K 한화3우B, 0126Z0). 빈 값이 zfill 로 000000 이
     # 되는 것은 여전히 걸러진다.
@@ -90,13 +97,21 @@ def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
     return out[valid].reset_index(drop=True)
 
 
-def _fetch_fdr_sync(symbol: str) -> pd.DataFrame:
+def _start_for(max_bars: int | None) -> str:
+    """필요 봉 수에 맞는 시작일 — 스크리너가 수백 종목을 훑을 때
+    전체 히스토리 다운로드를 피한다 (거래일 보정 1.7배 + 여유)."""
+    if not max_bars or max_bars > 2000:
+        return "1990-01-01"
+    days = int(max_bars * 1.7) + 40
+    return (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _fetch_fdr_sync(symbol: str, start: str = "1990-01-01") -> pd.DataFrame:
     import FinanceDataReader as fdr
-    # 전체 히스토리 (service 가 필요한 만큼 tail). start 지정으로 장기 데이터 확보.
-    return fdr.DataReader(symbol, "1990-01-01")
+    return fdr.DataReader(symbol, start)
 
 
-def _fetch_yahoo_sync(symbol: str, market: str = "") -> pd.DataFrame:
+def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.DataFrame:
     import yfinance as yf
 
     candidates: list[str] = []
@@ -109,7 +124,7 @@ def _fetch_yahoo_sync(symbol: str, market: str = "") -> pd.DataFrame:
         candidates = [symbol]  # 미국 티커 등
     for tkr in candidates:
         try:
-            hist = yf.Ticker(tkr).history(period="max", interval="1d", auto_adjust=False)
+            hist = yf.Ticker(tkr).history(period=period, interval="1d", auto_adjust=False)
         except Exception:
             hist = None
         if hist is not None and len(hist) > 0:
@@ -131,6 +146,9 @@ class FreeDataProvider:
         self._listing_fail_ts = -1e9
         self._listing_lock = asyncio.Lock()
         self._market_by_symbol: dict[str, str] = {}
+        self._us_listing: list[tuple[str, str, str]] | None = None
+        self._us_ts = 0.0
+        self._us_fail_ts = -1e9
 
     def _listing_fresh(self) -> bool:
         return (self._listing is not None
@@ -199,7 +217,7 @@ class FreeDataProvider:
             )
         try:
             df = await asyncio.wait_for(
-                asyncio.to_thread(self._fetch_daily_sync, symbol),
+                asyncio.to_thread(self._fetch_daily_sync, symbol, max_bars),
                 timeout=_CANDLES_TIMEOUT_SEC,
             )
         except (asyncio.TimeoutError, TimeoutError) as exc:
@@ -209,10 +227,10 @@ class FreeDataProvider:
             ) from exc
         return df.tail(max_bars).reset_index(drop=True)
 
-    def _fetch_daily_sync(self, symbol: str) -> pd.DataFrame:
+    def _fetch_daily_sync(self, symbol: str, max_bars: int | None = None) -> pd.DataFrame:
         errors = []
         try:
-            raw = _fetch_fdr_sync(symbol)
+            raw = _fetch_fdr_sync(symbol, _start_for(max_bars))
             if raw is not None and len(raw) > 0:
                 return normalize_ohlcv(raw)
             errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
@@ -220,13 +238,52 @@ class FreeDataProvider:
             errors.append(f"FDR: {exc}")
         try:
             market = self._market_by_symbol.get(symbol, "")
-            raw = _fetch_yahoo_sync(symbol, market)
+            period = "max" if not max_bars or max_bars > 2000 else "3y" if max_bars <= 520 else "10y"
+            raw = _fetch_yahoo_sync(symbol, market, period)
             return normalize_ohlcv(raw)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Yahoo: {exc}")
         raise RuntimeError(
             f"{symbol} 시세를 가져오지 못했습니다 ({' / '.join(errors)})"
         )
+
+    async def listing_frame(self) -> pd.DataFrame | None:
+        """정규화된 KRX 상장목록 (amount/marcap 포함 가능). 스크리너 유니버스용."""
+        return await self._get_listing()
+
+    async def us_listing(self) -> list[tuple[str, str, str]] | None:
+        """S&P500 구성종목 [(symbol, name, sector)]. 12시간 캐시 + 백오프."""
+        if self._us_listing is not None and \
+                time.monotonic() - self._us_ts < _LISTING_TTL_SEC:
+            return self._us_listing
+        if time.monotonic() - self._us_fail_ts < _LISTING_RETRY_SEC:
+            return self._us_listing
+        async with self._listing_lock:
+            if self._us_listing is not None and \
+                    time.monotonic() - self._us_ts < _LISTING_TTL_SEC:
+                return self._us_listing
+            try:
+                raw = await asyncio.wait_for(
+                    asyncio.to_thread(_load_us_listing_sync),
+                    timeout=_LISTING_TIMEOUT_SEC,
+                )
+                sym = _pick_col(raw, "symbol", "code", "ticker")
+                name = _pick_col(raw, "name")
+                sector = _pick_col(raw, "sector", "industry")
+                if not sym or not name:
+                    raise ValueError(f"S&P500 목록 컬럼 불명: {list(raw.columns)}")
+                out = [
+                    (str(r[sym]).strip(), str(r[name]).strip(),
+                     str(r[sector]).strip() if sector else "")
+                    for _, r in raw.iterrows()
+                    if str(r[sym]).strip()
+                ]
+            except Exception:
+                self._us_fail_ts = time.monotonic()
+                return self._us_listing
+            self._us_listing = out
+            self._us_ts = time.monotonic()
+            return out
 
     async def aclose(self) -> None:  # 인터페이스 호환
         return None
@@ -235,3 +292,8 @@ class FreeDataProvider:
 def _load_listing_sync() -> pd.DataFrame:
     import FinanceDataReader as fdr
     return fdr.StockListing("KRX")
+
+
+def _load_us_listing_sync() -> pd.DataFrame:
+    import FinanceDataReader as fdr
+    return fdr.StockListing("S&P500")
