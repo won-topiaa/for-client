@@ -122,6 +122,13 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
             candidates = [f"{symbol}.KS", f"{symbol}.KQ"]
     else:
         candidates = [symbol]  # 미국 티커 등
+        # 지수 심볼(FDR 표기) -> Yahoo 표기
+        idx_map = {"US500": "^GSPC", "KS11": "^KS11", "KQ11": "^KQ11"}
+        if symbol.upper() in idx_map:
+            candidates.append(idx_map[symbol.upper()])
+        # 클래스주 점 표기(BRK.B) -> Yahoo 대시 표기(BRK-B)
+        if "." in symbol:
+            candidates.append(symbol.replace(".", "-"))
     for tkr in candidates:
         try:
             hist = yf.Ticker(tkr).history(period=period, interval="1d", auto_adjust=False)
@@ -149,6 +156,9 @@ class FreeDataProvider:
         self._us_listing: list[tuple[str, str, str]] | None = None
         self._us_ts = 0.0
         self._us_fail_ts = -1e9
+        # KR/US 목록은 상태를 공유하지 않으므로 락도 분리 (KR 갱신 15초가
+        # US 스캔 시작을 막지 않게)
+        self._us_lock = asyncio.Lock()
 
     def _listing_fresh(self) -> bool:
         return (self._listing is not None
@@ -229,10 +239,18 @@ class FreeDataProvider:
 
     def _fetch_daily_sync(self, symbol: str, max_bars: int | None = None) -> pd.DataFrame:
         errors = []
+        start = _start_for(max_bars)
+        windowed = start != "1990-01-01"
         try:
-            raw = _fetch_fdr_sync(symbol, _start_for(max_bars))
+            raw = _fetch_fdr_sync(symbol, start)
             if raw is not None and len(raw) > 0:
-                return normalize_ohlcv(raw)
+                df = normalize_ohlcv(raw)
+                # 창 제한 조회가 요청량보다 적게 돌아오면 (장기 거래정지 등)
+                # '히스토리 소진'이 아니라 '창이 짧았던 것'일 수 있다 —
+                # 캐시가 잘린 데이터를 전체 기간으로 오인하지 않게 표시.
+                if windowed and max_bars and len(df) < max_bars:
+                    df.attrs["truncated"] = True
+                return df
             errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
         except Exception as exc:  # noqa: BLE001
             errors.append(f"FDR: {exc}")
@@ -240,7 +258,10 @@ class FreeDataProvider:
             market = self._market_by_symbol.get(symbol, "")
             period = "max" if not max_bars or max_bars > 2000 else "3y" if max_bars <= 520 else "10y"
             raw = _fetch_yahoo_sync(symbol, market, period)
-            return normalize_ohlcv(raw)
+            df = normalize_ohlcv(raw)
+            if period != "max" and max_bars and len(df) < max_bars:
+                df.attrs["truncated"] = True
+            return df
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Yahoo: {exc}")
         raise RuntimeError(
@@ -251,16 +272,23 @@ class FreeDataProvider:
         """정규화된 KRX 상장목록 (amount/marcap 포함 가능). 스크리너 유니버스용."""
         return await self._get_listing()
 
+    # FDR 의 위키피디아 리더는 클래스주 티커의 점을 제거한다 (BRK.B -> BRKB).
+    # Yahoo 는 대시 형식(BRK-B)만 인식하므로 알려진 것들을 복원한다.
+    _US_TICKER_FIX = {"BRKB": "BRK-B", "BFB": "BF-B"}
+
     async def us_listing(self) -> list[tuple[str, str, str]] | None:
         """S&P500 구성종목 [(symbol, name, sector)]. 12시간 캐시 + 백오프."""
-        if self._us_listing is not None and \
-                time.monotonic() - self._us_ts < _LISTING_TTL_SEC:
+        def fresh() -> bool:
+            return (self._us_listing is not None
+                    and time.monotonic() - self._us_ts < _LISTING_TTL_SEC)
+
+        def backing_off() -> bool:
+            return time.monotonic() - self._us_fail_ts < _LISTING_RETRY_SEC
+
+        if fresh() or backing_off():
             return self._us_listing
-        if time.monotonic() - self._us_fail_ts < _LISTING_RETRY_SEC:
-            return self._us_listing
-        async with self._listing_lock:
-            if self._us_listing is not None and \
-                    time.monotonic() - self._us_ts < _LISTING_TTL_SEC:
+        async with self._us_lock:
+            if fresh() or backing_off():  # 락 대기 중 갱신/실패됐을 수 있음
                 return self._us_listing
             try:
                 raw = await asyncio.wait_for(
@@ -272,12 +300,14 @@ class FreeDataProvider:
                 sector = _pick_col(raw, "sector", "industry")
                 if not sym or not name:
                     raise ValueError(f"S&P500 목록 컬럼 불명: {list(raw.columns)}")
-                out = [
-                    (str(r[sym]).strip(), str(r[name]).strip(),
-                     str(r[sector]).strip() if sector else "")
-                    for _, r in raw.iterrows()
-                    if str(r[sym]).strip()
-                ]
+                out = []
+                for _, r in raw.iterrows():
+                    ticker = str(r[sym]).strip()
+                    if not ticker:
+                        continue
+                    ticker = self._US_TICKER_FIX.get(ticker, ticker)
+                    out.append((ticker, str(r[name]).strip(),
+                                str(r[sector]).strip() if sector else ""))
             except Exception:
                 self._us_fail_ts = time.monotonic()
                 return self._us_listing

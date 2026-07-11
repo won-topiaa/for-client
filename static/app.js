@@ -59,6 +59,9 @@
     fetch(`/api/search?q=${encodeURIComponent(sym)}`)
       .then((r) => r.json())
       .then((body) => {
+        // 응답을 기다리는 사이 사용자가 이미 검색/선택을 시작했다면
+        // 자동선택으로 그 입력을 덮어쓰지 않는다
+        if (selected !== null || el.search.value.trim() !== "") return;
         const hit = (body.results || []).find((x) => x.symbol === sym)
           || (body.results || [])[0];
         if (hit) {
@@ -206,7 +209,18 @@
   el.markerToggle.addEventListener("change", () => renderTimeframe(currentTf));
 
   /* ---------- 렌더링 ---------- */
-  function renderTimeframe(tf) {
+  // 카드 하나를 클릭/키보드(Enter·Space)로 모두 누를 수 있게 만든다
+  function cardButton(card, pressed, onActivate) {
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-pressed", pressed ? "true" : "false");
+    card.addEventListener("click", onActivate);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(); }
+    });
+  }
+
+  function renderTimeframe(tf, refocusKey) {
     if (!analysis) return;
     const data = analysis.timeframes[tf];
     el.recoCards.innerHTML = "";
@@ -234,9 +248,10 @@
         `<div class="period">${dots}${n === 3 ? "세 개" : n + "개"} 동시</div>` +
         `<div class="meta">추천 이평선 전체 보기</div>` +
         `<div class="card-hint">${focusPeriod === null ? "지금 보는 중" : "클릭하면 전체 표시"}</div>`;
-      allCard.addEventListener("click", () => {
+      allCard.dataset.cardKey = "all";
+      cardButton(allCard, focusPeriod === null, () => {
         focusPeriod = null;
-        renderTimeframe(currentTf);
+        renderTimeframe(currentTf, "all");
       });
       el.recoCards.appendChild(allCard);
     }
@@ -265,9 +280,10 @@
         `<span style="color:${EVENT_COLORS.breakUp}">돌파 ${breakUp}</span></div>` +
         (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`) +
         `<div class="card-hint">${focusPeriod === rec.period ? "클릭하면 전체 보기" : "클릭하면 이 선만 보기"}</div>`;
-      card.addEventListener("click", () => {
+      card.dataset.cardKey = String(rec.period);
+      cardButton(card, focusPeriod === rec.period, () => {
         focusPeriod = focusPeriod === rec.period ? null : rec.period;
-        renderTimeframe(currentTf);
+        renderTimeframe(currentTf, String(rec.period));
       });
       el.recoCards.appendChild(card);
     });
@@ -283,6 +299,13 @@
 
     buildChart(data);
     buildTable(data);
+
+    // 카드 활성화로 다시 그린 경우, 새로 만든 같은 카드에 포커스를 되돌려
+    // 키보드 사용자가 위치를 잃지 않게 한다
+    if (refocusKey !== undefined) {
+      const target = el.recoCards.querySelector(`[data-card-key="${refocusKey}"]`);
+      if (target) target.focus();
+    }
   }
 
   function destroyChart() {

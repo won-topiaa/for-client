@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -55,8 +56,6 @@ def zigzag(close: np.ndarray, thr: np.ndarray) -> list[tuple[int, float, int]]:
             elif ext_p - p >= t and t > 0:
                 pivots.append((ext_i, float(ext_p), +1))
                 direction, ext_i, ext_p = -1, i, p
-            elif direction == 0 and t > 0 and p <= ext_p - t:
-                direction = -1
         else:
             if p <= ext_p:
                 ext_i, ext_p = i, p
@@ -126,9 +125,10 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             continue
         score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
         head_txt = f"{hp:,.0f}"
+        sym_score = max(0.0, 100 - sym / 0.05 * 100)  # 0(허용 한계)~100(완전 대칭)
         summary = (
             f"{'바닥' if inverse else '천장'} 머리 {head_txt} · "
-            f"어깨 대칭 {100 - sym * 100 / 0.05 * 5:.0f}점 · 넥라인 {neck_now:,.0f}"
+            f"어깨 대칭 {sym_score:.0f}점 · 넥라인 {neck_now:,.0f}"
         )
         hit = PatternHit(
             pattern=key, matched=True, score=round(float(score), 4),
@@ -330,8 +330,9 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
     if not np.isfinite(ma[-1]) or close[-1] <= ma[-1]:
         return PatternHit(pattern=key, matched=False)
     # 조건 3: 30주선 신선한 상승 전환 (지금은 오르고, 3~4개월 전엔 아니었음)
+    # ma[-88] 은 n >= 238 이면 유한 — 그 아래에서만 신선도 검사를 생략한다
     slope_now = ma[-1] / ma[-22] - 1
-    slope_prev = (ma[-66] / ma[-88] - 1) if n >= 238 + 150 else 0.0
+    slope_prev = (ma[-66] / ma[-88] - 1) if n >= 238 else 0.0
     if slope_now < 0.004 or slope_prev > 0.004:
         return PatternHit(pattern=key, matched=False)
 
@@ -346,11 +347,21 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
             continue  # 박스가 아니라 추세 구간
         if close[b] <= base_high or close[b - 1] > base_high:
             continue  # b 가 '첫' 돌파 봉이어야 함
-        # 조건 2: 돌파 거래량 확인
-        base_vol = float(np.mean(volume[b - 130:b - 5])) or 1.0
-        brk_vol = float(np.mean(volume[b:min(b + 5, n)]))
-        vol_ratio = brk_vol / base_vol if base_vol > 0 else 1.0
-        if vol_ratio < 1.3:
+        # 조건 2: 돌파 거래량 확인 — NaN 거래량이 섞여도 필터가 뚫리거나
+        # (NaN < 1.3 은 False) 정상 돌파가 죽지 않도록 nan-안전하게 계산하고
+        # 긍정형(>=)으로 판정한다.
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            # 전 구간 NaN 이면 nanmean 이 'Mean of empty slice' 경고와 함께
+            # NaN 을 돌려준다 — 아래에서 isfinite 로 걸러지므로 경고만 끈다
+            warnings.simplefilter("ignore", RuntimeWarning)
+            base_vol = float(np.nanmean(volume[b - 130:b - 5]))
+            brk_vol = float(np.nanmean(volume[b:min(b + 5, n)]))
+        vol_ratio = (
+            brk_vol / base_vol
+            if np.isfinite(brk_vol) and np.isfinite(base_vol) and base_vol > 0
+            else 0.0
+        )
+        if not (vol_ratio >= 1.3):
             continue
         # 조건 4: 아직 초기 — 현재가가 돌파선의 +25% 이내
         ext = close[-1] / base_high - 1

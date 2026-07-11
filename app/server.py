@@ -68,7 +68,8 @@ def _kr_fallback_universe(settings: Settings, provider: Provider) -> list:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from .pattern_scan import INDEX_SYMBOL, PatternScanner, make_universe_fn
+    from .pattern_scan import INDEX_SYMBOL, US_FALLBACK, PatternScanner, make_universe_fn
+    from .providers.base import SymbolInfo
 
     settings = load_settings()
     app.state.settings = settings
@@ -76,10 +77,11 @@ async def lifespan(app: FastAPI):
     provider = CachingProvider(build_provider(settings))
     app.state.provider = provider
     kr_fallback = _kr_fallback_universe(settings, provider)
+    us_fallback = [SymbolInfo(*t) for t in US_FALLBACK]
     app.state.scanners = {
         "kr": PatternScanner(provider, make_universe_fn(provider, "kr", kr_fallback),
                              INDEX_SYMBOL["kr"]),
-        "us": PatternScanner(provider, make_universe_fn(provider, "us", kr_fallback),
+        "us": PatternScanner(provider, make_universe_fn(provider, "us", us_fallback),
                              INDEX_SYMBOL["us"]),
     }
     yield
@@ -199,6 +201,7 @@ async def patterns_api(
         "scanned": snap.get("scanned"),
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
+        "refreshing": bool(snap.get("refreshing")),  # 만료 결과 재스캔 중 여부
         "matches": matches[:4],  # 요청 스펙: 3~4개
         "totalMatches": len(matches),
     }

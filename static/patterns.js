@@ -47,29 +47,74 @@
     desc: document.getElementById("patternDesc"),
     status: document.getElementById("status"),
     matches: document.getElementById("matches"),
+    party: document.getElementById("scanParty"),
+    partyCaption: document.getElementById("partyCaption"),
   };
+
+  const CAPTIONS = [
+    "양봉이와 음봉이가 차트를 뒤지는 중…",
+    "박스권 상단을 두드려보는 중…",
+    "30주선 기울기를 재보는 중…",
+    "거래량 급증을 킁킁 맡는 중…",
+    "넥라인을 자로 대보는 중…",
+  ];
+  let captionIdx = 0;
+  let captionTimer = null;
+
+  function showParty(on) {
+    el.party.style.display = on ? "flex" : "none";
+    el.partyCaption.style.display = on ? "block" : "none";
+    if (on) {
+      // 폴링(2초)마다 다시 호출돼도 타이머를 새로 만들지 않아야
+      // 자막 로테이션(3.5초)이 실제로 돌아간다
+      if (!captionTimer) {
+        captionTimer = setInterval(() => {
+          captionIdx = (captionIdx + 1) % CAPTIONS.length;
+          el.partyCaption.textContent = CAPTIONS[captionIdx];
+        }, 3500);
+      }
+    } else if (captionTimer) {
+      clearInterval(captionTimer);
+      captionTimer = null;
+    }
+  }
 
   let pattern = "stage2";
   let market = "kr";
   let pollTimer = null;
   let reqSeq = 0;
+  let renderedWhileRefreshing = false; // 만료 결과를 보여주며 재스캔 대기 중인지
   const charts = [];
+
+  function activateCard(card) {
+    pattern = card.dataset.pattern;
+    Array.from(el.cards.children).forEach((c) => {
+      c.classList.toggle("active", c === card);
+      c.setAttribute("aria-pressed", c === card ? "true" : "false");
+    });
+    load();
+  }
 
   el.cards.addEventListener("click", (e) => {
     const card = e.target.closest(".p-card");
+    if (card) activateCard(card);
+  });
+  el.cards.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const card = e.target.closest(".p-card");
     if (!card) return;
-    pattern = card.dataset.pattern;
-    Array.from(el.cards.children).forEach((c) =>
-      c.classList.toggle("active", c === card));
-    load();
+    e.preventDefault();
+    activateCard(card);
   });
 
   el.marketToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-market]");
     if (!btn) return;
     market = btn.dataset.market;
-    Array.from(el.marketToggle.children).forEach((b) =>
-      b.classList.toggle("active", b === btn));
+    Array.from(el.marketToggle.children).forEach((b) => {
+      b.classList.toggle("active", b === btn);
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
     load();
   });
 
@@ -82,13 +127,34 @@
     el.desc.innerHTML = DESCRIPTIONS[pattern] || "";
   }
 
-  async function load() {
+  // 진행률 갱신: 기존 막대 DOM 을 재사용해야 폭 전환(transition)이 자연스럽고
+  // 폴링마다 화면이 깜빡이지 않는다
+  function updateProgress(body) {
+    const label =
+      `${market === "kr" ? "국내" : "미국"} 종목 스캔 중… ` +
+      (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중");
+    const pct = body.total ? Math.round((body.done / body.total) * 100) : 0;
+    let bar = el.status.querySelector(".bar > div");
+    if (!bar) {
+      el.status.innerHTML =
+        `<span class="scan-label"></span><div class="bar"><div style="width:0%"></div></div>`;
+      bar = el.status.querySelector(".bar > div");
+    }
+    el.status.querySelector(".scan-label").textContent = label;
+    bar.style.width = pct + "%";
+  }
+
+  async function load(isPoll) {
     const seq = ++reqSeq;
     clearTimeout(pollTimer);
-    destroyCharts();
-    el.matches.innerHTML = "";
-    renderDesc();
-    el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
+    if (!isPoll) {
+      // 사용자가 패턴/시장을 바꾼 경우에만 화면을 비운다 (폴링 중엔 유지)
+      destroyCharts();
+      el.matches.innerHTML = "";
+      renderDesc();
+      renderedWhileRefreshing = false;
+      el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
+    }
     try {
       const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}`);
       if (seq !== reqSeq) return;
@@ -96,25 +162,44 @@
       const body = await r.json();
       if (seq !== reqSeq) return;
       if (body.status === "running") {
-        const pct = body.total ? Math.round((body.done / body.total) * 100) : 0;
-        el.status.innerHTML =
-          `<span class="spinner"></span>${market === "kr" ? "국내" : "미국"} 종목 스캔 중… ` +
-          (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중") +
-          `<div class="bar"><div style="width:${pct}%"></div></div>`;
-        pollTimer = setTimeout(load, 2000);
+        showParty(true);
+        updateProgress(body);
+        pollTimer = setTimeout(() => load(true), 2000);
+        return;
+      }
+      if (body.status === "error") {
+        showParty(false);
+        destroyCharts();
+        el.matches.innerHTML = "";
+        el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
+        pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
+        return;
+      }
+      showParty(false);
+      if (isPoll && renderedWhileRefreshing && body.refreshing) {
+        // 만료 결과는 이미 그려둠 — 재스캔이 끝날 때까지 다시 그리지 않고 대기
+        pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
       render(body);
+      renderedWhileRefreshing = !!body.refreshing;
+      if (body.refreshing) pollTimer = setTimeout(() => load(true), 5000);
     } catch (err) {
-      if (seq === reqSeq) el.status.textContent = "스캔 실패: " + err.message;
+      if (seq === reqSeq) {
+        showParty(false);
+        el.status.textContent = "스캔 실패: " + err.message;
+      }
     }
   }
 
   function render(body) {
+    destroyCharts();
+    el.matches.innerHTML = "";
     el.status.textContent =
       `${body.scanned}개 종목 스캔 완료 · 매칭 ${body.totalMatches}개` +
       (body.totalMatches > body.matches.length
-        ? ` (상위 ${body.matches.length}개 표시)` : "");
+        ? ` (상위 ${body.matches.length}개 표시)` : "") +
+      (body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
     if (!body.matches.length) {
       el.matches.innerHTML =
         `<div class="empty">지금 이 패턴에 해당하는 종목이 없습니다.<br>` +
