@@ -1,7 +1,8 @@
 # Render.com 배포 설정 (Blueprint)
 # 사용법: render.com -> New -> Blueprint -> 이 저장소/브랜치 선택
-# 환경변수 3개(TOSS_CLIENT_ID, TOSS_CLIENT_SECRET, SITE_PASSWORD)는
-# Render 대시보드에서 직접 입력한다 (sync: false = 저장소에 저장 안 함).
+#
+# 기본 공급자가 무료 시세(FinanceDataReader/Yahoo)라 API 키·IP 등록이 필요 없다.
+# SITE_PASSWORD 만 선택적으로 설정(비공개용). 비워두면 누구나 접속 가능(공개).
 services:
   - type: web
     name: ma-radar
@@ -15,9 +16,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.6
-      - key: TOSS_CLIENT_ID
-        sync: false
-      - key: TOSS_CLIENT_SECRET
-        sync: false
+      # 선택: 접속 비밀번호(비공개용). 공개로 열려면 Render 대시보드에서 비워둠.
       - key: SITE_PASSWORD
         sync: false

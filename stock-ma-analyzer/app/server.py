@@ -26,17 +26,21 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def build_provider(settings: Settings) -> Provider:
-    if settings.provider == "toss" or (
-        settings.provider == "auto" and settings.toss.configured
-    ):
+    provider = settings.provider
+    if provider == "toss":
         if not settings.toss.configured:
             raise RuntimeError(
                 "provider=toss 인데 TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 이 없습니다."
             )
         logger.info("토스증권 Open API 공급자 사용 (base=%s)", settings.toss.base_url)
         return TossProvider(settings.toss, data_dir=settings.data_dir)
-    logger.info("샘플 데이터 공급자 사용 (API 키 없음 또는 provider=sample)")
-    return SampleProvider(data_dir=settings.data_dir)
+    if provider == "sample":
+        logger.info("샘플 데이터 공급자 사용 (provider=sample)")
+        return SampleProvider(data_dir=settings.data_dir)
+    # 기본값(auto/free): 키·IP 제한이 없는 무료 소스 (공개 배포에 적합)
+    logger.info("무료 시세 공급자 사용 (FinanceDataReader/Yahoo, provider=%s)", provider)
+    from .providers.free_data import FreeDataProvider
+    return FreeDataProvider(data_dir=settings.data_dir)
 
 
 @asynccontextmanager
