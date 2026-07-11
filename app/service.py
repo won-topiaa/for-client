@@ -55,8 +55,12 @@ def _events_for_chart(s: MAStat, dates: pd.Series, window_start: int) -> list[di
     for e in s.episodes:
         if e.end < window_start:
             continue
+        # 마커는 사건이 실제로 일어난 봉(반등: 최심 터치봉, 돌파: 확정봉)에.
+        # 분석 창 시작 이전이면 차트 범위 밖이므로 창 안으로 보정.
+        marker_at = e.anchor if e.anchor is not None else e.end
+        marker_at = max(marker_at, window_start)
         events.append({
-            "time": dates.iloc[e.end],
+            "time": dates.iloc[marker_at],
             "side": e.side,
             "outcome": e.outcome,
             "period": s.period,
