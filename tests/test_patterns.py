@@ -577,8 +577,6 @@ def test_hs_still_valid_near_neckline():
 
 def test_hs_busted_when_price_above_head():
     """종가가 머리를 넘어 회복하면 패턴 무효 (busted — Bulkowski 2005)."""
-    from app.patterns import PatternHit  # noqa: F401 (문서화용)
-
     busted = np.concatenate([_hs_series(), _seg(99, 134, 40)])  # 머리(130) 위로
     ctx = _prep(_df(busted, noise_seed=26))
     assert not detect_head_shoulders(ctx).matched

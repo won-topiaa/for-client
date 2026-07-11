@@ -116,6 +116,7 @@
   let pollTimer = null;
   let reqSeq = 0;
   let renderedWhileRefreshing = false; // 만료 결과를 보여주며 재스캔 대기 중인지
+  let pollFails = 0; // 연속 폴링 실패 횟수 (일시 오류는 재시도, 지속 오류만 포기)
   const charts = [];
 
   function activateCard(card) {
@@ -194,6 +195,7 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json();
       if (seq !== reqSeq) return;
+      pollFails = 0;
       if (body.status === "running") {
         showParty(true);
         updateProgress(body);
@@ -218,10 +220,15 @@
       renderedWhileRefreshing = !!body.refreshing;
       if (body.refreshing) pollTimer = setTimeout(() => load(true), 5000);
     } catch (err) {
-      if (seq === reqSeq) {
-        showParty(false);
-        el.status.textContent = "스캔 실패: " + err.message;
+      if (seq !== reqSeq) return;
+      // 폴링 중 일시적 네트워크 오류로 체인을 끊지 않는다 — 3회까지 재시도
+      if (isPoll && pollFails < 3) {
+        pollFails += 1;
+        pollTimer = setTimeout(() => load(true), 4000);
+        return;
       }
+      showParty(false);
+      el.status.textContent = "스캔 실패: " + err.message;
     }
   }
 

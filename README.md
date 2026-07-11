@@ -191,3 +191,32 @@ API 통합까지 검증합니다.
 구현은 `app/patterns.py` 의 각 탐지기 안에 있으며(스캔마다 전체 재평가라
 별도 상태 관리 없이 기준 미달 종목이 자연 탈락), 각 기준은
 `tests/test_patterns.py` 의 "패턴 이탈(무효화)" 테스트로 회귀 보호된다.
+
+## 9. 참고 문헌
+
+스크리너의 매칭·탈락 기준과 유니버스 설계가 근거한 자료의 정식 서지사항:
+
+1. Lo, A. W., Mamaysky, H., & Wang, J. (2000). Foundations of Technical
+   Analysis: Computational Algorithms, Statistical Inference, and Empirical
+   Implementation. *The Journal of Finance*, 55(4), 1705–1765.
+   https://doi.org/10.1111/0022-1082.00265
+   — 기하학적 패턴 탐지 방법론, 패턴 정보력은 완성 직후 집중 (H&S 탈락 기준)
+2. Han, Y., Yang, K., & Zhou, G. (2013). A New Anomaly: The Cross-Sectional
+   Profitability of Technical Analysis. *Journal of Financial and Quantitative
+   Analysis*, 48(5), 1433–1461. https://doi.org/10.1017/S0022109013000586
+   — 기술적 분석 효과는 초대형주에서 최약 (유니버스에서 초대형주 제외 근거)
+3. Park, C.-H., & Irwin, S. H. (2007). What Do We Know About the Profitability
+   of Technical Analysis? *Journal of Economic Surveys*, 21(4), 786–826.
+   https://doi.org/10.1111/j.1467-6419.2007.00519.x
+   — 거래비용·데이터 스누핑 경고 (유동성 상위 종목만 스캔하는 근거)
+4. Jegadeesh, N., & Titman, S. (1993). Returns to Buying Winners and Selling
+   Losers: Implications for Stock Market Efficiency. *The Journal of Finance*,
+   48(1), 65–91. https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+   — 모멘텀/상대강도 효과 (와인스타인 RS 가점의 학술 근거)
+5. Bulkowski, T. N. (2005). *Encyclopedia of Chart Patterns* (2nd ed.). Wiley.
+   — busted 패턴 정의, 5% 룰, 되돌림(throwback) 통계, 삼각형 돌파는 꼭짓점
+   거리의 평균 73~75% 지점 (H&S·삼각수렴 탈락 기준)
+6. O'Neil, W. J. (2009). *How to Make Money in Stocks* (4th ed.). McGraw-Hill.
+   (초판 1988) — 컵앤핸들 정의, 핸들은 컵 상반부, 매수는 피벗 +5% 이내
+7. Weinstein, S. (1988). *Secrets for Profiting in Bull and Bear Markets*.
+   Dow Jones-Irwin. — 4단계 사이클, 30주선 매매 규칙, 돌파 거래량 기준
