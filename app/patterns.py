@@ -119,9 +119,18 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
         if abs(nk_slope) * (n - t1i) / ref > 0.10:
             continue
         neck_now = t1p + nk_slope * (n - 1 - t1i)
-        # 현재가가 넥라인 부근/이탈 구간이어야 실전 의미가 있음
+        # 탈락 기준 1 (busted 패턴, Bulkowski 2005): 가격이 머리를 넘어 회복하면
+        # 패턴 무효 — 천장형은 머리 위 종가, 바닥형은 머리 아래 종가.
+        if sign * (hp - close[-1]) <= 0:
+            continue
+        # 현재가가 넥라인 부근/이탈 직후 구간이어야 실전 의미가 있음.
+        #  · 위쪽 +6% 초과: 아직 몸통 한복판 = 미완성
+        #  · 탈락 기준 2 (신호 소진): 넥라인 돌파 후 5% 넘게 진행됐으면 신호가
+        #    이미 소진된 것 — 5% 룰(Bulkowski 2005) + 패턴 정보력은 완성 직후에
+        #    집중된다는 실증(Lo·Mamaysky·Wang 2000). 되돌림(throwback)은 보통
+        #    넥라인 부근까지라 ±5~6% 밴드가 실전 유효 구간이다.
         dist_now = sign * (close[-1] - neck_now) / ref
-        if dist_now > 0.06:  # 아직 패턴 몸통 한복판이면 미완성
+        if dist_now > 0.06 or dist_now < -0.05:
             continue
         score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
         head_txt = f"{hp:,.0f}"
@@ -172,7 +181,12 @@ def detect_triangle(ctx: dict) -> PatternHit:
     if w0 <= 0 or w1 <= 0:
         return PatternHit(pattern="triangle", matched=False)
     ratio = w1 / w0
-    if not (0.15 <= ratio <= 0.80):  # 뚜렷하게 좁아지는 중이어야 함
+    # 0.80 상한: 뚜렷하게 좁아지는 중이어야 함.
+    # 0.15 하한 = 탈락 기준 (꼭짓점 소멸): 폭이 처음의 15% 미만(≈꼭짓점까지
+    # 85% 이상 진행)인데 돌파가 없으면 예측력이 소멸 — 삼각형 돌파는 평균적으로
+    # 꼭짓점까지 약 73~75% 지점에서 발생하고, 꼭짓점에 닿도록 못 뚫으면
+    # 실패 경향 (Bulkowski, Encyclopedia of Chart Patterns 2005).
+    if not (0.15 <= ratio <= 0.80):
         return PatternHit(pattern="triangle", matched=False)
     # 유형 분류 (기울기를 %/봉으로 정규화)
     nu = su / price * 100
@@ -186,7 +200,9 @@ def detect_triangle(ctx: dict) -> PatternHit:
         kind = "하락 삼각형 (수평 지지 + 고점 하락)"
     else:
         return PatternHit(pattern="triangle", matched=False)
-    # 현재가가 삼각형 안
+    # 탈락 기준 (이탈 = 돌파 완료): 종가가 추세선 밖으로 1 ATR 넘게 나가면
+    # 이미 돌파가 일어난 것 — '수렴 중' 후보에서 제외한다. ±1 ATR 여유는
+    # 돌파 직전의 노이즈성 삐져나옴(premature breakout, Bulkowski 2005)을 허용.
     up_now, lo_now = su * x1 + bu, sl * x1 + bl
     if not (lo_now - atr_mean <= close[-1] <= up_now + atr_mean):
         return PatternHit(pattern="triangle", matched=False)
@@ -235,12 +251,16 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         r2 = 1 - ss_res / ss_tot
         if coef[0] <= 0 or r2 < 0.70:  # 위로 볼록(V자·직선) 배제
             continue
-        # 핸들: 테두리 회복 후 얕은 되돌림, 현재가는 테두리 부근
+        # 핸들: 테두리 회복 후 얕은 되돌림, 현재가는 테두리 부근.
+        # 탈락 기준 1 (핸들 붕괴, O'Neil 1988): 핸들 조정이 컵 깊이의 50% 를
+        # 넘거나(컵 하반부 침범) 15% 를 넘으면 패턴 무효.
         handle = close[ri:]
         h_low = float(handle.min())
         h_depth = (close[ri] - h_low) / lp
         if h_depth > depth * 0.5 or h_depth > 0.15:
             continue
+        # 탈락 기준 2: 테두리 -15% 아래로 무너지면 패턴 실패, 테두리 +5% 를
+        # 넘게 이미 상승했으면 추격 구간 (O'Neil 의 매수점 규칙: 피벗 +5% 이내).
         if not (lp * 0.85 <= close[-1] <= lp * 1.05):
             continue
         score = r2 * 2 + (0.5 - abs(bpos - 0.5)) + (0.15 - h_depth)
@@ -327,6 +347,8 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
     if n < 260:
         return PatternHit(pattern=key, matched=False, summary="데이터 부족")
     ma = sma(close, 150)
+    # 탈락 기준 1 (와인스타인의 매도 규칙): 종가가 30주선 아래면 2단계가 아니다
+    # — 그의 손절 기준이 '30주선 하향 이탈'이므로 그 즉시 후보에서 제외.
     if not np.isfinite(ma[-1]) or close[-1] <= ma[-1]:
         return PatternHit(pattern=key, matched=False)
     # 조건 3: 30주선 신선한 상승 전환 (지금은 오르고, 3~4개월 전엔 아니었음)
@@ -363,7 +385,10 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
         )
         if not (vol_ratio >= 1.3):
             continue
-        # 조건 4: 아직 초기 — 현재가가 돌파선의 +25% 이내
+        # 조건 4: 아직 초기 — 현재가가 돌파선의 +25% 이내.
+        # 탈락 기준 2 (실패 돌파): 종가가 돌파선 3% 아래로 되밀리면 돌파가
+        # 유지되지 못한 것 (와인스타인: 돌파는 지지로 바뀌어야 한다).
+        # 탈락 기준 3 (확장): +25% 초과는 더 이상 '초기'가 아님 — 추격 배제.
         ext = close[-1] / base_high - 1
         if not (-0.03 <= ext <= 0.25):
             continue

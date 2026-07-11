@@ -547,3 +547,83 @@ def test_universe_fn_kr_defends_dirty_listing():
         assert isinstance(s.name, str) and isinstance(s.market, str)
     # 전부 JSON 직렬화 가능해야 함 (NaN 이 남으면 API 500)
     json.dumps([[s.symbol, s.name, s.market] for s in out], allow_nan=False)
+
+
+# ---------- 패턴 이탈(무효화) 자동 탈락 기준 ----------
+
+def test_hs_dropped_after_deep_breakdown():
+    """넥라인 붕괴 후 5% 넘게 진행된 H&S 는 신호 소진으로 탈락.
+
+    근거: 5% 룰 + 되돌림은 넥라인 부근까지 (Bulkowski 2005),
+    패턴 정보력은 완성 직후에 집중 (Lo·Mamaysky·Wang 2000).
+    """
+    fallen = np.concatenate([_hs_series(), _seg(99, 88, 30)])  # 넥라인 -10%+
+    ctx = _prep(_df(fallen, noise_seed=21))
+    assert not detect_head_shoulders(ctx).matched
+
+
+def test_inv_hs_dropped_after_deep_breakout():
+    """넥라인 위로 5% 넘게 오른 역H&S 는 진입 신호 소진으로 탈락."""
+    inv = 200 - np.concatenate([_hs_series(), _seg(99, 88, 30)])
+    ctx = _prep(_df(inv, noise_seed=22))
+    assert not detect_head_shoulders(ctx, inverse=True).matched
+
+
+def test_hs_still_valid_near_neckline():
+    """넥라인 부근(±5~6%)에 있는 패턴은 계속 유효해야 한다 (탈락 기준 과잉 방지)."""
+    ctx = _prep(_df(_hs_series(), noise_seed=1))  # 끝값 ~99, 넥라인 ~100
+    assert detect_head_shoulders(ctx).matched
+
+
+def test_hs_busted_when_price_above_head():
+    """종가가 머리를 넘어 회복하면 패턴 무효 (busted — Bulkowski 2005)."""
+    from app.patterns import PatternHit  # noqa: F401 (문서화용)
+
+    busted = np.concatenate([_hs_series(), _seg(99, 134, 40)])  # 머리(130) 위로
+    ctx = _prep(_df(busted, noise_seed=26))
+    assert not detect_head_shoulders(ctx).matched
+
+
+def test_triangle_dropped_at_apex():
+    """돌파 없이 꼭짓점까지 수렴해 버린 삼각형은 탈락.
+
+    근거: 돌파는 평균적으로 꼭짓점까지 73~75% 지점에서 발생, 꼭짓점에
+    닿도록 못 뚫으면 실패 경향 (Bulkowski 2005).
+    """
+    base = _triangle_series()
+    tail = 100 + 0.5 * np.sin(np.arange(40) / 7 * np.pi)  # 사실상 꼭짓점 도달
+    ctx = _prep(_df(np.concatenate([base, tail]), noise_seed=23))
+    assert not detect_triangle(ctx).matched
+
+
+def test_triangle_dropped_after_breakout():
+    """추세선 밖으로 1 ATR 넘게 이탈(돌파 완료)한 종목은 수렴 후보에서 탈락."""
+    brk = _seg(100, 118, 12)  # 상방 돌파 후 상승 진행
+    ctx = _prep(_df(np.concatenate([_triangle_series(), brk]), noise_seed=24))
+    assert not detect_triangle(ctx).matched
+
+
+def test_cup_handle_dropped_after_handle_collapse():
+    """핸들이 컵 깊이의 절반/15% 넘게 무너지면 무효 (O'Neil 핸들 규칙)."""
+    collapsed = np.concatenate([_cup_series(), _seg(98, 84, 15)])  # 핸들 붕괴
+    ctx = _prep(_df(collapsed, noise_seed=25))
+    assert not detect_cup_handle(ctx).matched
+
+
+def test_cup_handle_dropped_when_extended_above_rim():
+    """테두리 +5% 를 넘어 이미 상승한 종목은 추격 구간이라 탈락 (O'Neil)."""
+    extended = np.concatenate([_cup_series(), _seg(98, 112, 15)])  # 테두리 +12%
+    ctx = _prep(_df(extended, noise_seed=27))
+    assert not detect_cup_handle(ctx).matched
+
+
+def test_stage2_dropped_after_failed_breakout():
+    """돌파 후 돌파선 아래로 크게 되밀리면 실패 돌파로 탈락 (와인스타인)."""
+    from app.patterns import detect_stage2_early
+
+    closes, volume = _stage2_series()
+    end = closes[-1]
+    closes2 = np.concatenate([closes, _seg(end, end * 0.80, 30)])  # 30주선 아래로
+    volume2 = np.concatenate([volume, np.full(30, 1000.0)])
+    hit = detect_stage2_early(_prep(_df(closes2, volume=volume2)))
+    assert not hit.matched
