@@ -4,7 +4,8 @@
 믿을 만하게 지지/저항 역할을 해온 이동평균선을 2~3개씩** 백테스트로 찾아
 차트에 그려주는 웹 프로그램입니다.
 
-- 토스증권 Open API 연동 (키가 없으면 합성 샘플 데이터로 즉시 체험 가능)
+- **무료 시세 데이터**(FinanceDataReader/Yahoo) 기본 사용 — API 키·IP 등록 불필요
+- 국내 전 종목 이름 검색 + 미국 티커 지원
 - 후보 이평선: 일봉 `5/10/20/50/60/100/120/200/240`, 주봉 `5/10/20/30/52/60/104`, 월봉 `3/6/12/24/36/60` (설정 변경 가능)
 - 추천 이평선을 캔들차트 위에 오버레이 + 지지/저항 이벤트 마커 표시
 - 전체 후보의 성적표(터치·지지성공·저항성공·돌파·성공률·점수) 제공
@@ -14,7 +15,7 @@
 
 ---
 
-## 1. 빠른 시작 (API 키 없이)
+## 1. 빠른 시작
 
 ```bash
 cd stock-ma-analyzer
@@ -23,13 +24,26 @@ python -m uvicorn app.server:app --port 8000
 # 브라우저에서 http://localhost:8000 접속
 ```
 
-키가 없으면 자동으로 **샘플 데이터 모드**(시드 고정 합성 데이터)로 실행됩니다.
-UI·분석 로직을 그대로 체험할 수 있습니다.
+기본값은 **무료 시세 공급자**(FinanceDataReader, 실패 시 Yahoo Finance)입니다.
+API 키도, IP 등록도 필요 없어서 그대로 실행하면 실제 데이터로 동작하고,
+**공개 배포에도 그대로 쓸 수 있습니다.**
 
-실제 CSV 데이터가 있다면 `data/종목코드.csv` 로 넣으면 샘플 모드에서도 그대로 분석됩니다.
-(컬럼: `date,open,high,low,close,volume`)
+## 데이터 공급자 선택 (`MA_PROVIDER` 환경변수 또는 config.json `provider`)
 
-## 2. 토스증권 Open API 연결
+| 값 | 설명 |
+|---|---|
+| `auto`(기본)/`free` | 무료 시세 (FinanceDataReader→Yahoo). 키·IP 불필요, 공개 배포 가능 |
+| `toss` | 토스증권 Open API (키 필요, 서버 IP를 토스 허용목록에 등록해야 함) |
+| `sample` | 시드 고정 합성 데이터 (오프라인 데모/테스트용) |
+
+`sample` 모드에서 실제 CSV 가 있으면 `data/종목코드.csv` 로 넣어 분석할 수 있습니다
+(컬럼: `date,open,high,low,close,volume`).
+
+## 2. (선택) 토스증권 Open API 연결
+
+> 무료 공급자로 충분하며, 토스는 **개인 투자용**이라 공개 사이트에서 다수에게
+> 데이터를 재배포하는 용도로는 부적합합니다(약관·요청한도·IP 제약). 아래는
+> 본인이 개인적으로 토스 실시간 데이터를 쓰고 싶을 때만 참고하세요.
 
 1. [토스증권 Open API](https://corp.tossinvest.com/ko/open-api) 에서 사용 신청 후
    `client_id` / `client_secret` 발급
@@ -119,8 +133,10 @@ stock-ma-analyzer/
 │   ├── config.py        # 설정 로딩 (env > config.json > 기본값)
 │   ├── resample.py      # 일봉 → 주봉/월봉
 │   └── providers/
-│       ├── toss.py      # 토스증권 Open API 클라이언트 (설정 주도)
-│       └── sample.py    # 합성 데이터 + data/*.csv 공급자
+│       ├── free_data.py # 무료 시세 (FinanceDataReader/Yahoo) — 기본
+│       ├── toss.py      # 토스증권 Open API 클라이언트 (선택)
+│       ├── sample.py    # 합성 데이터 + data/*.csv 공급자
+│       └── cache.py     # TTL 캐시 + 동시요청 single-flight
 ├── static/              # 프런트엔드 (lightweight-charts v5 vendored)
 ├── tests/               # pytest 스위트
 ├── data/                # (선택) 실제 CSV 데이터 넣는 곳
@@ -129,24 +145,24 @@ stock-ma-analyzer/
 
 ## 6. 사이트로 배포 (Render — 무료, GitHub 푸시 시 자동 업데이트)
 
-로컬 실행 대신 웹사이트로 쓰려면 [Render](https://render.com) 무료 플랜으로
-배포할 수 있습니다. 저장소 루트에 `render.yaml` 이 준비되어 있습니다.
+기본 공급자가 **무료 시세(FinanceDataReader/Yahoo)** 라 **API 키도, IP 등록도
+필요 없어** 공개 사이트로 그대로 배포됩니다. 저장소 루트에 `render.yaml` 준비됨.
 
 1. render.com 가입 (GitHub 계정으로 로그인)
 2. **New → Blueprint** → 이 GitHub 저장소 연결 → 브랜치 선택
-3. 환경변수 3개 입력:
-   - `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET`: 토스 API 키
-   - `SITE_PASSWORD`: 사이트 접속 비밀번호 (설정하면 접속 시 비밀번호를
-     물어봅니다 — **본인 API 키로 도는 사이트이므로 반드시 설정 권장**)
-4. 배포가 끝나면 `https://ma-radar-xxxx.onrender.com` 형태의 주소가 생깁니다
-5. **중요 — 토스 허용 IP 등록**: Render 대시보드 → 해당 서비스 →
-   우측 상단 **Connect → Outbound** 에 나오는 고정 IP 3개를
-   토스증권 Open API 설정의 "허용 IP 관리"에 모두 추가
-6. 이후에는 이 저장소 브랜치에 푸시할 때마다 **자동으로 재배포**됩니다
+3. 환경변수 (선택):
+   - `SITE_PASSWORD`: 설정하면 접속 시 비밀번호를 요구 (비공개로 쓰고 싶을 때).
+     **완전 공개**로 열려면 비워두면 됩니다.
+   - `TOSS_*` 는 무료 공급자를 쓰면 **불필요** (넣어도 무시됨).
+4. 배포가 끝나면 `https://<이름>.onrender.com` 주소가 생깁니다
+5. 이후 이 브랜치에 푸시할 때마다 **자동으로 재배포**됩니다
 
 무료 플랜 특성: 15분 동안 접속이 없으면 잠들었다가 다음 접속 때 깨어나는 데
-30초~1분 걸립니다. 실제 API 호출은 10분 캐시로 보호되어 여러 번 눌러도
-토스 요청 한도를 아끼며, 동시에 같은 종목을 조회해도 호출은 1번만 나갑니다.
+30초~1분 걸립니다. 실제 시세 호출은 10분 캐시 + 동시요청 합치기로 보호되어
+소스에 부담을 주지 않습니다.
+
+> 공개 배포 시 참고: 무료 소스(Yahoo/네이버 등)도 대량 상업적 재배포는 제한될
+> 수 있습니다. 취미·소규모 용도로 쓰고, 트래픽이 커지면 캐시 TTL 을 늘리세요.
 
 ## 7. 테스트
 

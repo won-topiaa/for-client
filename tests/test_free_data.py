@@ -1,0 +1,166 @@
+"""무료 시세 공급자(FinanceDataReader/Yahoo) 테스트 — 네트워크 없이 모킹."""
+import asyncio
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from app.providers.free_data import (
+    FreeDataProvider,
+    normalize_listing,
+    normalize_ohlcv,
+)
+
+
+def _run(coro):
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def test_normalize_ohlcv_fdr_style():
+    """FDR DataReader 형식: Date 인덱스 + Open/High/Low/Close/Volume/Change."""
+    idx = pd.date_range("2024-01-01", periods=3, freq="D", name="Date")
+    raw = pd.DataFrame({
+        "Open": [100, 102, 104], "High": [110, 112, 114],
+        "Low": [95, 97, 99], "Close": [105, 108, 110],
+        "Volume": [1000, 900, 1100], "Change": [0.01, 0.02, 0.01],
+    }, index=idx)
+    df = normalize_ohlcv(raw)
+    assert list(df.columns) == ["date", "open", "high", "low", "close", "volume"]
+    assert len(df) == 3
+    assert df["close"].iloc[-1] == 110.0
+    assert df["date"].is_monotonic_increasing
+
+
+def test_normalize_ohlcv_yahoo_style_tz_and_adjclose():
+    """Yahoo 형식: tz-aware 인덱스 + 'Adj Close' 포함."""
+    idx = pd.DatetimeIndex(
+        ["2024-01-02", "2024-01-03"], tz="America/New_York", name="Date"
+    )
+    raw = pd.DataFrame({
+        "Open": [100.0, 101.0], "High": [110.0, 111.0], "Low": [95.0, 96.0],
+        "Close": [105.0, 106.0], "Adj Close": [104.0, 105.0], "Volume": [10, 20],
+    }, index=idx)
+    df = normalize_ohlcv(raw)
+    assert len(df) == 2
+    assert df["date"].dt.tz is None  # tz 제거됨
+    # 'close' 우선 (Adj Close 아님)
+    assert df["close"].iloc[0] == 105.0
+
+
+def test_normalize_ohlcv_empty_raises():
+    with pytest.raises(ValueError):
+        normalize_ohlcv(pd.DataFrame())
+
+
+def test_normalize_listing_krx():
+    raw = pd.DataFrame({
+        "Code": ["005930", "35720", "068270"],
+        "Name": ["삼성전자", "카카오", "셀트리온"],
+        "Market": ["KOSPI", "KOSPI", "KOSPI"],
+    })
+    listing = normalize_listing(raw)
+    assert set(listing.columns) == {"symbol", "name", "market"}
+    # zfill 로 6자리 보정
+    assert "035720" in set(listing["symbol"])
+    assert len(listing) == 3
+
+
+def test_normalize_listing_drops_non_numeric():
+    raw = pd.DataFrame({
+        "Code": ["005930", "ABC", ""],
+        "Name": ["삼성전자", "이상한거", "빈거"],
+    })
+    listing = normalize_listing(raw)
+    assert list(listing["symbol"]) == ["005930"]
+
+
+def _provider_with_listing():
+    import time
+    p = FreeDataProvider()
+    p._listing = normalize_listing(pd.DataFrame({
+        "Code": ["005930", "000660", "035420"],
+        "Name": ["삼성전자", "SK하이닉스", "NAVER"],
+        "Market": ["KOSPI", "KOSPI", "KOSPI"],
+    }))
+    p._listing_ts = time.monotonic()  # 캐시 유효
+    p._market_by_symbol = dict(zip(p._listing["symbol"], p._listing["market"]))
+    return p
+
+
+def test_search_by_name():
+    p = _provider_with_listing()
+    results = _run(p.search("하이닉스"))
+    assert any(r.symbol == "000660" and "하이닉스" in r.name for r in results)
+
+
+def test_search_by_code():
+    p = _provider_with_listing()
+    results = _run(p.search("005930"))
+    assert results[0].symbol == "005930"
+
+
+def test_search_keeps_typed_us_ticker_not_in_listing():
+    p = _provider_with_listing()
+    results = _run(p.search("AAPL"))
+    assert results and results[0].symbol == "AAPL"
+
+
+def test_candles_tails_and_uses_fetch(monkeypatch):
+    from app.providers.base import validate_candles
+    p = FreeDataProvider()
+    n = 500
+    dates = pd.bdate_range("2020-01-01", periods=n)
+    synthetic = validate_candles(pd.DataFrame({
+        "date": dates, "open": 1.0, "high": 2.0, "low": 0.5,
+        "close": 1.5, "volume": 10,
+    }))
+
+    calls = {"n": 0}
+
+    def fake_fetch(symbol):
+        calls["n"] += 1
+        return synthetic
+
+    monkeypatch.setattr(p, "_fetch_daily_sync", fake_fetch)
+    df = _run(p.candles("005930", "day", 200))
+    assert calls["n"] == 1
+    assert len(df) == 200
+    assert df["date"].iloc[-1] == synthetic["date"].iloc[-1]
+
+
+def test_fetch_daily_falls_back_to_yahoo(monkeypatch):
+    """FDR 실패 시 Yahoo 로 폴백."""
+    import app.providers.free_data as mod
+    from app.providers.base import validate_candles
+
+    dates = pd.date_range("2024-01-01", periods=3, name="Date")
+    yahoo_df = pd.DataFrame({
+        "Open": [1, 2, 3], "High": [2, 3, 4], "Low": [0.5, 1, 1.5],
+        "Close": [1.5, 2.5, 3.5], "Volume": [10, 20, 30],
+    }, index=dates)
+
+    def boom(symbol):
+        raise RuntimeError("FDR down")
+
+    def fake_yahoo(symbol, market=""):
+        return yahoo_df
+
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", fake_yahoo)
+    p = FreeDataProvider()
+    df = p._fetch_daily_sync("005930")
+    assert len(df) == 3
+    assert df["close"].iloc[-1] == 3.5
+
+
+def test_fetch_daily_both_fail_raises(monkeypatch):
+    import app.providers.free_data as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", boom)
+    p = FreeDataProvider()
+    with pytest.raises(RuntimeError):
+        p._fetch_daily_sync("005930")
