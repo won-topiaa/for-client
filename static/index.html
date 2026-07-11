@@ -6,139 +6,248 @@
 <title>이평선 레이더 — 주요 지지/저항 이동평균선 분석기</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
 <style>
+  /* earnings-volatility 사이트와 같은 디자인 언어:
+     zinc 중립 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 빨강=하락 · 인디고=정보 */
   :root {
-    --bg: #0f1117; --panel: #171a23; --panel2: #1e2230;
-    --border: #2a2f40; --text: #e6e9f0; --muted: #8b93a7;
-    --accent: #4f8cff; --up: #ef4444; --down: #3b82f6;
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7; --divide: #f4f4f5;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --up: #059669; --down: #dc2626;
+    --info: #4f46e5; --info-bg: #eef2ff; --info-border: #c7d2fe;
+    --chip-active-bg: #18181b; --chip-active-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .8);
+    --hover-row: #fafafa; --reco-row: rgba(5, 150, 105, .07);
+    --warn-bg: #fffbeb; --warn-border: #fde68a; --warn-text: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a; --divide: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --up: #34d399; --down: #f87171;
+      --info: #818cf8; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
+      --chip-active-bg: #f4f4f5; --chip-active-text: #18181b;
+      --header-bg: rgba(24, 24, 27, .8);
+      --hover-row: rgba(39, 39, 42, .4); --reco-row: rgba(52, 211, 153, .08);
+      --warn-bg: rgba(69, 26, 3, .4); --warn-border: #78350f; --warn-text: #fbbf24;
+    }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font-family: "Pretendard", "Noto Sans KR", -apple-system, "Segoe UI", sans-serif;
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
     font-size: 14px; line-height: 1.5;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
-  header h1 { font-size: 20px; margin: 0 0 2px; }
-  header p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* 상단 고정 헤더 (반투명 블러) */
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: 1152px; margin: 0 auto; padding: 13px 24px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .header-inner h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .header-inner .sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+  .nav-link { color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500; }
+  .nav-link:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: 1152px; margin: 0 auto; padding: 26px 24px 60px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
   .banner {
-    background: #3a2f10; border: 1px solid #6b5518; color: #ffd66b;
-    border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
-    display: none;
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
+    border-radius: 12px; padding: 10px 14px; font-size: 13px; display: none;
   }
+
+  /* 소개 박스 */
+  .intro {
+    border: 1px solid var(--border); background: var(--panel2);
+    border-radius: 16px; padding: 14px 18px; font-size: 13.5px; line-height: 1.65;
+  }
+  .intro p { margin: 0; }
+  .intro .sub2 { color: var(--muted); margin-top: 2px; }
+
+  /* 검색/기간 컨트롤 카드 */
   .controls {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px;
+    border-radius: 16px; padding: 16px;
   }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 12px; color: var(--muted); }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
   .search-box { position: relative; flex: 1; min-width: 220px; }
-  input, select {
-    background: var(--panel2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 9px 12px; font-size: 14px; width: 100%;
+  input {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 13px; font-size: 14px; width: 100%;
   }
-  input:focus { outline: none; border-color: var(--accent); }
-  .years-input { width: 84px; }
+  input::placeholder { color: var(--faint); }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(16, 185, 129, .25); }
+  .years-input { width: 84px; font-variant-numeric: tabular-nums; }
   .suggest {
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
-    background: var(--panel2); border: 1px solid var(--border);
-    border-radius: 8px; max-height: 260px; overflow-y: auto; display: none;
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; max-height: 260px; overflow-y: auto; display: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
   }
-  .suggest div { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; }
-  .suggest div:hover, .suggest div.active { background: #262c3d; }
-  .suggest .code { color: var(--muted); font-size: 12px; }
+  .suggest div { padding: 8px 13px; cursor: pointer; display: flex; justify-content: space-between; }
+  .suggest div:hover, .suggest div.active { background: var(--panel2); }
+  .suggest .code { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   button.primary {
-    background: var(--accent); border: none; color: white; font-weight: 600;
-    padding: 10px 22px; border-radius: 8px; font-size: 14px; cursor: pointer;
+    background: var(--accent); border: none; color: #fff; font-weight: 600;
+    padding: 10px 22px; border-radius: 10px; font-size: 14px; cursor: pointer;
+    transition: background .15s;
   }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
   button.primary:disabled { opacity: .5; cursor: default; }
-  .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
-  /* 대표 종목 바로가기 */
-  .quick-picks {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 16px; margin-top: 14px; display: flex; flex-direction: column; gap: 10px;
-  }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: -12px; }
+
+  /* 대표 종목 바로가기 — 알약형 칩 */
+  .quick-picks { display: flex; flex-direction: column; gap: 10px; }
   .qp-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .qp-label { color: var(--muted); font-size: 12.5px; min-width: 92px; }
+  .qp-label { color: var(--muted); font-size: 12px; min-width: 88px; }
   .qp {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer;
-    transition: border-color .15s;
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 13px; font-size: 12.5px; cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
   }
-  .qp:hover { border-color: var(--accent); }
+  .qp:hover { border-color: var(--faint); }
   .qp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .qp .qp-code { color: var(--muted); font-size: 11px; margin-left: 4px; }
-  .tabs { display: flex; gap: 6px; margin: 20px 0 10px; }
+  .qp.active {
+    background: var(--chip-active-bg); color: var(--chip-active-text);
+    border-color: var(--chip-active-bg);
+  }
+  .qp .qp-code {
+    color: var(--muted); font-size: 11px; margin-left: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .qp.active .qp-code { color: inherit; opacity: .7; }
+
+  /* 일봉/주봉/월봉 탭 — 칩, 선택 시 반전 */
+  .tabs { display: flex; gap: 8px; }
   .tabs button {
     background: var(--panel); color: var(--muted); border: 1px solid var(--border);
-    padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 14px;
+    padding: 7px 18px; border-radius: 999px; cursor: pointer; font-size: 13.5px;
+    transition: border-color .15s, background .15s, color .15s;
   }
-  .tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
-  .reco-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tabs button:hover { border-color: var(--faint); }
+  .tabs button.active {
+    background: var(--chip-active-bg); color: var(--chip-active-text);
+    border-color: var(--chip-active-bg); font-weight: 600;
+  }
+
+  /* 추천 이평선 카드 */
+  .reco-cards { display: flex; gap: 12px; flex-wrap: wrap; }
   .reco-card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 14px; min-width: 170px; cursor: pointer;
-    transition: border-color .15s, opacity .15s; user-select: none;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 13px 16px; min-width: 175px; cursor: pointer;
+    transition: border-color .15s, opacity .15s, box-shadow .15s; user-select: none;
   }
-  .reco-card:hover { border-color: var(--accent); }
+  .reco-card:hover { border-color: var(--faint); }
   .reco-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .reco-card.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .reco-card.dimmed { opacity: .45; }
-  .reco-card .period { font-size: 16px; font-weight: 700; }
+  .reco-card .period { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
   .reco-card .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-  .reco-card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .reco-card .warn { color: #ffd66b; font-size: 11.5px; }
-  .reco-card .card-hint { color: var(--muted); font-size: 10.5px; margin-top: 5px; opacity: .7; }
+  .reco-card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .reco-card .warn { color: var(--warn-text); font-size: 11.5px; }
+  .reco-card .card-hint { color: var(--faint); font-size: 10.5px; margin-top: 6px; }
   .reco-card.all-card { min-width: 130px; }
   .reco-card.all-card .dot { width: 8px; height: 8px; margin-right: 3px; }
+
+  /* 차트 + 범례 */
+  #chart {
+    height: 460px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--panel); position: relative; overflow: hidden;
+  }
+  .chart-note {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 12px; margin: -12px 2px 0; flex-wrap: wrap; gap: 6px;
+  }
   .marker-legend { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .marker-legend .lg { color: var(--muted); font-size: 12px; }
   .marker-legend .lg-sym { font-size: 13px; }
-  #chart {
-    height: 460px; border: 1px solid var(--border); border-radius: 12px;
-    background: var(--panel); position: relative;
+  .lg-up { color: var(--up); }
+  .lg-down { color: var(--down); }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { width: auto; }
+
+  /* 성적표 테이블 — 카드 안에 헤더 바 + 구분선 행 */
+  .table-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden;
   }
-  .chart-note { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; margin: 6px 2px 18px; flex-wrap: wrap; gap: 6px;}
-  /* 좁은 화면(모바일)에서 페이지 대신 테이블만 가로 스크롤 */
-  .table-wrap { overflow-x: auto; border-radius: 12px; }
-  table {
-    width: 100%; border-collapse: collapse; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-    font-size: 13px; min-width: 640px;
+  .table-head {
+    padding: 15px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap;
   }
-  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
-  th { background: var(--panel2); color: var(--muted); font-weight: 600; }
-  th:first-child, td:first-child { text-align: left; }
-  tr.reco td { background: rgba(79, 140, 255, 0.08); }
-  tr.dim td { color: var(--muted); }
-  .status { margin: 30px 0; color: var(--muted); text-align: center; }
+  .table-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .table-head .thint { color: var(--muted); font-size: 11.5px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
+  th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--divide); }
+  tbody tr:last-child td { border-bottom: none; }
+  th {
+    background: var(--panel2); color: var(--muted); font-weight: 500;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  }
+  td { font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; padding-left: 20px; }
+  th:last-child, td:last-child { padding-right: 20px; }
+  tbody tr:hover td { background: var(--hover-row); }
+  tr.reco td { background: var(--reco-row); }
+  tr.dim td { color: var(--faint); }
+  .table-foot {
+    padding: 10px 20px 12px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11.5px; line-height: 1.6;
+  }
+
+  .status { margin: 8px 0; color: var(--muted); text-align: center; }
   .spinner {
-    display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
-    border: 2px solid var(--muted); border-top-color: transparent;
+    display: inline-block; width: 15px; height: 15px; vertical-align: -3px;
+    border: 2px solid var(--faint); border-top-color: transparent;
     border-radius: 50%; animation: spin .8s linear infinite; margin-right: 8px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #result { display: none; }
-  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
-  .toggle input { width: auto; }
-  footer { margin-top: 34px; color: var(--muted); font-size: 12px; }
+  #result { display: none; flex-direction: column; gap: 16px; }
+
+  footer {
+    margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  footer .strong { color: var(--text); font-weight: 500; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
+<header class="site-header">
+  <div class="header-inner">
     <div>
       <h1>📈 이평선 레이더</h1>
-      <p>일봉·주봉·월봉에서 주요 지지/저항 역할을 해온 이동평균선을 백테스트로 찾아드립니다.</p>
+      <p class="sub">일봉 · 주봉 · 월봉의 주요 지지/저항 이동평균선 백테스트</p>
     </div>
-    <a href="/patterns" style="color:var(--accent); text-decoration:none; font-size:13px;">차트 패턴 스크리너 →</a>
-  </header>
+    <a class="nav-link" href="/patterns">차트 패턴 스크리너 →</a>
+  </div>
+</header>
 
+<div class="wrap">
   <div class="banner" id="sampleBanner">
     ⚠️ 지금은 <b>샘플 데이터 모드</b>입니다 (합성 데이터). MA_PROVIDER 설정을
     기본값(auto)으로 두면 무료 실시세(FinanceDataReader/Yahoo)로 분석합니다 — README 참고.
   </div>
+
+  <section class="intro">
+    <p>어떤 이동평균선이 이 종목의 지지/저항으로 실제 작동해 왔는지, 과거 데이터를 백테스트해 순위로 보여드립니다.</p>
+    <p class="sub2">일봉·주봉·월봉 각각에서 가장 믿을 만한 2~3개 선을 추천하고, 차트 위에 지지·저항·돌파 사건을 표시합니다.</p>
+  </section>
 
   <div class="controls">
     <div class="field search-box">
@@ -197,29 +306,35 @@
       <span id="windowNote"></span>
       <span class="marker-legend">
         <label class="toggle"><input type="checkbox" id="markerToggle" checked> 이벤트 마커:</label>
-        <span class="lg"><span class="lg-sym" style="color:#22c55e">▲</span> 지지 성공</span>
-        <span class="lg"><span class="lg-sym" style="color:#f97316">▼</span> 저항 성공</span>
-        <span class="lg"><span class="lg-sym" style="color:#38bdf8">●</span> 지지 이탈 (아래로 뚫림)</span>
-        <span class="lg"><span class="lg-sym" style="color:#f43f5e">●</span> 저항 돌파 (위로 뚫음)</span>
+        <span class="lg"><span class="lg-sym lg-up">▲</span> 지지 성공 (반등)</span>
+        <span class="lg"><span class="lg-sym lg-down">▼</span> 저항 성공 (하락)</span>
+        <span class="lg"><span class="lg-sym lg-down">●</span> 지지 이탈 (아래로 뚫림)</span>
+        <span class="lg"><span class="lg-sym lg-up">●</span> 저항 돌파 (위로 뚫음)</span>
       </span>
     </div>
-    <h3 style="margin:8px 0 8px">전체 후보 이평선 성적표</h3>
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>이평선</th><th>터치</th><th>지지성공</th><th>저항성공</th>
-          <th>돌파(실패)</th><th>미확정</th><th>성공률*</th><th>점수</th><th>최근 터치</th>
-        </tr>
-      </thead>
-      <tbody id="statsBody"></tbody>
-    </table>
+    <div class="table-card">
+      <div class="table-head">
+        <h3>전체 후보 이평선 성적표</h3>
+        <span class="thint">★ = 추천 · 최근 사건에 가중치를 준 성공률 기준</span>
+      </div>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>이평선</th><th>터치</th><th>지지성공</th><th>저항성공</th>
+            <th>돌파(실패)</th><th>미확정</th><th>성공률*</th><th>점수</th><th>최근 터치</th>
+          </tr>
+        </thead>
+        <tbody id="statsBody"></tbody>
+      </table>
+      </div>
+      <div class="table-foot">* 성공률은 최근 사건에 더 큰 가중치를 준 가중 성공률입니다. 점수 = 성공률 신뢰하한 × log(1+가중 성공 횟수) — "자주 그리고 믿을 만하게" 지지/저항이 된 순서.</div>
     </div>
-    <div class="hint">* 성공률은 최근 사건에 더 큰 가중치를 준 가중 성공률입니다. 점수 = 성공률 신뢰하한 × log(1+가중 성공 횟수) — "자주 그리고 믿을 만하게" 지지/저항이 된 순서.</div>
   </div>
 
   <footer>
-    본 도구는 과거 데이터 통계이며 투자 권유가 아닙니다. 미래의 지지/저항을 보장하지 않습니다.
+    <p class="strong" style="margin:0">참고용 데이터 시각화입니다.</p>
+    <p style="margin:2px 0 0">본 도구는 과거 데이터 통계이며 투자 권유가 아닙니다. 미래의 지지/저항을 보장하지 않으며, 모든 투자 결정과 결과는 본인 책임입니다.</p>
   </footer>
 </div>
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>

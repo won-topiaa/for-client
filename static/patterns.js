@@ -2,7 +2,21 @@
 (function () {
   "use strict";
 
-  const OVERLAY_COLORS = ["#f59e0b", "#a78bfa", "#22d3ee"];
+  // 라이트/다크 자동 대응 차트 테마 (에메랄드=상승 · 빨강=하락, 사이트 공통 규약)
+  const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+  function chartTheme() {
+    const dark = darkMq.matches;
+    return {
+      text: dark ? "#a1a1aa" : "#71717a",
+      grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
+      border: dark ? "#27272a" : "#e4e4e7",
+      up: dark ? "#34d399" : "#059669",
+      down: dark ? "#f87171" : "#dc2626",
+      // 오버레이(넥라인·추세선 등): 캔들과 겹치지 않는 인디고·앰버·시안 계열
+      overlays: dark ? ["#818cf8", "#fbbf24", "#22d3ee"]
+                     : ["#4f46e5", "#d97706", "#0891b2"],
+    };
+  }
 
   // 각 패턴의 간략한 설명 (선택 시 결과 맨 위에 표시)
   const DESCRIPTIONS = {
@@ -153,6 +167,7 @@
       el.matches.innerHTML = "";
       renderDesc();
       renderedWhileRefreshing = false;
+      lastBody = null;
       el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
     }
     try {
@@ -192,7 +207,14 @@
     }
   }
 
+  // OS 테마가 바뀌면 마지막 결과를 새 팔레트로 다시 그린다
+  let lastBody = null;
+  function onThemeChange() { if (lastBody) render(lastBody); }
+  if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);
+  else if (darkMq.addListener) darkMq.addListener(onThemeChange);
+
   function render(body) {
+    lastBody = body;
     destroyCharts();
     el.matches.innerHTML = "";
     el.status.textContent =
@@ -225,23 +247,24 @@
 
   function drawChart(container, m) {
     const LWC = window.LightweightCharts;
+    const T = chartTheme();
     const chart = LWC.createChart(container, {
       autoSize: true,
-      layout: { background: { type: "solid", color: "transparent" }, textColor: "#8b93a7", fontSize: 11 },
-      grid: { vertLines: { color: "rgba(42,47,64,.4)" }, horzLines: { color: "rgba(42,47,64,.4)" } },
-      rightPriceScale: { borderColor: "#2a2f40" },
-      timeScale: { borderColor: "#2a2f40" },
+      layout: { background: { type: "solid", color: "transparent" }, textColor: T.text, fontSize: 11 },
+      grid: { vertLines: { color: T.grid }, horzLines: { color: T.grid } },
+      rightPriceScale: { borderColor: T.border },
+      timeScale: { borderColor: T.border },
       handleScroll: false, handleScale: false,
     });
     const candles = chart.addSeries(LWC.CandlestickSeries, {
-      upColor: "#ef4444", downColor: "#3b82f6",
-      wickUpColor: "#ef4444", wickDownColor: "#3b82f6",
+      upColor: T.up, downColor: T.down,
+      wickUpColor: T.up, wickDownColor: T.down,
       borderVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
     candles.setData(m.candles);
     (m.overlays || []).forEach((ov, i) => {
       const line = chart.addSeries(LWC.LineSeries, {
-        color: OVERLAY_COLORS[i % OVERLAY_COLORS.length],
+        color: T.overlays[i % T.overlays.length],
         lineWidth: 2, lineStyle: ov.name && (ov.name.includes("넥") || ov.name.includes("상단")) ? 1 : 0,
         priceLineVisible: false, lastValueVisible: false,
         crosshairMarkerVisible: false, title: ov.name || "",
