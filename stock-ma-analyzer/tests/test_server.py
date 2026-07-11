@@ -68,3 +68,14 @@ def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "이평선 레이더" in r.text
+
+
+def test_us_scanner_falls_back_to_us_symbols(client):
+    """상장목록이 없는 모드(sample 등)에서 미국 탭이 국내 종목을 보여주면 안 된다."""
+    import asyncio
+
+    from app.pattern_scan import US_FALLBACK
+
+    fn = app.state.scanners["us"].universe_fn
+    out = asyncio.new_event_loop().run_until_complete(fn())
+    assert {s.symbol for s in out} == {t[0] for t in US_FALLBACK}

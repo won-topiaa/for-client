@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
+import weakref
 from typing import Any, Awaitable, Callable
 
 import numpy as np
@@ -26,6 +28,8 @@ from .providers.base import Provider, SymbolInfo
 logger = logging.getLogger("ma-analyzer")
 
 RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
+LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
+ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
 FETCH_BARS = 480            # 종목당 필요한 일봉 수 (30주선 + 베이스 이력)
 CONCURRENCY = 6
 TOP_N = 8                   # 패턴별 보관 상위 개수
@@ -77,11 +81,18 @@ def make_universe_fn(provider: Provider, market: str, fallback: list[SymbolInfo]
                 lf = await inner.listing_frame()
                 if lf is None or "amount" not in lf.columns or "marcap" not in lf.columns:
                     return fallback
-                df = lf[~lf["market"].str.upper().str.contains("KONEX", na=False)]
+                # 소스 데이터 방어: 중복 코드, NaN 시장명(JSON 직렬화 불가),
+                # 문자열이 섞인 숫자 컬럼이 와도 스캔이 죽지 않게 정리
+                df = lf.drop_duplicates(subset=["symbol"]).copy()
+                df["market"] = df["market"].fillna("").astype(str)
+                df["name"] = df["name"].fillna(df["symbol"]).astype(str)
+                df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+                df["marcap"] = pd.to_numeric(df["marcap"], errors="coerce")
+                df = df[~df["market"].str.upper().str.contains("KONEX", na=False)]
                 df = df.dropna(subset=["amount", "marcap"])
                 mega = set(df.nlargest(KR_EXCLUDE_MEGA, "marcap")["symbol"])
                 pool = df[~df["symbol"].isin(mega)].nlargest(KR_TOP_LIQUIDITY, "amount")
-                out = [SymbolInfo(r["symbol"], r["name"], r["market"])
+                out = [SymbolInfo(str(r["symbol"]), r["name"], r["market"])
                        for _, r in pool.iterrows()]
                 return out or fallback
             # us
@@ -97,6 +108,22 @@ def make_universe_fn(provider: Provider, market: str, fallback: list[SymbolInfo]
     return resolve
 
 
+# 국내/미국 스캐너가 동시에 돌아도 업스트림 동시 요청 합계가 CONCURRENCY 를
+# 넘지 않도록 이벤트루프별로 하나의 세마포어를 공유한다.
+_fetch_sems: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _shared_fetch_sem() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _fetch_sems.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(CONCURRENCY)
+        _fetch_sems[loop] = sem
+    return sem
+
+
 class PatternScanner:
     def __init__(self, provider: Provider, universe_fn: UniverseFn,
                  index_symbol: str | None = None):
@@ -105,27 +132,54 @@ class PatternScanner:
         self.index_symbol = index_symbol
         self._results: dict[str, Any] | None = None
         self._generated = 0.0
+        self._ttl = RESULT_TTL_SEC
         self._task: asyncio.Task | None = None
         self._done = 0
         self._total = 0
         self._errors = 0
+        self._error: str | None = None   # 마지막 스캔 전체 실패 사유
+        self._error_ts = 0.0
 
     def _fresh(self) -> bool:
         return (self._results is not None
-                and time.monotonic() - self._generated < RESULT_TTL_SEC)
+                and time.monotonic() - self._generated < self._ttl)
 
     async def snapshot(self) -> dict[str, Any]:
-        """상태 조회 + 필요 시 스캔 시작."""
+        """상태 조회 + 필요 시 스캔 시작.
+
+        - 결과가 만료돼도 남아 있으면 우선 그대로 내주고 뒤에서 재스캔
+          (stale-while-revalidate — 사용자는 기다리지 않음)
+        - 스캔 자체가 통째로 실패하면 잠깐(ERROR_COOLDOWN_SEC) 재시도를 멈춰
+          업스트림 장애 시 무한 재시작 폭주를 막는다
+        """
         if self._fresh():
             return {"status": "done", **self._results}
-        if self._task is None or self._task.done():
+        idle = self._task is None or self._task.done()
+        cooling = (self._error is not None
+                   and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
+        if idle and not cooling:
             self._done = 0
             self._errors = 0
             self._task = asyncio.create_task(self._scan())
+            idle = False
+        if self._results is not None:
+            return {"status": "done", "refreshing": not idle, **self._results}
+        if idle:  # 쿨다운 중 + 보여줄 과거 결과도 없음
+            return {"status": "error",
+                    "detail": f"스캔 실패 ({self._error}) — 잠시 후 자동으로 다시 시도합니다."}
         return {"status": "running", "done": self._done,
                 "total": self._total, "errors": self._errors}
 
     async def _scan(self) -> None:
+        try:
+            await self._scan_inner()
+            self._error = None
+        except Exception as exc:  # noqa: BLE001
+            self._error = str(exc) or exc.__class__.__name__
+            self._error_ts = time.monotonic()
+            logger.exception("패턴 스캔 실패")
+
+    async def _scan_inner(self) -> None:
         started = time.monotonic()
         universe = await self.universe_fn()
         self._total = len(universe)
@@ -139,12 +193,14 @@ class PatternScanner:
             except Exception:
                 logger.info("지수(%s) 조회 실패 — RS 없이 스캔", self.index_symbol)
 
-        sem = asyncio.Semaphore(CONCURRENCY)
+        sem = _shared_fetch_sem()
         per_symbol: list[tuple[SymbolInfo, dict, pd.DataFrame]] = []
 
         async def one(info: SymbolInfo):
             async with sem:
                 try:
+                    # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
+                    await asyncio.sleep(0.05 + random.random() * 0.2)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS)
                     if len(df) < 60:
                         raise ValueError("데이터 부족")
@@ -157,6 +213,8 @@ class PatternScanner:
                     self._done += 1
 
         await asyncio.gather(*(one(s) for s in universe))
+        if universe and not per_symbol:
+            raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
         results: dict[str, Any] = {"patterns": {}, "universe": len(universe),
                                    "scanned": len(per_symbol),
@@ -168,10 +226,14 @@ class PatternScanner:
             results["patterns"][key] = [
                 _serialize_match(info, hit, df) for info, hit, df in matched[:TOP_N]
             ]
+        # 절반도 못 훑었으면(부분 장애) 결과 수명을 짧게 잡아 금방 재시도
+        coverage = len(per_symbol) / len(universe) if universe else 1.0
+        self._ttl = RESULT_TTL_SEC if coverage >= 0.5 else LOW_COVERAGE_TTL_SEC
         self._results = results
         self._generated = time.monotonic()
-        logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d",
-                    len(per_symbol), results["elapsedSec"], self._errors)
+        logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d (커버리지 %.0f%%)",
+                    len(per_symbol), results["elapsedSec"], self._errors,
+                    coverage * 100)
 
 
 def _serialize_match(info: SymbolInfo, hit, df: pd.DataFrame) -> dict[str, Any]:

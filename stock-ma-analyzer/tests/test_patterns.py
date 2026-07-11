@@ -354,3 +354,196 @@ def test_universe_fn_sample_uses_fallback():
     fn = make_universe_fn(SampleLike(), "kr", fallback)
     out = asyncio.new_event_loop().run_until_complete(fn())
     assert out == fallback
+
+
+# ---------- 강화 회귀 테스트 (v4 하드닝) ----------
+
+def test_stage2_nan_volume_no_crash():
+    """거래량이 전부 NaN 이어도 죽지 않고 '매칭 없음'으로 처리한다."""
+    from app.patterns import detect_stage2_early
+
+    closes, _ = _stage2_series()
+    volume = np.full(len(closes), np.nan)
+    hit = detect_stage2_early(_prep(_df(closes, volume=volume)))
+    assert not hit.matched
+
+
+def test_stage2_sparse_nan_volume_still_detected():
+    """베이스 구간에 NaN 거래량이 며칠 섞여도 정상 돌파는 살아남는다."""
+    from app.patterns import detect_stage2_early
+
+    closes, volume = _stage2_series()
+    volume[160:170] = np.nan  # 베이스 중간 열흘 결측
+    hit = detect_stage2_early(_prep(_df(closes, volume=volume)))
+    assert hit.matched, hit.summary
+
+
+def test_hs_symmetry_score_bounded():
+    """요약의 어깨 대칭 점수는 0~100 이어야 한다 (음수 노출 회귀 방지)."""
+    import re
+
+    ctx = _prep(_df(_hs_series(), noise_seed=1))
+    hit = detect_head_shoulders(ctx)
+    assert hit.matched
+    m = re.search(r"어깨 대칭 (-?\d+)점", hit.summary)
+    assert m, hit.summary
+    assert 0 <= int(m.group(1)) <= 100
+
+
+def test_scanner_error_cooldown_and_recovery():
+    """전 종목 조회 실패 -> error 상태, 쿨다운 동안 재시작 금지, 이후 재시도."""
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo
+
+    class DeadProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            raise RuntimeError("upstream down")
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("A", "a", "T"), SymbolInfo("B", "b", "T")]
+
+    scanner = PatternScanner(DeadProvider(), universe_fn)
+
+    async def go():
+        s1 = await scanner.snapshot()
+        assert s1["status"] == "running"
+        await scanner._task  # 스캔 실패로 종료
+        s2 = await scanner.snapshot()
+        assert s2["status"] == "error", s2
+        assert "다시 시도" in s2["detail"]
+        task_after_fail = scanner._task
+        s3 = await scanner.snapshot()  # 쿨다운 중
+        assert s3["status"] == "error"
+        assert scanner._task is task_after_fail, "쿨다운 중 스캔이 재시작됨"
+        scanner._error_ts -= 120  # 쿨다운 경과 시뮬레이션
+        s4 = await scanner.snapshot()
+        assert s4["status"] == "running", "쿨다운이 지나면 재시도해야 함"
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_scanner_stale_while_revalidate():
+    """TTL 만료 후에도 이전 결과를 먼저 내주고 뒤에서 재스캔한다."""
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class OkProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("S2", "종목", "T")]
+
+    scanner = PatternScanner(OkProvider(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+        first = await scanner.snapshot()
+        assert first["status"] == "done" and not first.get("refreshing")
+
+        scanner._generated -= scanner._ttl + 1  # 강제 만료
+        stale = await scanner.snapshot()
+        assert stale["status"] == "done", "만료됐다고 결과를 숨기면 안 됨"
+        assert stale["refreshing"] is True
+        assert stale["scanned"] == 1  # 이전 결과 그대로
+        await scanner._task  # 백그라운드 재스캔 종료
+        fresh = await scanner.snapshot()
+        assert fresh["status"] == "done" and not fresh.get("refreshing")
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_scanner_low_coverage_shortens_ttl():
+    """절반도 못 훑은 스캔(부분 장애)은 결과 수명을 짧게 잡는다."""
+    from app.pattern_scan import LOW_COVERAGE_TTL_SEC, PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class FlakyProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            if symbol != "OK":
+                raise RuntimeError("down")
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("OK", "성공", "T"),
+                SymbolInfo("X1", "실패1", "T"),
+                SymbolInfo("X2", "실패2", "T")]
+
+    scanner = PatternScanner(FlakyProvider(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+        snap = await scanner.snapshot()
+        assert snap["status"] == "done" and snap["scanned"] == 1
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert scanner._ttl == LOW_COVERAGE_TTL_SEC
+
+
+def test_universe_fn_kr_defends_dirty_listing():
+    """중복 코드·NaN 시장명/이름·문자열 숫자 컬럼이 와도 죽지 않고 정리한다."""
+    import json
+
+    from app.pattern_scan import make_universe_fn
+    from app.providers.base import SymbolInfo
+
+    n = 60
+    clean = pd.DataFrame({
+        "symbol": [f"{i:06d}" for i in range(n)],
+        "name": [f"종목{i}" for i in range(n)],
+        "market": ["KOSPI"] * n,
+        "marcap": np.arange(n, dtype=float) * 1e9 + 1e9,
+        "amount": np.linspace(1e8, 9e9, n),
+    })
+    dirty = pd.DataFrame({
+        # 중복 코드 / NaN 시장·이름 / 숫자로 못 바꾸는 컬럼
+        "symbol": ["000001", "999999", "999998"],
+        "name": ["중복종목", None, "문자컬럼"],
+        "market": ["KOSPI", None, "KOSPI"],
+        "marcap": [2e9, 5e8, "N/A"],
+        "amount": [2e8, 7e8, "많음"],
+    })
+    listing = pd.concat([clean, dirty], ignore_index=True)
+
+    class FakeFree:
+        name = "free"
+
+        async def listing_frame(self):
+            return listing
+
+    class Wrapper:
+        name = "free"
+        inner = FakeFree()
+
+    fn = make_universe_fn(Wrapper(), "kr", [SymbolInfo("F", "폴백", "KOSPI")])
+    out = asyncio.new_event_loop().run_until_complete(fn())
+    symbols = [s.symbol for s in out]
+    assert len(symbols) == len(set(symbols)), "중복 코드가 유니버스에 남음"
+    assert "999998" not in symbols, "숫자화 불가능한 행이 걸러지지 않음"
+    assert "999999" in symbols, "NaN 시장/이름 행은 정리해서 포함해야 함"
+    for s in out:
+        assert isinstance(s.name, str) and isinstance(s.market, str)
+    # 전부 JSON 직렬화 가능해야 함 (NaN 이 남으면 API 500)
+    json.dumps([[s.symbol, s.name, s.market] for s in out], allow_nan=False)
