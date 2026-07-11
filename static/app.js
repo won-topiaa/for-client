@@ -72,6 +72,21 @@
       .catch(() => {});
   })();
 
+  /* ---------- 대표 종목 바로 분석 ---------- */
+  const quickPicks = document.getElementById("quickPicks");
+  if (quickPicks) {
+    quickPicks.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-symbol]");
+      if (!btn) return;
+      pick({
+        symbol: btn.dataset.symbol,
+        name: btn.dataset.name,
+        market: btn.dataset.market,
+      });
+      runAnalysis();
+    });
+  }
+
   /* ---------- 종목 검색 ---------- */
   let searchTimer = null;
   let suggestItems = [];
