@@ -22,7 +22,7 @@ import pandas as pd
 
 from .analysis import atr as atr_fn, sma
 
-PATTERN_KEYS = ("head_shoulders", "inv_head_shoulders", "triangle", "cup_handle", "stage")
+PATTERN_KEYS = ("head_shoulders", "inv_head_shoulders", "triangle", "cup_handle", "stage2")
 
 
 @dataclass
@@ -77,12 +77,13 @@ def _prep(df: pd.DataFrame) -> dict[str, Any]:
     close = df["close"].to_numpy(float)
     high = df["high"].to_numpy(float)
     low = df["low"].to_numpy(float)
+    volume = df["volume"].to_numpy(float) if "volume" in df else np.zeros(len(df))
     a = atr_fn(high, low, close, 14)
     # 워밍업 NaN 은 앞쪽 유효값으로 채움 (지그재그 문턱용)
     a = pd.Series(a).bfill().ffill().to_numpy()
     thr = np.maximum(2.5 * a, 0.03 * close)
     return {
-        "close": close, "high": high, "low": low, "atr": a,
+        "close": close, "high": high, "low": low, "volume": volume, "atr": a,
         "pivots": zigzag(close, thr), "n": len(close),
     }
 
@@ -311,11 +312,90 @@ def detect_stage(ctx: dict) -> PatternHit:
     )
 
 
-def run_all(df: pd.DataFrame) -> dict[str, PatternHit]:
+def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> PatternHit:
+    """와인스타인 '초기 2단계' — 이론상 손익비가 가장 좋은 매수 국면.
+
+    와인스타인(1988)의 실전 기준을 그대로 옮김:
+    1. 1단계 베이스(박스권)의 상단을 최근에 상향 돌파
+    2. 돌파 거래량이 베이스 평균의 1.3배 이상 (2배 이상이면 교과서적)
+    3. 30주선(≈150일선)이 하락/횡보에서 '막' 상승으로 전환
+    4. 아직 확장되지 않음 — 돌파가 최근이고 이격이 크지 않음 (추격 아님)
+    5. (보너스) 시장 지수 대비 상대강도(RS) 양전환
+    """
+    key = "stage2"
+    close, volume, n = ctx["close"], ctx["volume"], ctx["n"]
+    if n < 260:
+        return PatternHit(pattern=key, matched=False, summary="데이터 부족")
+    ma = sma(close, 150)
+    if not np.isfinite(ma[-1]) or close[-1] <= ma[-1]:
+        return PatternHit(pattern=key, matched=False)
+    # 조건 3: 30주선 신선한 상승 전환 (지금은 오르고, 3~4개월 전엔 아니었음)
+    slope_now = ma[-1] / ma[-22] - 1
+    slope_prev = (ma[-66] / ma[-88] - 1) if n >= 238 + 150 else 0.0
+    if slope_now < 0.004 or slope_prev > 0.004:
+        return PatternHit(pattern=key, matched=False)
+
+    # 조건 1: 최근 60봉 안의 '베이스 상단 돌파' 탐색
+    best = None
+    for b in range(max(160, n - 60), n):
+        base = close[b - 130:b - 5]
+        if base.size < 60:
+            continue
+        base_high, base_low = float(base.max()), float(base.min())
+        if base_low <= 0 or (base_high - base_low) / base_low > 0.35:
+            continue  # 박스가 아니라 추세 구간
+        if close[b] <= base_high or close[b - 1] > base_high:
+            continue  # b 가 '첫' 돌파 봉이어야 함
+        # 조건 2: 돌파 거래량 확인
+        base_vol = float(np.mean(volume[b - 130:b - 5])) or 1.0
+        brk_vol = float(np.mean(volume[b:min(b + 5, n)]))
+        vol_ratio = brk_vol / base_vol if base_vol > 0 else 1.0
+        if vol_ratio < 1.3:
+            continue
+        # 조건 4: 아직 초기 — 현재가가 돌파선의 +25% 이내
+        ext = close[-1] / base_high - 1
+        if not (-0.03 <= ext <= 0.25):
+            continue
+        cand = (b, base_high, vol_ratio, ext)
+        if best is None or b > best[0]:
+            best = cand
+    if best is None:
+        return PatternHit(pattern=key, matched=False)
+    b, base_high, vol_ratio, ext = best
+
+    # 조건 5(보너스): 6개월 상대강도 vs 지수
+    rs_txt, rs_bonus = "", 0.0
+    if index_close is not None and len(index_close) >= 126 and n >= 126:
+        stock_r = close[-1] / close[-126] - 1
+        idx_r = float(index_close[-1] / index_close[-126]) - 1
+        rs = stock_r - idx_r
+        rs_txt = f" · RS {'+' if rs > 0 else ''}{rs * 100:.0f}%p"
+        rs_bonus = min(0.5, max(0.0, rs * 2))
+
+    days_ago = n - 1 - b
+    score = (min(1.0, vol_ratio / 2.0) + (0.25 - ext) * 2
+             + min(0.5, slope_now / 0.02) + rs_bonus)
+    summary = (f"베이스 상단 {base_high:,.0f} 돌파 ({days_ago}일 전) · "
+               f"돌파 거래량 {vol_ratio:.1f}배 · 30주선 상승 전환{rs_txt}")
+    idx0 = max(0, n - 260)
+    return PatternHit(
+        pattern=key, matched=True, score=round(float(score), 4), summary=summary,
+        detail={"breakout": base_high, "vol_ratio": vol_ratio, "ext": ext,
+                "days_ago": days_ago},
+        overlays=[
+            {"name": "베이스 상단", "points": [(b - 130, base_high), (n - 1, base_high)]},
+            {"name": "150일선(≈30주선)",
+             "points": [(i, float(ma[i])) for i in range(idx0, n, 5)
+                        if np.isfinite(ma[i])]},
+        ],
+    )
+
+
+def run_all(df: pd.DataFrame, index_close: np.ndarray | None = None) -> dict[str, PatternHit]:
     """한 종목의 일봉에 모든 탐지기를 실행."""
     tail = df.tail(300).reset_index(drop=True) if len(df) > 300 else df
     ctx = _prep(tail)
-    # stage 는 더 긴 문맥이 필요해 원본으로 계산
+    # stage2 는 더 긴 문맥(베이스+30주선 이력)이 필요해 원본으로 계산
     ctx_full = _prep(df.tail(500).reset_index(drop=True)) if len(df) > len(tail) else ctx
     offset = len(df.tail(500)) - len(tail) if len(df) > 300 else 0
     hits = {
@@ -323,10 +403,10 @@ def run_all(df: pd.DataFrame) -> dict[str, PatternHit]:
         "inv_head_shoulders": detect_head_shoulders(ctx, inverse=True),
         "triangle": detect_triangle(ctx),
         "cup_handle": detect_cup_handle(ctx),
-        "stage": detect_stage(ctx_full),
+        "stage2": detect_stage2_early(ctx_full, index_close),
     }
-    # stage 오버레이 인덱스를 tail(300) 좌표계로 보정
-    st = hits["stage"]
+    # stage2 오버레이 인덱스를 tail(300) 좌표계로 보정
+    st = hits["stage2"]
     if st.matched and offset:
         for ov in st.overlays:
             ov["points"] = [(i - offset, v) for i, v in ov["points"] if i - offset >= 0]

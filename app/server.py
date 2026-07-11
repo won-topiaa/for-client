@@ -45,9 +45,9 @@ def build_provider(settings: Settings) -> Provider:
     return FreeDataProvider(data_dir=settings.data_dir)
 
 
-def _scan_universe(settings: Settings, provider: Provider) -> list:
-    """패턴 스캔 대상 종목: 샘플 모드면 샘플 유니버스, 아니면 내장 주요
-    종목 사전 (+ data/symbols.csv 확장분은 사전 클래스가 병합)."""
+def _kr_fallback_universe(settings: Settings, provider: Provider) -> list:
+    """상장목록을 못 받아올 때의 국내 폴백: 샘플 유니버스 또는 내장 사전
+    (+ data/symbols.csv 확장분)."""
     from .providers.base import SymbolInfo
     if provider.name == "sample":
         from .providers.sample import UNIVERSE
@@ -68,15 +68,20 @@ def _scan_universe(settings: Settings, provider: Provider) -> list:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from .pattern_scan import PatternScanner
+    from .pattern_scan import INDEX_SYMBOL, PatternScanner, make_universe_fn
 
     settings = load_settings()
     app.state.settings = settings
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
-    app.state.provider = CachingProvider(build_provider(settings))
-    app.state.scanner = PatternScanner(
-        app.state.provider, _scan_universe(settings, app.state.provider)
-    )
+    provider = CachingProvider(build_provider(settings))
+    app.state.provider = provider
+    kr_fallback = _kr_fallback_universe(settings, provider)
+    app.state.scanners = {
+        "kr": PatternScanner(provider, make_universe_fn(provider, "kr", kr_fallback),
+                             INDEX_SYMBOL["kr"]),
+        "us": PatternScanner(provider, make_universe_fn(provider, "us", kr_fallback),
+                             INDEX_SYMBOL["us"]),
+    }
     yield
     if hasattr(app.state.provider, "aclose"):
         await app.state.provider.aclose()
@@ -179,19 +184,18 @@ async def analyze(
 
 @app.get("/api/patterns")
 async def patterns_api(
-    pattern: str = Query("stage", pattern=r"^(stage|triangle|head_shoulders|inv_head_shoulders|cup_handle)$"),
-    stage: int = Query(2, ge=1, le=4),
+    pattern: str = Query("stage2", pattern=r"^(stage2|triangle|head_shoulders|inv_head_shoulders|cup_handle)$"),
+    market: str = Query("kr", pattern=r"^(kr|us)$"),
 ):
     """패턴 스크리너: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링)."""
-    snap = await app.state.scanner.snapshot()
+    snap = await app.state.scanners[market].snapshot()
     if snap["status"] != "done":
         return snap
-    data = snap["patterns"].get(pattern)
-    matches = data.get(str(stage), []) if pattern == "stage" else (data or [])
+    matches = snap["patterns"].get(pattern) or []
     return {
         "status": "done",
         "pattern": pattern,
-        "stage": stage if pattern == "stage" else None,
+        "market": market,
         "scanned": snap.get("scanned"),
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
