@@ -6,4 +6,4 @@
 """
 import os
 
-os.environ.setdefault("MA_PROVIDER", "sample")
+os.environ["MA_PROVIDER"] = "sample"  # 셸에 다른 값이 있어도 강제 (결정성)

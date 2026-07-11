@@ -74,6 +74,48 @@ def test_normalize_listing_drops_non_numeric():
     assert list(listing["symbol"]) == ["005930"]
 
 
+def test_normalize_listing_keeps_new_style_krx_codes():
+    """2024.1 개편 이후 영문 포함 코드(우선주/신규상장)가 탈락하면 안 된다."""
+    raw = pd.DataFrame({
+        "Code": ["005930", "00088K", "0126Z0", "02826K", "BAD!"],
+        "Name": ["삼성전자", "한화3우B", "삼성에피스홀딩스", "삼성물산우B", "잘못된거"],
+    })
+    listing = normalize_listing(raw)
+    got = set(listing["symbol"])
+    assert {"005930", "00088K", "0126Z0", "02826K"} <= got
+    assert "BAD!" not in got
+
+
+def test_candles_rejects_non_day_timeframe():
+    """일봉 전용 — week/month 를 조용히 일봉으로 돌려주면 안 된다."""
+    p = FreeDataProvider()
+    with pytest.raises(ValueError):
+        _run(p.candles("005930", "week", 10))
+
+
+def test_listing_failure_backoff(monkeypatch):
+    """상장목록 다운로드 실패 시 60초간 재시도하지 않는다 (실패 폭주 방지)."""
+    import app.providers.free_data as mod
+
+    calls = {"n": 0}
+
+    def boom():
+        calls["n"] += 1
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(mod, "_load_listing_sync", boom)
+    p = FreeDataProvider()
+
+    async def go():
+        await p.search("삼성")   # 1차: 다운로드 시도 -> 실패
+        await p.search("삼성")   # 2차: 백오프 -> 재시도 안 함
+        return await p.search("AAPL")  # 직접 입력은 목록 없이도 동작
+
+    results = _run(go())
+    assert calls["n"] == 1, f"실패 후에도 {calls['n']}번 재시도함"
+    assert results and results[0].symbol == "AAPL"
+
+
 def _provider_with_listing():
     import time
     p = FreeDataProvider()

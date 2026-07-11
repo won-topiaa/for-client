@@ -91,9 +91,13 @@ class CachingProvider:
             if hit is not None:
                 return hit
             df = await self.inner.candles(symbol, timeframe, max_bars)
-            # 받은 수가 요청보다 적으면 히스토리가 끝난 것 -> 더 큰 요청도 캐시로 응답
-            exhausted = len(df) < max_bars
-            self._candles.set(key, (max_bars, exhausted, df))
+            # 받은 수가 요청보다 적으면 히스토리가 끝난 것 -> 더 큰 요청도 캐시로 응답.
+            # 단, 공급자가 '잘렸다'고 표시한 데이터(시간 예산 초과 등)는 소진이
+            # 아니므로, 실제 받은 양만 기록해 그보다 큰 요청은 재시도되게 한다.
+            truncated = bool(df.attrs.get("truncated", False))
+            exhausted = len(df) < max_bars and not truncated
+            fetched = len(df) if truncated else max_bars
+            self._candles.set(key, (fetched, exhausted, df))
             return df.tail(max_bars).reset_index(drop=True).copy()
 
     async def search(self, query: str) -> list[SymbolInfo]:

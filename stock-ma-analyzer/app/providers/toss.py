@@ -350,6 +350,7 @@ class TossProvider:
             )
         merged: pd.DataFrame | None = None
         before: str | None = None
+        truncated = False
         deadline = time.monotonic() + 75.0  # 전체 페이지네이션 시간 예산
         # 한 번에 max_count_per_request 씩, before(exclusive)로 과거 페이지네이션.
         # 다음 페이지 커서는 응답의 nextBefore 를 그대로 사용 (공식 스펙).
@@ -359,6 +360,7 @@ class TossProvider:
                     "%s 캔들 페이지네이션 시간 예산 초과 — %d봉까지만 사용합니다.",
                     symbol, len(merged),
                 )
+                truncated = True
                 break
             remaining = max_bars - (0 if merged is None else len(merged))
             params: dict[str, Any] = {
@@ -399,7 +401,12 @@ class TossProvider:
             await asyncio.sleep(0.06)
         if merged is None or merged.empty:
             raise TossApiError(f"{symbol} 캔들 데이터를 받지 못했습니다.")
-        return merged.tail(max_bars).reset_index(drop=True)
+        result = merged.tail(max_bars).reset_index(drop=True)
+        if truncated:
+            # 시간 예산 초과로 잘린 데이터임을 캐시 층에 알린다
+            # (히스토리 소진으로 오인해 10분간 잘린 데이터를 재사용하는 것 방지)
+            result.attrs["truncated"] = True
+        return result
 
 
 def _find_symbol_list(payload: Any) -> list[dict] | None:

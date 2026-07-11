@@ -38,10 +38,17 @@ def normalize_ohlcv(raw: pd.DataFrame) -> pd.DataFrame:
     if raw is None or len(raw) == 0:
         raise ValueError("빈 시세 데이터")
     df = raw.copy()
+    if isinstance(df.columns, pd.MultiIndex):  # yf.download 형태 방어
+        df.columns = df.columns.get_level_values(0)
     # 날짜가 인덱스인 경우 컬럼으로 꺼낸다
     if not isinstance(df.index, pd.RangeIndex):
         df = df.reset_index()
     date_col = _pick_col(df, "date", "index", "Date", "Datetime")
+    # 'index' 는 무명 DatetimeIndex 전용 후보 — 정수 인덱스가 epoch 로
+    # 오해석되어 쓰레기 날짜가 조용히 통과하는 것을 방지
+    if (date_col and date_col.lower() == "index"
+            and not pd.api.types.is_datetime64_any_dtype(df[date_col])):
+        raise ValueError("날짜 컬럼을 찾지 못함 (index 가 날짜형이 아님)")
     o = _pick_col(df, "open")
     h = _pick_col(df, "high")
     low = _pick_col(df, "low")
@@ -73,8 +80,13 @@ def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
         "name": raw[name].astype(str).str.strip(),
         "market": (raw[market].astype(str).str.strip() if market else ""),
     })
-    # 원본 코드가 순수 숫자(1~6자리)인 행만 — 빈 값이 zfill 로 000000 이 되는 것 방지
-    valid = codes.str.match(r"^\d{1,6}$")
+    # 유효 코드만: 순수 숫자(1~6자리) 또는 2024.1 개편 이후의 영문 포함
+    # 신형 코드(예: 00088K 한화3우B, 0126Z0). 빈 값이 zfill 로 000000 이
+    # 되는 것은 여전히 걸러진다.
+    valid = (
+        codes.str.match(r"^\d{1,6}$")
+        | codes.str.match(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
+    )
     return out[valid].reset_index(drop=True)
 
 
@@ -105,25 +117,46 @@ def _fetch_yahoo_sync(symbol: str, market: str = "") -> pd.DataFrame:
     raise ValueError(f"{symbol} Yahoo 조회 실패")
 
 
+_LISTING_TIMEOUT_SEC = 15.0   # 상장목록 다운로드 시간 상한
+_LISTING_RETRY_SEC = 60.0     # 실패 후 재시도 억제 (실패 폭주 방지)
+_CANDLES_TIMEOUT_SEC = 60.0   # 종목별 시세 조회 시간 상한
+
+
 class FreeDataProvider:
     name = "free"
 
     def __init__(self, data_dir: Path | None = None):
         self._listing: pd.DataFrame | None = None
         self._listing_ts = 0.0
+        self._listing_fail_ts = -1e9
         self._listing_lock = asyncio.Lock()
         self._market_by_symbol: dict[str, str] = {}
 
+    def _listing_fresh(self) -> bool:
+        return (self._listing is not None
+                and time.monotonic() - self._listing_ts < _LISTING_TTL_SEC)
+
     async def _get_listing(self) -> pd.DataFrame | None:
-        if self._listing is not None and time.monotonic() - self._listing_ts < _LISTING_TTL_SEC:
+        if self._listing_fresh():
+            return self._listing
+        # 최근 실패했으면 잠시 재시도하지 않는다 (요청마다 다운로드 재시도 방지)
+        if time.monotonic() - self._listing_fail_ts < _LISTING_RETRY_SEC:
             return self._listing
         async with self._listing_lock:
-            if self._listing is not None and time.monotonic() - self._listing_ts < _LISTING_TTL_SEC:
+            if self._listing_fresh():
+                return self._listing
+            if time.monotonic() - self._listing_fail_ts < _LISTING_RETRY_SEC:
                 return self._listing
             try:
-                raw = await asyncio.to_thread(_load_listing_sync)
+                # 데이터 소스가 응답을 안 주면 검색 전체가 영구 블록되므로
+                # 시간 상한 필수 (락과 API 는 풀리고, 스레드는 알아서 끝남)
+                raw = await asyncio.wait_for(
+                    asyncio.to_thread(_load_listing_sync),
+                    timeout=_LISTING_TIMEOUT_SEC,
+                )
                 listing = normalize_listing(raw)
             except Exception:
+                self._listing_fail_ts = time.monotonic()
                 return self._listing  # 실패 시 기존(있으면) 유지, 없으면 None
             self._listing = listing
             self._listing_ts = time.monotonic()
@@ -136,6 +169,11 @@ class FreeDataProvider:
             return []
         results: list[SymbolInfo] = []
         seen: set[str] = set()
+        # 직접 입력한 코드/티커 경로는 상장목록과 무관하게 항상 동작해야 한다
+        direct: SymbolInfo | None = None
+        if _SYMBOL_RE.match(q):
+            code = q if q.isdigit() else q.upper()
+            direct = SymbolInfo(code, code, "")
         listing = await self._get_listing()
         if listing is not None:
             ql = q.lower()
@@ -148,16 +186,27 @@ class FreeDataProvider:
                     continue
                 seen.add(row["symbol"])
                 results.append(SymbolInfo(row["symbol"], row["name"], row["market"]))
-        # 직접 입력한 코드/티커는 목록에 없어도 맨 앞에 유지 (예: 미국 티커)
-        if _SYMBOL_RE.match(q):
-            code = q if q.isdigit() else q.upper()
-            if code not in seen:
-                results.insert(0, SymbolInfo(code, code, ""))
+        if direct is not None and direct.symbol not in seen:
+            results.insert(0, direct)
         return results[:20]
 
     async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
-        # 소스는 일봉만 제공 — 주/월봉은 service 층에서 리샘플링
-        df = await asyncio.to_thread(self._fetch_daily_sync, symbol)
+        # 이 공급자는 일봉 전용 — 주/월봉은 service 층에서 리샘플링한다.
+        # 조용히 일봉을 돌려주면 잘못 라벨된 데이터가 캐시에 박히므로 방어.
+        if timeframe != "day":
+            raise ValueError(
+                f"FreeDataProvider 는 일봉만 제공합니다 (요청: {timeframe})"
+            )
+        try:
+            df = await asyncio.wait_for(
+                asyncio.to_thread(self._fetch_daily_sync, symbol),
+                timeout=_CANDLES_TIMEOUT_SEC,
+            )
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"{symbol} 시세 조회가 {int(_CANDLES_TIMEOUT_SEC)}초를 초과했습니다 "
+                "(데이터 소스 응답 지연 — 잠시 후 다시 시도해 주세요)"
+            ) from exc
         return df.tail(max_bars).reset_index(drop=True)
 
     def _fetch_daily_sync(self, symbol: str) -> pd.DataFrame:
@@ -166,6 +215,7 @@ class FreeDataProvider:
             raw = _fetch_fdr_sync(symbol)
             if raw is not None and len(raw) > 0:
                 return normalize_ohlcv(raw)
+            errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
         except Exception as exc:  # noqa: BLE001
             errors.append(f"FDR: {exc}")
         try:

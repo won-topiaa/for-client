@@ -38,6 +38,8 @@ def build_provider(settings: Settings) -> Provider:
         logger.info("샘플 데이터 공급자 사용 (provider=sample)")
         return SampleProvider(data_dir=settings.data_dir)
     # 기본값(auto/free): 키·IP 제한이 없는 무료 소스 (공개 배포에 적합)
+    if provider not in ("auto", "free"):
+        logger.warning("알 수 없는 provider=%r — 무료 공급자로 대체합니다.", provider)
     logger.info("무료 시세 공급자 사용 (FinanceDataReader/Yahoo, provider=%s)", provider)
     from .providers.free_data import FreeDataProvider
     return FreeDataProvider(data_dir=settings.data_dir)

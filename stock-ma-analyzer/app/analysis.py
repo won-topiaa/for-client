@@ -144,10 +144,16 @@ def _group_episodes(touch_idx: np.ndarray, gap: int) -> list[tuple[int, int]]:
 
 
 def _episode_side(
-    close: np.ndarray, ma: np.ndarray, start: int, context_bars: int
+    close: np.ndarray, ma: np.ndarray, start: int, context_bars: int,
+    floor: int = 0,
 ) -> Side | None:
-    """에피소드 직전 봉들의 종가-MA 관계로 지지/저항 시험 방향을 정한다."""
-    lo = max(0, start - context_bars)
+    """에피소드 직전 봉들의 종가-MA 관계로 지지/저항 시험 방향을 정한다.
+
+    floor: 컨텍스트로 삼을 수 있는 가장 이른 봉. 분리된 후속 세그먼트에서는
+    직전 판정 봉 이후만 보게 제한한다 — 이전 시험의 추세 봉이 섞이면
+    (예: 반등 후 갭 폭락 뒤 아래에서 재접근) 방향이 뒤집혀 오판된다.
+    """
+    lo = max(0, start - context_bars, floor)
     if lo >= start:
         return None
     diffs = close[lo:start] - ma[lo:start]
@@ -254,9 +260,13 @@ def analyze_ma(
         # 다시 선까지 미끄러진 구간이 이전 성공에 흡수되는 것을 막기 위함.
         members = touch_idx[(touch_idx >= g_start) & (touch_idx <= g_end)]
         pos = 0
+        prev_decided: int | None = None
         while pos < len(members):
             seg_start = int(members[pos])
-            side = _episode_side(close, ma, seg_start, p.trend_context_bars)
+            # 후속 세그먼트는 직전 판정 봉부터의 흐름으로 방향을 정한다
+            # (판정 봉 포함: 즉시 재터치 시 직전 반등 봉이 컨텍스트가 됨)
+            floor = prev_decided if prev_decided is not None else 0
+            side = _episode_side(close, ma, seg_start, p.trend_context_bars, floor)
             if side is None:
                 break
             outcome, decided_at = _decide_outcome(
@@ -282,6 +292,8 @@ def analyze_ma(
                 anchor = seg_end
 
             pos = next_pos
+            if outcome != "undecided" and decided_at is not None:
+                prev_decided = int(decided_at)
             if seg_end < window_start:
                 continue  # 분석 창 밖에서 끝난 시험은 집계 제외
 
