@@ -221,6 +221,14 @@
   }
 
   .note { color: var(--muted); font-size: 12px; line-height: 1.7; }
+  .refs { color: var(--muted); font-size: 11.5px; line-height: 1.7; }
+  .refs-title { color: var(--text); font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+  .refs ol { margin: 0; padding-left: 18px; }
+  .refs li { margin: 2px 0; }
+  .refs em { font-style: italic; }
+  .refs a { color: var(--accent); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+  .refs .use { color: var(--faint); }
   footer {
     margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--border);
     color: var(--muted); font-size: 12px; line-height: 1.7;
@@ -306,6 +314,30 @@
     패턴 탐지는 규칙 기반 자동 분석이며 미완성/실패 가능성이 있는 형태도 포함됩니다.<br>
     패턴을 <b>이탈·무효화한 종목은 자동 탈락</b>합니다 — 각 패턴 설명의 "자동 탈락" 기준(연구 문헌 기반)에
     걸리면 다음 스캔(최대 30분)에서 목록에서 빠집니다.
+  </div>
+
+  <div class="refs">
+    <div class="refs-title">📚 참고 문헌 — 스크리너의 매칭·탈락 기준이 근거한 자료</div>
+    <ol>
+      <li>Lo, A. W., Mamaysky, H., &amp; Wang, J. (2000). Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation. <em>The Journal of Finance</em>, 55(4), 1705–1765.
+        <a href="https://doi.org/10.1111/0022-1082.00265" target="_blank" rel="noopener">doi:10.1111/0022-1082.00265</a>
+        <span class="use">— 기하학적 패턴 탐지 방법론 · 패턴 정보력은 완성 직후에 집중 (헤드앤숄더 탈락 기준)</span></li>
+      <li>Han, Y., Yang, K., &amp; Zhou, G. (2013). A New Anomaly: The Cross-Sectional Profitability of Technical Analysis. <em>Journal of Financial and Quantitative Analysis</em>, 48(5), 1433–1461.
+        <a href="https://doi.org/10.1017/S0022109013000586" target="_blank" rel="noopener">doi:10.1017/S0022109013000586</a>
+        <span class="use">— 기술적 분석 효과는 초대형주에서 가장 약함 (유니버스에서 초대형주 제외)</span></li>
+      <li>Park, C.-H., &amp; Irwin, S. H. (2007). What Do We Know About the Profitability of Technical Analysis? <em>Journal of Economic Surveys</em>, 21(4), 786–826.
+        <a href="https://doi.org/10.1111/j.1467-6419.2007.00519.x" target="_blank" rel="noopener">doi:10.1111/j.1467-6419.2007.00519.x</a>
+        <span class="use">— 거래비용·데이터 스누핑 경고 (유동성 상위 종목만 스캔)</span></li>
+      <li>Jegadeesh, N., &amp; Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. <em>The Journal of Finance</em>, 48(1), 65–91.
+        <a href="https://doi.org/10.1111/j.1540-6261.1993.tb04702.x" target="_blank" rel="noopener">doi:10.1111/j.1540-6261.1993.tb04702.x</a>
+        <span class="use">— 모멘텀(상대강도) 효과 (와인스타인 RS 가점의 학술 근거)</span></li>
+      <li>Bulkowski, T. N. (2005). <em>Encyclopedia of Chart Patterns</em> (2nd ed.). Wiley.
+        <span class="use">— 패턴별 실패율·busted 패턴 정의·5% 룰·삼각형 돌파는 꼭짓점 거리의 평균 73~75% 지점 (헤드앤숄더·삼각수렴 탈락 기준)</span></li>
+      <li>O'Neil, W. J. (2009). <em>How to Make Money in Stocks</em> (4th ed.). McGraw-Hill. (초판 1988)
+        <span class="use">— 컵앤핸들 정의 · 핸들은 컵 상반부 · 매수는 피벗 +5% 이내 (컵앤핸들 매칭·탈락 기준)</span></li>
+      <li>Weinstein, S. (1988). <em>Secrets for Profiting in Bull and Bear Markets</em>. Dow Jones-Irwin.
+        <span class="use">— 4단계 주가 사이클 · 30주선 매매 규칙 · 돌파 거래량 기준 (초기 2단계 매칭·탈락 기준)</span></li>
+    </ol>
   </div>
 
   <footer>
