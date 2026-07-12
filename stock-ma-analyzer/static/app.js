@@ -88,18 +88,8 @@
       .catch(() => {});
   }
 
-  // 패턴 스크리너 등에서 /?symbol=005930 으로 진입하면 자동으로 선택·분석
+  // 패턴 스크리너 등에서 /ma?symbol=005930 으로 진입하면 자동으로 선택·분석
   lookupAndAnalyze(new URLSearchParams(location.search).get("symbol"), true);
-
-  // 같은 페이지의 다른 섹션(패턴 스크리너 매칭 카드)에서 호출하는 훅:
-  // 페이지 이동 없이 이평선 섹션으로 스크롤해 그 종목을 바로 분석한다
-  window.maRadar = {
-    analyze(sym) {
-      const sec = document.getElementById("ma");
-      if (sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
-      lookupAndAnalyze(sym, false);
-    },
-  };
 
   /* ---------- 대표 종목 바로 분석 ---------- */
   const quickPicks = document.getElementById("quickPicks");
