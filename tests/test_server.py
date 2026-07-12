@@ -79,3 +79,17 @@ def test_us_scanner_falls_back_to_us_symbols(client):
     fn = app.state.scanners["us"].universe_fn
     out = asyncio.new_event_loop().run_until_complete(fn())
     assert {s.symbol for s in out} == {t[0] for t in US_FALLBACK}
+
+
+def test_patterns_redirects_to_home_anchor(client):
+    """과거 /patterns 링크는 통합 홈의 패턴 섹션으로 넘어간다."""
+    r = client.get("/patterns", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/#patterns"
+
+
+def test_home_contains_both_tools(client):
+    r = client.get("/")
+    assert "이평선 레이더" in r.text
+    assert "차트 패턴 스크리너" in r.text
+    assert 'id="scanStatus"' in r.text and 'id="status"' in r.text

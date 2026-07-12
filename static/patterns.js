@@ -77,10 +77,11 @@
     cards: document.getElementById("patternCards"),
     marketToggle: document.getElementById("marketToggle"),
     desc: document.getElementById("patternDesc"),
-    status: document.getElementById("status"),
+    status: document.getElementById("scanStatus"),
     matches: document.getElementById("matches"),
     party: document.getElementById("scanParty"),
     partyCaption: document.getElementById("partyCaption"),
+    section: document.getElementById("patterns"),
   };
 
   const CAPTIONS = [
@@ -262,7 +263,7 @@
         `<span><span class="m-name">${esc(m.name)}</span> ` +
         `<span class="m-code">${esc(m.symbol)}${m.market ? " · " + esc(m.market) : ""}</span></span>` +
         `<span><span class="m-score">매칭점수 ${Number(m.score).toFixed(2)}</span> ` +
-        `<a class="m-link" href="/?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
+        `<a class="m-link" href="/?symbol=${encodeURIComponent(m.symbol)}#ma">이평선 분석 →</a></span>` +
         `</div>` +
         `<div class="m-summary">${esc(m.summary)}</div>` +
         `<div class="m-chart"></div>`;
@@ -301,5 +302,32 @@
     charts.push(chart);
   }
 
-  load();
+  // 같은 페이지에 이평선 레이더가 있으면 페이지 이동 없이 그 자리에서 분석
+  el.matches.addEventListener("click", (e) => {
+    const link = e.target.closest("a.m-link");
+    if (!link || !window.maRadar) return;
+    e.preventDefault();
+    const sym = new URL(link.href, location.origin).searchParams.get("symbol");
+    if (sym) window.maRadar.analyze(sym);
+  });
+
+  // 스캔 시작: 패턴 섹션이 보일 때(또는 #patterns 직행 시) 시작해,
+  // 이평선만 쓰러 온 방문자가 무거운 스캔 폴링을 트리거하지 않게 한다
+  let started = false;
+  function startOnce() {
+    if (started) return;
+    started = true;
+    load();
+  }
+  if (location.hash === "#patterns" || !el.section || !("IntersectionObserver" in window)) {
+    startOnce();
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((en) => en.isIntersecting)) {
+        io.disconnect();
+        startOnce();
+      }
+    }, { rootMargin: "600px" });
+    io.observe(el.section);
+  }
 })();

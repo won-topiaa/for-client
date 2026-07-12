@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import DEFAULT_LOOKBACK_YEARS, Settings, load_settings
@@ -212,9 +212,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def index():
+    """통합 홈: 이평선 레이더 + 차트 패턴 스크리너를 한 페이지에."""
     return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/patterns")
 async def patterns_page():
-    return FileResponse(STATIC_DIR / "patterns.html")
+    """과거 링크/북마크 호환: 통합 홈의 패턴 섹션으로 이동."""
+    return RedirectResponse(url="/#patterns", status_code=307)
