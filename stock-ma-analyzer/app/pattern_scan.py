@@ -30,7 +30,10 @@ logger = logging.getLogger("ma-analyzer")
 RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
 LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
 ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
-FETCH_BARS = 480            # 종목당 필요한 일봉 수 (30주선 + 베이스 이력)
+SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 행(hang)으로 보고 중단
+# 종목당 일봉 수 — 터치 스캐너와 같은 값으로 맞춰, 두 스캐너가 시세 캐시의
+# 같은 페치 한 번을 공유하게 한다 (패턴 자체는 뒤쪽 500봉만 사용)
+FETCH_BARS = 1050
 CONCURRENCY = 6
 TOP_N = 8                   # 패턴별 보관 상위 개수
 CHART_BARS = 200            # 결과 카드에 실어줄 봉 수
@@ -144,6 +147,7 @@ class BaseScanner:
         self._errors = 0
         self._error: str | None = None   # 마지막 스캔 전체 실패 사유
         self._error_ts = 0.0
+        self._scan_started = 0.0         # 워치독용: 현재 스캔 시작 시각
 
     def _fresh(self) -> bool:
         return (self._results is not None
@@ -160,11 +164,21 @@ class BaseScanner:
         if self._fresh():
             return {"status": "done", **self._results}
         idle = self._task is None or self._task.done()
+        if not idle and time.monotonic() - self._scan_started > SCAN_TIMEOUT_SEC:
+            # 워치독: 업스트림 요청이 행(hang)에 걸리면 스캔이 영원히 '진행 중'에
+            # 갇힌다 — 끊고 실패 처리해 쿨다운 후 새로 시도하게 한다
+            self._task.cancel()
+            self._error = "스캔 시간 초과 (업스트림 응답 없음)"
+            self._error_ts = time.monotonic()
+            logger.warning("%s 워치독: %.0f초 초과로 스캔 중단",
+                           type(self).__name__, SCAN_TIMEOUT_SEC)
+            idle = True
         cooling = (self._error is not None
                    and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
         if idle and not cooling:
             self._done = 0
             self._errors = 0
+            self._scan_started = time.monotonic()
             self._task = asyncio.create_task(self._scan())
             idle = False
         if self._results is not None:
