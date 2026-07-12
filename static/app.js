@@ -141,7 +141,13 @@
     const nodes = el.suggest.children;
     if (!nodes.length) return;
     activeIdx = (activeIdx + delta + nodes.length) % nodes.length;
-    Array.from(nodes).forEach((n, i) => n.classList.toggle("active", i === activeIdx));
+    Array.from(nodes).forEach((n, i) => {
+      n.classList.toggle("active", i === activeIdx);
+      n.setAttribute("aria-selected", i === activeIdx ? "true" : "false");
+    });
+    // 목록이 스크롤될 만큼 길면 활성 항목을 시야로
+    nodes[activeIdx].scrollIntoView({ block: "nearest" });
+    el.search.setAttribute("aria-activedescendant", nodes[activeIdx].id);
   }
 
   async function doSearch(q) {
@@ -164,8 +170,11 @@
     el.suggest.innerHTML = "";
     activeIdx = -1;
     if (!suggestItems.length) { hideSuggest(); return; }
-    suggestItems.forEach((item) => {
+    suggestItems.forEach((item, i) => {
       const div = document.createElement("div");
+      div.id = "sug-" + i;
+      div.setAttribute("role", "option");
+      div.setAttribute("aria-selected", "false");
       const name = document.createElement("span");
       name.textContent = item.name;
       const code = document.createElement("span");
@@ -177,11 +186,17 @@
       el.suggest.appendChild(div);
     });
     el.suggest.style.display = "block";
+    el.search.setAttribute("aria-expanded", "true");
   }
 
-  function hideSuggest() { el.suggest.style.display = "none"; }
+  function hideSuggest() {
+    el.suggest.style.display = "none";
+    el.search.setAttribute("aria-expanded", "false");
+    el.search.removeAttribute("aria-activedescendant");
+  }
 
   function pick(item) {
+    clearTimeout(searchTimer);  // 디바운스 대기 중인 불필요한 검색 취소
     selected = item;
     el.search.value = `${item.name} (${item.symbol})`;
     el.analyze.disabled = false;

@@ -168,6 +168,11 @@
   @media (prefers-reduced-motion: reduce) {
     .bot, .bot *, .notes span { animation: none !important; }
   }
+  /* 스크린리더 전용 알림 (시각적으로 숨김) */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
   .spinner {
     display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
     border: 2px solid var(--faint); border-top-color: transparent;
@@ -269,7 +274,8 @@
     양봉이와 음봉이가 지지선을 짚어보는 중…
   </div>
 
-  <div class="status" id="scanStatus" role="status" aria-live="polite"></div>
+  <div class="status" id="scanStatus"></div>
+  <div class="sr-only" id="srStatus" role="status"></div>
   <div class="matches" id="matches"></div>
 
   <div class="note">

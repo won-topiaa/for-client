@@ -94,7 +94,8 @@
   input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(16, 185, 129, .25); }
   .years-input { width: 84px; font-variant-numeric: tabular-nums; }
   .suggest {
-    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    /* 고정 헤더(z:20)보다 아래, 본문 콘텐츠보다는 위 */
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 10;
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; max-height: 260px; overflow-y: auto; display: none;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
@@ -252,8 +253,8 @@
   <div class="controls">
     <div class="field search-box">
       <label for="searchInput">종목 검색 (이름 또는 코드)</label>
-      <input id="searchInput" placeholder="예: 삼성전자, 005930" autocomplete="off">
-      <div class="suggest" id="suggest"></div>
+      <input id="searchInput" placeholder="예: 삼성전자, 005930" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="suggest">
+      <div class="suggest" id="suggest" role="listbox" aria-label="종목 검색 결과"></div>
     </div>
     <div class="field">
       <label for="yearsDay">일봉 기간(년)</label>
