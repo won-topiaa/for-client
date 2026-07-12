@@ -14,9 +14,16 @@ import pandas as pd
 
 from .base import Provider, SymbolInfo
 
-_CANDLE_TTL_SEC = 600.0   # 10분 — 봉 데이터는 장중에도 이 정도면 충분
+# 캔들 TTL 은 스캔 워치독(900초)보다 충분히 길어야 한다: 느린 스캔이 워치독에
+# 끊겨 재시도할 때 이미 받아둔 종목을 다시 받지 않고 이어가게 (재페치 라이브락 방지).
+# 일봉 분석이라 30분 신선도면 충분하다.
+_CANDLE_TTL_SEC = 1800.0
 _SEARCH_TTL_SEC = 3600.0  # 검색(이름->코드)은 자주 안 바뀜
-_MAX_ENTRIES = 200        # 메모리 보호용 상한
+_MAX_ENTRIES = 200        # 검색 캐시 상한
+# 캔들 캐시 상한은 스캐너 유니버스(국내 300 + 미국 ~470)가 전부 들어가고도
+# 남아야 한다 — 상한이 유니버스보다 작으면 순차 스캔이 자기 캐시를 계속
+# 밀어내 히트율이 0% 가 된다 (약 60~80MB, 무료 인스턴스에서 감당 가능).
+_CANDLE_MAX_ENTRIES = 1000
 
 
 class _TTLCache:
@@ -37,7 +44,13 @@ class _TTLCache:
 
     def set(self, key: Any, value: Any) -> None:
         if len(self._data) >= self.max_entries:
-            # 가장 오래된 것부터 정리
+            # 1) 만료된 항목부터 정리 — 살아 있는 캐시를 쫓아내지 않는다
+            now = time.monotonic()
+            expired = [k for k, (ts, _) in self._data.items() if now - ts > self.ttl]
+            for k in expired:
+                self._data.pop(k, None)
+        if len(self._data) >= self.max_entries:
+            # 2) 그래도 넘치면 가장 오래된 것부터
             oldest = sorted(self._data.items(), key=lambda kv: kv[1][0])
             for k, _ in oldest[: max(1, self.max_entries // 4)]:
                 self._data.pop(k, None)
@@ -50,7 +63,7 @@ class CachingProvider:
     def __init__(self, inner: Provider):
         self.inner = inner
         self.name = inner.name
-        self._candles = _TTLCache(_CANDLE_TTL_SEC)
+        self._candles = _TTLCache(_CANDLE_TTL_SEC, _CANDLE_MAX_ENTRIES)
         self._searches = _TTLCache(_SEARCH_TTL_SEC)
         self._locks: dict[Any, asyncio.Lock] = {}
 
@@ -59,10 +72,13 @@ class CachingProvider:
         if lock is None:
             lock = asyncio.Lock()
             self._locks[key] = lock
-            if len(self._locks) > _MAX_ENTRIES * 2:
-                # 잠금 딕셔너리도 무한히 크지 않게 (사용 중이 아닌 것만 정리)
-                for k in list(self._locks.keys())[: _MAX_ENTRIES]:
-                    if not self._locks[k].locked():
+            if len(self._locks) > _CANDLE_MAX_ENTRIES * 2:
+                # 잠금 딕셔너리도 무한히 크지 않게. 대기자(waiter)가 있는 잠금은
+                # 해제 직후의 짧은 순간 locked() 가 False 라 잘못 축출될 수 있어
+                # 함께 건너뛴다 (같은 키에 새 잠금이 생기면 중복 요청 발생).
+                for k in list(self._locks.keys())[:_CANDLE_MAX_ENTRIES]:
+                    lk = self._locks[k]
+                    if not lk.locked() and not getattr(lk, "_waiters", None):
                         self._locks.pop(k, None)
         return lock
 

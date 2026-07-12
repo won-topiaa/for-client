@@ -177,6 +177,7 @@ class BaseScanner:
                    and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
         if idle and not cooling:
             self._done = 0
+            self._total = 0   # 유니버스 선정 동안 이전 스캔의 total 이 비치지 않게
             self._errors = 0
             self._scan_started = time.monotonic()
             self._task = asyncio.create_task(self._scan())

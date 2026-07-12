@@ -248,8 +248,14 @@ class FreeDataProvider:
                 # 창 제한 조회가 요청량보다 적게 돌아오면 (장기 거래정지 등)
                 # '히스토리 소진'이 아니라 '창이 짧았던 것'일 수 있다 —
                 # 캐시가 잘린 데이터를 전체 기간으로 오인하지 않게 표시.
+                # 단, 첫 봉이 요청 시작일보다 한참 뒤라면 상장이 늦어 히스토리
+                # 자체가 짧은 것(진짜 소진)이므로 표시하지 않는다 — 아니면
+                # 신생 종목이 캐시 불가가 되어 매 요청 재조회하게 된다.
                 if windowed and max_bars and len(df) < max_bars:
-                    df.attrs["truncated"] = True
+                    window_bound = df["date"].iloc[0] <= (
+                        pd.Timestamp(start) + pd.Timedelta(days=10))
+                    if window_bound:
+                        df.attrs["truncated"] = True
                 return df
             errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
         except Exception as exc:  # noqa: BLE001
@@ -260,7 +266,13 @@ class FreeDataProvider:
             raw = _fetch_yahoo_sync(symbol, market, period)
             df = normalize_ohlcv(raw)
             if period != "max" and max_bars and len(df) < max_bars:
-                df.attrs["truncated"] = True
+                # FDR 경로와 같은 이유: 기간(period)이 실제로 데이터를 자른
+                # 경우에만 표시. 첫 봉이 기간 시작보다 한참 뒤면 진짜 소진.
+                years = 3 if period == "3y" else 10
+                expected_start = (pd.Timestamp.today().normalize()
+                                  - pd.DateOffset(years=years))
+                if df["date"].iloc[0] <= expected_start + pd.Timedelta(days=10):
+                    df.attrs["truncated"] = True
             return df
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Yahoo: {exc}")
