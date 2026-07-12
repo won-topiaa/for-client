@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이평선 레이더 — 주요 지지/저항 이동평균선 분석기</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+<style>
+  /* earnings-volatility 사이트와 같은 디자인 언어:
+     zinc 중립 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 빨강=하락 · 인디고=정보 */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7; --divide: #f4f4f5;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --up: #059669; --down: #dc2626;
+    --info: #4f46e5; --info-bg: #eef2ff; --info-border: #c7d2fe;
+    --chip-active-bg: #18181b; --chip-active-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .8);
+    --hover-row: #fafafa; --reco-row: rgba(5, 150, 105, .07);
+    --warn-bg: #fffbeb; --warn-border: #fde68a; --warn-text: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a; --divide: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --up: #34d399; --down: #f87171;
+      --info: #818cf8; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
+      --chip-active-bg: #f4f4f5; --chip-active-text: #18181b;
+      --header-bg: rgba(24, 24, 27, .8);
+      --hover-row: rgba(39, 39, 42, .4); --reco-row: rgba(52, 211, 153, .08);
+      --warn-bg: rgba(69, 26, 3, .4); --warn-border: #78350f; --warn-text: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* 상단 고정 헤더 (반투명 블러) */
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: 1152px; margin: 0 auto; padding: 13px 24px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .header-inner h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .header-inner .sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+  .nav-link { color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500; }
+  .nav-link:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: 1152px; margin: 0 auto; padding: 26px 24px 60px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  .banner {
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
+    border-radius: 12px; padding: 10px 14px; font-size: 13px; display: none;
+  }
+
+  /* 소개 박스 */
+  .intro {
+    border: 1px solid var(--border); background: var(--panel2);
+    border-radius: 16px; padding: 14px 18px; font-size: 13.5px; line-height: 1.65;
+  }
+  .intro p { margin: 0; }
+  .intro .sub2 { color: var(--muted); margin-top: 2px; }
+
+  /* 검색/기간 컨트롤 카드 */
+  .controls {
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
+  .search-box { position: relative; flex: 1; min-width: 220px; }
+  input {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 13px; font-size: 14px; width: 100%;
+  }
+  input::placeholder { color: var(--faint); }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(16, 185, 129, .25); }
+  .years-input { width: 84px; font-variant-numeric: tabular-nums; }
+  .suggest {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; max-height: 260px; overflow-y: auto; display: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+  }
+  .suggest div { padding: 8px 13px; cursor: pointer; display: flex; justify-content: space-between; }
+  .suggest div:hover, .suggest div.active { background: var(--panel2); }
+  .suggest .code { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button.primary {
+    background: var(--accent); border: none; color: #fff; font-weight: 600;
+    padding: 10px 22px; border-radius: 10px; font-size: 14px; cursor: pointer;
+    transition: background .15s;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: -12px; }
+
+  /* 대표 종목 바로가기 — 알약형 칩 */
+  .quick-picks { display: flex; flex-direction: column; gap: 10px; }
+  .qp-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .qp-label { color: var(--muted); font-size: 12px; min-width: 88px; }
+  .qp {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 13px; font-size: 12.5px; cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .qp:hover { border-color: var(--faint); }
+  .qp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .qp.active {
+    background: var(--chip-active-bg); color: var(--chip-active-text);
+    border-color: var(--chip-active-bg);
+  }
+  .qp .qp-code {
+    color: var(--muted); font-size: 11px; margin-left: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .qp.active .qp-code { color: inherit; opacity: .7; }
+
+  /* 일봉/주봉/월봉 탭 — 칩, 선택 시 반전 */
+  .tabs { display: flex; gap: 8px; }
+  .tabs button {
+    background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+    padding: 7px 18px; border-radius: 999px; cursor: pointer; font-size: 13.5px;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .tabs button:hover { border-color: var(--faint); }
+  .tabs button.active {
+    background: var(--chip-active-bg); color: var(--chip-active-text);
+    border-color: var(--chip-active-bg); font-weight: 600;
+  }
+
+  /* 추천 이평선 카드 */
+  .reco-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+  .reco-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 13px 16px; min-width: 175px; cursor: pointer;
+    transition: border-color .15s, opacity .15s, box-shadow .15s; user-select: none;
+  }
+  .reco-card:hover { border-color: var(--faint); }
+  .reco-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .reco-card.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .reco-card.dimmed { opacity: .45; }
+  .reco-card .period { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .reco-card .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .reco-card .meta { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .reco-card .warn { color: var(--warn-text); font-size: 11.5px; }
+  .reco-card .card-hint { color: var(--faint); font-size: 10.5px; margin-top: 6px; }
+  .reco-card.all-card { min-width: 130px; }
+  .reco-card.all-card .dot { width: 8px; height: 8px; margin-right: 3px; }
+
+  /* 차트 + 범례 */
+  #chart {
+    height: 460px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--panel); position: relative; overflow: hidden;
+  }
+  .chart-note {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 12px; margin: -12px 2px 0; flex-wrap: wrap; gap: 6px;
+  }
+  .marker-legend { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .marker-legend .lg { color: var(--muted); font-size: 12px; }
+  .marker-legend .lg-sym { font-size: 13px; }
+  .lg-up { color: var(--up); }
+  .lg-down { color: var(--down); }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { width: auto; }
+
+  /* 성적표 테이블 — 카드 안에 헤더 바 + 구분선 행 */
+  .table-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden;
+  }
+  .table-head {
+    padding: 15px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  .table-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .table-head .thint { color: var(--muted); font-size: 11.5px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
+  th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--divide); }
+  tbody tr:last-child td { border-bottom: none; }
+  th {
+    background: var(--panel2); color: var(--muted); font-weight: 500;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  }
+  td { font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; padding-left: 20px; }
+  th:last-child, td:last-child { padding-right: 20px; }
+  tbody tr:hover td { background: var(--hover-row); }
+  tr.reco td { background: var(--reco-row); }
+  tr.dim td { color: var(--faint); }
+  .table-foot {
+    padding: 10px 20px 12px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11.5px; line-height: 1.6;
+  }
+
+  .status { margin: 8px 0; color: var(--muted); text-align: center; }
+  .spinner {
+    display: inline-block; width: 15px; height: 15px; vertical-align: -3px;
+    border: 2px solid var(--faint); border-top-color: transparent;
+    border-radius: 50%; animation: spin .8s linear infinite; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #result { display: none; flex-direction: column; gap: 16px; }
+
+  footer {
+    margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  footer .strong { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div>
+      <h1>📈 이평선 레이더</h1>
+      <p class="sub">일봉 · 주봉 · 월봉의 주요 지지/저항 이동평균선 백테스트</p>
+    </div>
+    <span style="display:inline-flex; gap:14px;"><a class="nav-link" href="/">🏠 홈</a><a class="nav-link" href="/patterns">🔍 패턴 스크리너 →</a></span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="sampleBanner">
+    ⚠️ 지금은 <b>샘플 데이터 모드</b>입니다 (합성 데이터). MA_PROVIDER 설정을
+    기본값(auto)으로 두면 무료 실시세(FinanceDataReader/Yahoo)로 분석합니다 — README 참고.
+  </div>
+
+  <section class="intro">
+    <p>어떤 이동평균선이 이 종목의 지지/저항으로 실제 작동해 왔는지, 과거 데이터를 백테스트해 순위로 보여드립니다.</p>
+    <p class="sub2">일봉·주봉·월봉 각각에서 가장 믿을 만한 2~3개 선을 추천하고, 차트 위에 지지·저항·돌파 사건을 표시합니다.</p>
+  </section>
+
+  <div class="controls">
+    <div class="field search-box">
+      <label for="searchInput">종목 검색 (이름 또는 코드)</label>
+      <input id="searchInput" placeholder="예: 삼성전자, 005930" autocomplete="off">
+      <div class="suggest" id="suggest"></div>
+    </div>
+    <div class="field">
+      <label for="yearsDay">일봉 기간(년)</label>
+      <input class="years-input" id="yearsDay" type="number" min="0" max="50" step="0.5" value="3">
+    </div>
+    <div class="field">
+      <label for="yearsWeek">주봉 기간(년)</label>
+      <input class="years-input" id="yearsWeek" type="number" min="0" max="50" step="0.5" value="7">
+    </div>
+    <div class="field">
+      <label for="yearsMonth">월봉 기간(년)</label>
+      <input class="years-input" id="yearsMonth" type="number" min="0" max="50" step="1" value="0">
+    </div>
+    <div class="field">
+      <button class="primary" id="analyzeBtn" disabled>분석</button>
+    </div>
+  </div>
+  <div class="hint">기간 0 = 상장 후 전체 기간 · 추천 기본값: 일봉 3년, 주봉 7년, 월봉 전체 (최근 흐름에 자동 가중)</div>
+
+  <div class="quick-picks" id="quickPicks" aria-label="대표 종목 바로 분석">
+    <div class="qp-group">
+      <span class="qp-label">🇰🇷 국내 대표</span>
+      <button class="qp" data-symbol="005930" data-name="삼성전자" data-market="KOSPI">삼성전자</button>
+      <button class="qp" data-symbol="000660" data-name="SK하이닉스" data-market="KOSPI">SK하이닉스</button>
+      <button class="qp" data-symbol="373220" data-name="LG에너지솔루션" data-market="KOSPI">LG에너지솔루션</button>
+      <button class="qp" data-symbol="005380" data-name="현대차" data-market="KOSPI">현대차</button>
+      <button class="qp" data-symbol="035420" data-name="NAVER" data-market="KOSPI">NAVER</button>
+    </div>
+    <div class="qp-group">
+      <span class="qp-label">🇺🇸 미국 대표</span>
+      <button class="qp" data-symbol="AAPL" data-name="애플" data-market="NASDAQ">애플<span class="qp-code">AAPL</span></button>
+      <button class="qp" data-symbol="NVDA" data-name="엔비디아" data-market="NASDAQ">엔비디아<span class="qp-code">NVDA</span></button>
+      <button class="qp" data-symbol="MSFT" data-name="마이크로소프트" data-market="NASDAQ">마이크로소프트<span class="qp-code">MSFT</span></button>
+      <button class="qp" data-symbol="TSLA" data-name="테슬라" data-market="NASDAQ">테슬라<span class="qp-code">TSLA</span></button>
+      <button class="qp" data-symbol="GOOGL" data-name="알파벳(구글)" data-market="NASDAQ">알파벳(구글)<span class="qp-code">GOOGL</span></button>
+    </div>
+  </div>
+
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <div id="result">
+    <div class="tabs" id="tabs">
+      <button data-tf="day" class="active">일봉</button>
+      <button data-tf="week">주봉</button>
+      <button data-tf="month">월봉</button>
+    </div>
+    <div class="reco-cards" id="recoCards"></div>
+    <div id="chart"></div>
+    <div class="chart-note">
+      <span id="windowNote"></span>
+      <span class="marker-legend">
+        <label class="toggle"><input type="checkbox" id="markerToggle" checked> 이벤트 마커:</label>
+        <span class="lg"><span class="lg-sym lg-up">▲</span> 지지 성공 (반등)</span>
+        <span class="lg"><span class="lg-sym lg-down">▼</span> 저항 성공 (하락)</span>
+        <span class="lg"><span class="lg-sym lg-down">●</span> 지지 이탈 (아래로 뚫림)</span>
+        <span class="lg"><span class="lg-sym lg-up">●</span> 저항 돌파 (위로 뚫음)</span>
+      </span>
+    </div>
+    <div class="table-card">
+      <div class="table-head">
+        <h3>전체 후보 이평선 성적표</h3>
+        <span class="thint">★ = 추천 · 최근 사건에 가중치를 준 성공률 기준</span>
+      </div>
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>이평선</th><th>터치</th><th>지지성공</th><th>저항성공</th>
+            <th>돌파(실패)</th><th>미확정</th><th>성공률*</th><th>점수</th><th>최근 터치</th>
+          </tr>
+        </thead>
+        <tbody id="statsBody"></tbody>
+      </table>
+      </div>
+      <div class="table-foot">* 성공률은 최근 사건에 더 큰 가중치를 준 가중 성공률입니다. 점수 = 성공률 신뢰하한 × log(1+가중 성공 횟수) — "자주 그리고 믿을 만하게" 지지/저항이 된 순서.</div>
+    </div>
+  </div>
+
+  <footer>
+    <p class="strong" style="margin:0">참고용 데이터 시각화입니다.</p>
+    <p style="margin:2px 0 0">본 도구는 과거 데이터 통계이며 투자 권유가 아닙니다. 미래의 지지/저항을 보장하지 않으며, 모든 투자 결정과 결과는 본인 책임입니다.</p>
+  </footer>
+</div>
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

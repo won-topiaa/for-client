@@ -81,15 +81,23 @@ def test_us_scanner_falls_back_to_us_symbols(client):
     assert {s.symbol for s in out} == {t[0] for t in US_FALLBACK}
 
 
-def test_patterns_redirects_to_home_anchor(client):
-    """과거 /patterns 링크는 통합 홈의 패턴 섹션으로 넘어간다."""
-    r = client.get("/patterns", follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers["location"] == "/#patterns"
-
-
-def test_home_contains_both_tools(client):
+def test_landing_links_to_both_tools(client):
+    """랜딩 홈: 두 도구 카드와 각 페이지 링크가 있어야 한다."""
     r = client.get("/")
     assert "이평선 레이더" in r.text
     assert "차트 패턴 스크리너" in r.text
-    assert 'id="scanStatus"' in r.text and 'id="status"' in r.text
+    assert 'href="/ma"' in r.text and 'href="/patterns"' in r.text
+
+
+def test_tool_pages_served(client):
+    ma = client.get("/ma")
+    assert ma.status_code == 200 and 'id="searchInput"' in ma.text
+    pt = client.get("/patterns")
+    assert pt.status_code == 200 and 'id="scanStatus"' in pt.text
+
+
+def test_legacy_symbol_deeplink_redirects_to_ma(client):
+    """옛 딥링크(/?symbol=...)는 이평선 분석 페이지로 넘어간다."""
+    r = client.get("/?symbol=005930", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/ma?symbol=005930"

@@ -211,12 +211,19 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
-async def index():
-    """통합 홈: 이평선 레이더 + 차트 패턴 스크리너를 한 페이지에."""
+async def home(request: Request):
+    """랜딩 홈: 도구별 소개 카드 -> /ma, /patterns 로 이동."""
+    # 옛 딥링크(/?symbol=005930) 호환: 이평선 분석 페이지로 넘겨준다
+    if request.query_params.get("symbol"):
+        return RedirectResponse(url=f"/ma?{request.url.query}", status_code=307)
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/ma")
+async def ma_page():
+    return FileResponse(STATIC_DIR / "ma.html")
 
 
 @app.get("/patterns")
 async def patterns_page():
-    """과거 링크/북마크 호환: 통합 홈의 패턴 섹션으로 이동."""
-    return RedirectResponse(url="/#patterns", status_code=307)
+    return FileResponse(STATIC_DIR / "patterns.html")
