@@ -102,3 +102,35 @@ def test_touch_scanner_end_to_end():
     symbols = [m["symbol"] for m in snap["matches"]]
     assert symbols == ["TOUCH"], f"터치 종목만 남아야 함: {symbols}"
     assert snap["totalMatches"] == 1
+
+
+def test_scanner_watchdog_cancels_hung_scan():
+    """행(hang)에 걸린 스캔은 워치독이 끊어 무한 '진행 중' 상태를 막는다."""
+    import app.pattern_scan as ps
+    from app.pattern_scan import BaseScanner
+
+    class HungScanner(BaseScanner):
+        async def _scan_inner(self):
+            await asyncio.sleep(3600)  # 업스트림 행 시뮬레이션
+
+    async def go():
+        scanner = HungScanner(_DummyProvider(), lambda: None)
+        s1 = await scanner.snapshot()
+        assert s1["status"] == "running"
+        scanner._scan_started -= ps.SCAN_TIMEOUT_SEC + 1  # 시간 초과 시뮬레이션
+        s2 = await scanner.snapshot()
+        assert s2["status"] == "error", s2
+        assert "시간 초과" in s2["detail"]
+        await asyncio.sleep(0)  # cancel 전파
+        assert scanner._task.cancelled() or scanner._task.done()
+        # 쿨다운이 지나면 새 스캔을 시작한다
+        scanner._error_ts -= 120
+        s3 = await scanner.snapshot()
+        assert s3["status"] == "running"
+        scanner._task.cancel()  # 테스트 뒷정리
+        try:
+            await scanner._task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.new_event_loop().run_until_complete(go())

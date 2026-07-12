@@ -23,13 +23,14 @@ import numpy as np
 import pandas as pd
 
 from .analysis import EngineParams, analyze_timeframe, atr as atr_fn, sma
-from .pattern_scan import BaseScanner, UniverseFn, _shared_fetch_sem
+from .pattern_scan import FETCH_BARS, BaseScanner, UniverseFn, _shared_fetch_sem
 from .providers.base import Provider, SymbolInfo
 
 logger = logging.getLogger("ma-analyzer")
 
 WINDOW_BARS = 744          # 백테스트 창: 일봉 3년 (이평선 레이더 기본값과 동일)
-FETCH_BARS = 1050          # 창 + MA240 워밍업(≈264) + 여유
+# FETCH_BARS 는 pattern_scan 과 공유 — 두 스캐너가 캐시 페치 한 번을 나눠 쓴다
+# (3년 창 744 + MA240 워밍업 ≈264 + 여유 = 1050)
 CHART_BARS = 130           # 결과 카드 차트 봉 수
 TOP_N = 12                 # 표시 상위 개수
 MIN_BARS = 320             # 최소 데이터 (워밍업 안 되는 종목 스킵)
