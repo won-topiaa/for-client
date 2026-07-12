@@ -1,0 +1,104 @@
+"""오늘의 지지선 터치 스캐너 테스트 — 지지 패턴을 심은 합성 데이터로 검증."""
+import asyncio
+
+import numpy as np
+import pandas as pd
+
+from app.analysis import sma
+from app.providers.base import SymbolInfo, validate_candles
+from app.touch_scan import TouchScanner
+
+from .test_analysis import planted_ma_series
+
+CANDIDATES = [5, 10, 20, 60, 120]
+
+
+def _make_df(closes: np.ndarray, touch_low_at: float | None = None) -> pd.DataFrame:
+    lows = closes * 0.995
+    highs = closes * 1.005
+    if touch_low_at is not None:
+        lows[-1] = touch_low_at
+    return validate_candles(pd.DataFrame({
+        "date": pd.bdate_range("2019-01-01", periods=len(closes)),
+        "open": closes, "high": highs, "low": lows, "close": closes,
+        "volume": np.full(len(closes), 1000.0),
+    }))
+
+
+def _touch_df(n: int = 1500) -> pd.DataFrame:
+    """MA20 지지가 심어진 시계열 — 마지막 봉이 그 선에 닿게 조정."""
+    closes = np.asarray(planted_ma_series(anchor_window=20, n=n), dtype=float)
+    ma20_prev = closes[-21:-1].mean()
+    closes[-1] = ma20_prev * 1.002       # 종가는 선 바로 위
+    return _make_df(closes, touch_low_at=ma20_prev * 0.999)  # 저가가 선에 닿음
+
+
+def _far_df(n: int = 1500) -> pd.DataFrame:
+    """어느 이평선에서도 먼 시계열 — 급등 8봉 뒤 마지막 봉 (짧은 선도 한참 아래).
+
+    주의: 마지막 봉만 띄우면 MA5 같은 짧은 선이 가격을 따라붙어 정당한 터치가
+    되므로, 연속 급등으로 모든 선을 가격 아래로 벌려 놓는다.
+    """
+    closes = np.asarray(planted_ma_series(anchor_window=20, n=n), dtype=float)
+    rally = closes[-1] * 1.03 ** np.arange(1, 9)  # 8봉 연속 +3%
+    return _make_df(np.concatenate([closes, rally]))
+
+
+class _DummyProvider:
+    name = "fake"
+
+    async def search(self, q):
+        return []
+
+    async def candles(self, symbol, timeframe, max_bars):
+        raise NotImplementedError
+
+
+def test_analyze_sync_detects_todays_touch():
+    scanner = TouchScanner(_DummyProvider(), lambda: None, candidates=CANDIDATES)
+    item = scanner._analyze_sync(SymbolInfo("T1", "터치종목", "TEST"), _touch_df())
+    assert item is not None, "심어진 MA20 지지 + 오늘 터치가 탐지돼야 함"
+    assert item["period"] == 20
+    assert abs(item["distPct"]) < 2.0
+    assert item["supportBounces"] >= 2
+    assert len(item["candles"]) > 50 and len(item["maLine"]) > 50
+    # 차트 데이터와 이평선 값의 시간 좌표가 일치
+    assert item["candles"][-1]["time"] == item["maLine"][-1]["time"]
+
+
+def test_analyze_sync_ignores_far_from_line():
+    scanner = TouchScanner(_DummyProvider(), lambda: None, candidates=CANDIDATES)
+    item = scanner._analyze_sync(SymbolInfo("F1", "먼종목", "TEST"), _far_df())
+    assert item is None, "모든 선에서 먼 종목은 터치가 아님"
+
+
+def test_touch_scanner_end_to_end():
+    """스캐너 전체 흐름: 유니버스 -> 병렬 분석 -> 터치만 결과에 남는다."""
+    dfs = {"TOUCH": _touch_df(), "FAR": _far_df()}
+
+    class FakeProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            return dfs[symbol]
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("TOUCH", "터치", "TEST"), SymbolInfo("FAR", "먼", "TEST")]
+
+    scanner = TouchScanner(FakeProvider(), universe_fn, candidates=CANDIDATES)
+
+    async def go():
+        snap = await scanner.snapshot()
+        assert snap["status"] == "running"
+        await scanner._task
+        return await scanner.snapshot()
+
+    snap = asyncio.new_event_loop().run_until_complete(go())
+    assert snap["status"] == "done"
+    assert snap["scanned"] == 2
+    symbols = [m["symbol"] for m in snap["matches"]]
+    assert symbols == ["TOUCH"], f"터치 종목만 남아야 함: {symbols}"
+    assert snap["totalMatches"] == 1

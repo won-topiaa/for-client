@@ -70,6 +70,7 @@ def _kr_fallback_universe(settings: Settings, provider: Provider) -> list:
 async def lifespan(app: FastAPI):
     from .pattern_scan import INDEX_SYMBOL, US_FALLBACK, PatternScanner, make_universe_fn
     from .providers.base import SymbolInfo
+    from .touch_scan import TouchScanner
 
     settings = load_settings()
     app.state.settings = settings
@@ -78,11 +79,19 @@ async def lifespan(app: FastAPI):
     app.state.provider = provider
     kr_fallback = _kr_fallback_universe(settings, provider)
     us_fallback = [SymbolInfo(*t) for t in US_FALLBACK]
+    universe_fns = {
+        "kr": make_universe_fn(provider, "kr", kr_fallback),
+        "us": make_universe_fn(provider, "us", us_fallback),
+    }
     app.state.scanners = {
-        "kr": PatternScanner(provider, make_universe_fn(provider, "kr", kr_fallback),
-                             INDEX_SYMBOL["kr"]),
-        "us": PatternScanner(provider, make_universe_fn(provider, "us", us_fallback),
-                             INDEX_SYMBOL["us"]),
+        m: PatternScanner(provider, universe_fns[m], INDEX_SYMBOL[m])
+        for m in ("kr", "us")
+    }
+    app.state.touch_scanners = {
+        m: TouchScanner(provider, universe_fns[m],
+                        candidates=settings.candidates["day"],
+                        min_touches=settings.min_touches["day"])
+        for m in ("kr", "us")
     }
     yield
     if hasattr(app.state.provider, "aclose"):
@@ -207,6 +216,24 @@ async def patterns_api(
     }
 
 
+@app.get("/api/touches")
+async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
+    """오늘의 지지선 터치: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링)."""
+    snap = await app.state.touch_scanners[market].snapshot()
+    if snap["status"] != "done":
+        return snap
+    return {
+        "status": "done",
+        "market": market,
+        "scanned": snap.get("scanned"),
+        "universe": snap.get("universe"),
+        "elapsedSec": snap.get("elapsedSec"),
+        "refreshing": bool(snap.get("refreshing")),
+        "matches": snap.get("matches") or [],
+        "totalMatches": snap.get("totalMatches", 0),
+    }
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -227,3 +254,8 @@ async def ma_page():
 @app.get("/patterns")
 async def patterns_page():
     return FileResponse(STATIC_DIR / "patterns.html")
+
+
+@app.get("/touches")
+async def touches_page():
+    return FileResponse(STATIC_DIR / "touches.html")

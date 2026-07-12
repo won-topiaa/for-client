@@ -642,3 +642,35 @@ def test_inv_hs_band_measured_from_neckline():
     ctx = _prep(_df(np.concatenate(parts), noise_seed=28))
     hit = detect_head_shoulders(ctx, inverse=True)
     assert hit.matched, "넥라인 +4%는 5% 밴드 안 — 머리 깊이 때문에 탈락하면 안 됨"
+
+
+def test_hs_dropped_when_completed_long_ago():
+    """넥라인 이탈(완성) 후 10봉 넘게 지난 패턴은 신호 소진으로 탈락.
+
+    현재 거리만 보는 무기억 판정이면 완성 후 넥라인 근처에서 횡보만 해도
+    계속 목록에 남는다 — 완성 '시점' 추적으로 걸러야 한다
+    (Lo·Mamaysky·Wang 2000 completion · Bulkowski 되돌림 ~10일).
+    """
+    stale = np.concatenate([_hs_series(), np.full(30, 97.0)])  # 완성 후 30봉 횡보
+    ctx = _prep(_df(stale, noise_seed=31))
+    assert not detect_head_shoulders(ctx).matched
+
+
+def test_hs_dropped_after_recovery_above_neckline():
+    """완성 후 종가가 넥라인 위(몸통 쪽)로 2% 넘게 회복하면 실패 돌파로 탈락.
+
+    스크린샷 사례(BDX·ECL·NRG): 넥라인이 무너졌다가 가격이 회복해 밴드에
+    재진입 — 되돌림(throwback)은 넥라인 부근까지가 정상이므로 그 이상의
+    회복은 무효로 본다 (Bulkowski 2005).
+    """
+    recovered = np.concatenate([_hs_series(), _seg(99, 104, 8)])  # 넥라인 +4%
+    ctx = _prep(_df(recovered, noise_seed=32))
+    assert not detect_head_shoulders(ctx).matched
+
+
+def test_hs_fresh_breakdown_reports_state():
+    """방금 완성된 패턴은 유효하고, 요약에 이탈 경과가 표시된다."""
+    ctx = _prep(_df(_hs_series(), noise_seed=1))
+    hit = detect_head_shoulders(ctx)
+    assert hit.matched
+    assert "넥라인 이탈" in hit.detail["state"] or hit.detail["state"] == "넥라인 접근 중"

@@ -101,3 +101,11 @@ def test_legacy_symbol_deeplink_redirects_to_ma(client):
     r = client.get("/?symbol=005930", follow_redirects=False)
     assert r.status_code == 307
     assert r.headers["location"] == "/ma?symbol=005930"
+
+
+def test_touches_page_and_api(client):
+    r = client.get("/touches")
+    assert r.status_code == 200 and 'id="scanStatus"' in r.text
+    api = client.get("/api/touches", params={"market": "kr"})
+    assert api.status_code == 200
+    assert api.json()["status"] in ("running", "done")

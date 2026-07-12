@@ -124,12 +124,17 @@ def _shared_fetch_sem() -> asyncio.Semaphore:
     return sem
 
 
-class PatternScanner:
-    def __init__(self, provider: Provider, universe_fn: UniverseFn,
-                 index_symbol: str | None = None):
+class BaseScanner:
+    """백그라운드 유니버스 스캐너 공통 상태기계.
+
+    결과 TTL 공유 · 실패 시 쿨다운(재시작 폭주 방지) · 만료 결과 우선 제공
+    (stale-while-revalidate) 을 제공한다. 하위 클래스는 `_scan_inner` 에서
+    유니버스를 훑고 `_finish(results, ...)` 로 결과를 확정한다.
+    """
+
+    def __init__(self, provider: Provider, universe_fn: UniverseFn):
         self.provider = provider
         self.universe_fn = universe_fn
-        self.index_symbol = index_symbol
         self._results: dict[str, Any] | None = None
         self._generated = 0.0
         self._ttl = RESULT_TTL_SEC
@@ -177,7 +182,29 @@ class PatternScanner:
         except Exception as exc:  # noqa: BLE001
             self._error = str(exc) or exc.__class__.__name__
             self._error_ts = time.monotonic()
-            logger.exception("패턴 스캔 실패")
+            logger.exception("%s 스캔 실패", type(self).__name__)
+
+    def _finish(self, results: dict[str, Any], universe_n: int,
+                scanned_n: int, started: float) -> float:
+        """결과 확정 + 커버리지 기반 TTL 결정. 커버리지를 반환."""
+        results.update({"universe": universe_n, "scanned": scanned_n,
+                        "elapsedSec": round(time.monotonic() - started, 1)})
+        coverage = scanned_n / universe_n if universe_n else 1.0
+        # 절반도 못 훑었으면(부분 장애) 결과 수명을 짧게 잡아 금방 재시도
+        self._ttl = RESULT_TTL_SEC if coverage >= 0.5 else LOW_COVERAGE_TTL_SEC
+        self._results = results
+        self._generated = time.monotonic()
+        return coverage
+
+    async def _scan_inner(self) -> None:
+        raise NotImplementedError
+
+
+class PatternScanner(BaseScanner):
+    def __init__(self, provider: Provider, universe_fn: UniverseFn,
+                 index_symbol: str | None = None):
+        super().__init__(provider, universe_fn)
+        self.index_symbol = index_symbol
 
     async def _scan_inner(self) -> None:
         started = time.monotonic()
@@ -216,9 +243,7 @@ class PatternScanner:
         if universe and not per_symbol:
             raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
-        results: dict[str, Any] = {"patterns": {}, "universe": len(universe),
-                                   "scanned": len(per_symbol),
-                                   "elapsedSec": round(time.monotonic() - started, 1)}
+        results: dict[str, Any] = {"patterns": {}}
         for key in PATTERN_KEYS:
             matched = [(info, hits[key], df) for info, hits, df in per_symbol
                        if hits.get(key) and hits[key].matched]
@@ -226,11 +251,7 @@ class PatternScanner:
             results["patterns"][key] = [
                 _serialize_match(info, hit, df) for info, hit, df in matched[:TOP_N]
             ]
-        # 절반도 못 훑었으면(부분 장애) 결과 수명을 짧게 잡아 금방 재시도
-        coverage = len(per_symbol) / len(universe) if universe else 1.0
-        self._ttl = RESULT_TTL_SEC if coverage >= 0.5 else LOW_COVERAGE_TTL_SEC
-        self._results = results
-        self._generated = time.monotonic()
+        coverage = self._finish(results, len(universe), len(per_symbol), started)
         logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d (커버리지 %.0f%%)",
                     len(per_symbol), results["elapsedSec"], self._errors,
                     coverage * 100)
