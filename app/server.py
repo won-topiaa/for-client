@@ -1,6 +1,7 @@
 """FastAPI 서버: 정적 프런트엔드 + 검색/분석 API."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import os
@@ -214,6 +215,38 @@ async def patterns_api(
         "matches": matches[:4],  # 요청 스펙: 3~4개
         "totalMatches": len(matches),
     }
+
+
+# 헤더 시세 티커에 보여줄 주요 지수 (FDR 표기)
+INDEX_TICKER = [
+    ("KS11", "코스피"), ("KQ11", "코스닥"),
+    ("US500", "S&P 500"), ("IXIC", "나스닥"),
+]
+
+
+@app.get("/api/indices")
+async def indices():
+    """주요 지수 스냅샷 — 헤더 티커용. 실패한 지수는 조용히 생략한다."""
+    async def one(sym: str, name: str):
+        try:
+            df = await app.state.provider.candles(sym, "day", 5)
+            if len(df) < 2:
+                return None
+            last = float(df["close"].iloc[-1])
+            prev = float(df["close"].iloc[-2])
+            if prev <= 0:
+                return None
+            return {
+                "key": sym, "name": name, "value": round(last, 2),
+                "changePct": round(last / prev * 100 - 100, 2),
+                "date": df["date"].iloc[-1].strftime("%m/%d"),
+            }
+        except Exception:  # noqa: BLE001 — 지수 하나 실패로 티커 전체가 죽지 않게
+            logger.info("지수 조회 실패: %s", sym)
+            return None
+
+    rows = await asyncio.gather(*(one(s, n) for s, n in INDEX_TICKER))
+    return {"indices": [r for r in rows if r]}
 
 
 @app.get("/api/touches")

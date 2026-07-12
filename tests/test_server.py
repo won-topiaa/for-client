@@ -109,3 +109,14 @@ def test_touches_page_and_api(client):
     api = client.get("/api/touches", params={"market": "kr"})
     assert api.status_code == 200
     assert api.json()["status"] in ("running", "done")
+
+
+def test_indices_api(client):
+    """헤더 티커용 지수 스냅샷 — 샘플 모드에선 4개 모두 합성 데이터로 응답."""
+    r = client.get("/api/indices")
+    assert r.status_code == 200
+    idx = r.json()["indices"]
+    assert len(idx) == 4
+    for it in idx:
+        assert {"key", "name", "value", "changePct", "date"} <= set(it)
+        assert it["value"] > 0
