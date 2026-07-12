@@ -70,16 +70,14 @@
     })
     .catch(() => {});
 
-  // 패턴 스크리너 등에서 /?symbol=005930 으로 진입하면 자동으로 선택·분석
-  (function autoloadFromQuery() {
-    const sym = new URLSearchParams(location.search).get("symbol");
+  // 심볼로 종목을 찾아 선택·분석. keepUserInput 이면 응답을 기다리는 사이
+  // 사용자가 이미 검색/선택을 시작했을 때 그 입력을 덮어쓰지 않는다.
+  function lookupAndAnalyze(sym, keepUserInput) {
     if (!sym || !/^[A-Za-z0-9.\-]{1,20}$/.test(sym)) return;
     fetch(`/api/search?q=${encodeURIComponent(sym)}`)
       .then((r) => r.json())
       .then((body) => {
-        // 응답을 기다리는 사이 사용자가 이미 검색/선택을 시작했다면
-        // 자동선택으로 그 입력을 덮어쓰지 않는다
-        if (selected !== null || el.search.value.trim() !== "") return;
+        if (keepUserInput && (selected !== null || el.search.value.trim() !== "")) return;
         const hit = (body.results || []).find((x) => x.symbol === sym)
           || (body.results || [])[0];
         if (hit) {
@@ -88,7 +86,20 @@
         }
       })
       .catch(() => {});
-  })();
+  }
+
+  // 패턴 스크리너 등에서 /?symbol=005930 으로 진입하면 자동으로 선택·분석
+  lookupAndAnalyze(new URLSearchParams(location.search).get("symbol"), true);
+
+  // 같은 페이지의 다른 섹션(패턴 스크리너 매칭 카드)에서 호출하는 훅:
+  // 페이지 이동 없이 이평선 섹션으로 스크롤해 그 종목을 바로 분석한다
+  window.maRadar = {
+    analyze(sym) {
+      const sec = document.getElementById("ma");
+      if (sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
+      lookupAndAnalyze(sym, false);
+    },
+  };
 
   /* ---------- 대표 종목 바로 분석 ---------- */
   const quickPicks = document.getElementById("quickPicks");
