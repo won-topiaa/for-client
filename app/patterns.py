@@ -123,28 +123,61 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
         # 패턴 무효 — 천장형은 머리 위 종가, 바닥형은 머리 아래 종가.
         if sign * (hp - close[-1]) <= 0:
             continue
-        # 현재가가 넥라인 부근/이탈 직후 구간이어야 실전 의미가 있음.
-        #  · 위쪽 +6% 초과: 아직 몸통 한복판 = 미완성
-        #  · 탈락 기준 2 (신호 소진): 넥라인 돌파 후 5% 넘게 진행됐으면 신호가
-        #    이미 소진된 것 — 5% 룰(Bulkowski 2005) + 패턴 정보력은 완성 직후에
-        #    집중된다는 실증(Lo·Mamaysky·Wang 2000). 되돌림(throwback)은 보통
-        #    넥라인 부근까지라 ±5~6% 밴드가 실전 유효 구간이다.
         # 분모는 넥라인(=돌파 기준가) — 5% 룰이 돌파가 기준이기 때문. 머리를
         # 분모로 쓰면 머리가 깊은 역H&S에서 밴드가 비정상적으로 좁아진다.
         dist_now = sign * (close[-1] - neck_now) / max(abs(neck_now), 1e-9)
-        if dist_now > 0.06 or dist_now < -0.05:
-            continue
+
+        # 완성(넥라인 종가 이탈) '시점'을 추적한다. 현재 거리만 보면 이미
+        # 완성돼 소진된 패턴이 가격 회복으로 밴드에 재진입해 되살아나는
+        # 무기억(memoryless) 함정이 생긴다. 오른어깨 이후 첫 넥라인 종가
+        # 이탈 봉 = 완성 시점 (Lo·Mamaysky·Wang 2000 의 completion 정의).
+        def _neck_at(j: int) -> float:
+            return t1p + nk_slope * (j - t1i)
+
+        break_bar = None
+        for j in range(i3 + 1, n):
+            if sign * (close[j] - _neck_at(j)) < 0:
+                break_bar = j
+                break
+
+        if break_bar is None:
+            # [미완성 = 넥라인 접근 중] 몸통 한복판(넥라인 +6% 초과)이면 아직
+            # 이르다 — 넥라인 부근까지 온 형태만 실전 의미가 있음.
+            if dist_now > 0.06:
+                continue
+            state = "넥라인 접근 중"
+        else:
+            since = n - 1 - break_bar
+            # 탈락 기준 2 (신호 소진): 완성 후 10봉 초과 경과 — 패턴 정보력은
+            # 완성 직후에 집중되고(Lo·Mamaysky·Wang 2000), 되돌림(throwback)도
+            # 평균 ~10일 안에 넥라인으로 돌아온다 (Bulkowski 2005).
+            if since > 10:
+                continue
+            # 탈락 기준 3 (실패 돌파): 완성 후 종가가 넥라인 반대편(몸통 쪽)으로
+            # 2% 넘게 회복 — 정상 되돌림은 넥라인 '부근까지'다 (Bulkowski 2005).
+            recovered = max(
+                sign * (close[j] - _neck_at(j)) / max(abs(_neck_at(j)), 1e-9)
+                for j in range(break_bar, n)
+            )
+            if recovered > 0.02:
+                continue
+            # 탈락 기준 4 (5% 룰): 돌파 방향으로 5% 넘게 이미 진행 — 진입 늦음.
+            if dist_now < -0.05:
+                continue
+            state = f"넥라인 이탈 {since}봉 전"
+
         score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
         head_txt = f"{hp:,.0f}"
         sym_score = max(0.0, 100 - sym / 0.05 * 100)  # 0(허용 한계)~100(완전 대칭)
         summary = (
             f"{'바닥' if inverse else '천장'} 머리 {head_txt} · "
-            f"어깨 대칭 {sym_score:.0f}점 · 넥라인 {neck_now:,.0f}"
+            f"어깨 대칭 {sym_score:.0f}점 · 넥라인 {neck_now:,.0f} · {state}"
         )
         hit = PatternHit(
             pattern=key, matched=True, score=round(float(score), 4),
             summary=summary,
-            detail={"head": hp, "shoulders": [p1, p3], "neckline": neck_now},
+            detail={"head": hp, "shoulders": [p1, p3], "neckline": neck_now,
+                    "state": state},
             overlays=[
                 {"name": "넥라인", "points": [(t1i, t1p), (n - 1, neck_now)]},
                 {"name": "골격", "points": [(i1, p1), (t1i, t1p), (hi, hp),
