@@ -123,7 +123,8 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
     else:
         candidates = [symbol]  # 미국 티커 등
         # 지수 심볼(FDR 표기) -> Yahoo 표기
-        idx_map = {"US500": "^GSPC", "KS11": "^KS11", "KQ11": "^KQ11"}
+        idx_map = {"US500": "^GSPC", "KS11": "^KS11", "KQ11": "^KQ11",
+                   "IXIC": "^IXIC", "DJI": "^DJI"}
         if symbol.upper() in idx_map:
             candidates.append(idx_map[symbol.upper()])
         # 클래스주 점 표기(BRK.B) -> Yahoo 대시 표기(BRK-B)

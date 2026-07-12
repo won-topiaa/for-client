@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>오늘의 지지선 터치 — 주식 레이더</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚨</text></svg>">
+<meta name="description" content="백테스트로 검증된 지지 이평선에 오늘 가격이 닿아 있는 종목을 매일 골라 보여드립니다.">
+<meta property="og:title" content="오늘의 지지선 터치 — 주식 레이더">
+<meta property="og:description" content="백테스트로 검증된 지지 이평선에 오늘 가격이 닿아 있는 종목을 매일 골라 보여드립니다.">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
 <style>
   /* 주식 레이더 공통 디자인: zinc 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 인디고=정보 */
   :root {
@@ -12,7 +17,8 @@
     --border: #e4e4e7;
     --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
     --accent: #059669; --accent-hover: #047857;
-    --info: #4f46e5; --info-bg: #eef2ff; --info-border: #c7d2fe;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626; --info-bg: #eef2ff; --info-border: #c7d2fe;
     --acc-chip-bg: #d1fae5; --acc-chip-text: #047857;
     --chip-active-bg: #18181b; --chip-active-text: #ffffff;
     --header-bg: rgba(255, 255, 255, .8);
@@ -25,7 +31,8 @@
       --border: #27272a;
       --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
       --accent: #059669; --accent-hover: #10b981;
-      --info: #818cf8; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
+      --info: #818cf8;
+    --up: #34d399; --down: #f87171; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
       --acc-chip-bg: rgba(6, 95, 70, .5); --acc-chip-text: #6ee7b7;
       --chip-active-bg: #f4f4f5; --chip-active-text: #18181b;
       --header-bg: rgba(24, 24, 27, .8);
@@ -213,20 +220,46 @@
     color: var(--muted); font-size: 12px; line-height: 1.7;
   }
   footer .strong { color: var(--text); font-weight: 500; }
+
+  /* ---- 브랜드 로고 · 지수 티커 · 푸터 내비 (매크로 디자인 공통) ---- */
+  .brand { display: inline-flex; flex: none; }
+  .brand svg { display: block; width: 30px; height: 30px; border-radius: 8px; }
+  .brand-box { display: flex; align-items: center; gap: 11px; }
+  .ticker-wrap { border-top: 1px solid var(--border); }
+  .ticker {
+    max-width: 1152px; margin: 0 auto; padding: 5px 24px;
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .tk { display: inline-flex; gap: 7px; align-items: baseline; }
+  .tk-name { color: var(--text); font-weight: 600; }
+  .tk-chg.up { color: var(--up); }
+  .tk-chg.down { color: var(--down); }
+  .tk-chg.flat { color: var(--muted); }
+  .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  .f-nav a { color: var(--muted); text-decoration: none; }
+  .f-nav a:hover { color: var(--accent); }
 </style>
 </head>
 <body>
 <header class="site-header">
   <div class="header-inner">
-    <div>
-      <h1>🚨 오늘의 지지선 터치</h1>
+    <div class="brand-box">
+      <a class="brand" href="/" aria-label="주식 레이더"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></a>
+      <div>
+      <h1>오늘의 지지선 터치</h1>
       <p class="sub">백테스트로 검증된 이평선에 오늘 가격이 닿아 있는 종목을 찾아드립니다</p>
+      </div>
     </div>
     <span style="display:inline-flex; gap:14px;">
       <a class="nav-link" href="/">🏠 홈</a>
       <a class="nav-link" href="/ma">📈 이평선 분석</a>
       <a class="nav-link" href="/patterns">🔍 패턴 스크리너</a>
     </span>
+  </div>
+  <div class="ticker-wrap" id="tickerWrap" style="display:none">
+    <div class="ticker" id="tickerBar" aria-label="주요 지수 시세"></div>
   </div>
 </header>
 
@@ -285,11 +318,15 @@
   </div>
 
   <footer>
+    <nav class="f-nav" aria-label="사이트 링크">
+      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a>
+    </nav>
     <p class="strong" style="margin:0">참고용 데이터 시각화입니다.</p>
     <p style="margin:2px 0 0">본 도구는 과거 데이터 통계이며 매수 추천·투자 권유가 아닙니다. 모든 투자 결정과 결과는 본인 책임입니다.</p>
   </footer>
 </div>
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="/static/touches.js"></script>
+<script src="/static/ticker.js"></script>
 </body>
 </html>
