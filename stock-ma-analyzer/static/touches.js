@@ -29,6 +29,7 @@
     matches: document.getElementById("matches"),
     party: document.getElementById("scanParty"),
     partyCaption: document.getElementById("partyCaption"),
+    sr: document.getElementById("srStatus"),
   };
 
   const CAPTIONS = [
@@ -75,6 +76,16 @@
     load();
   });
 
+
+  // 스크린리더 알림: 폴링마다 재잘대지 않도록 시작/완료/실패 같은
+  // 굵직한 전환만, 같은 문장은 반복하지 않고 알린다
+  let lastAnnounced = "";
+  function announce(msg) {
+    if (!el.sr || msg === lastAnnounced) return;
+    lastAnnounced = msg;
+    el.sr.textContent = msg;
+  }
+
   function destroyCharts() {
     charts.forEach((c) => c.remove());
     charts.length = 0;
@@ -90,6 +101,7 @@
       el.status.innerHTML =
         `<span class="scan-label"></span><div class="bar"><div style="width:0%"></div></div>`;
       bar = el.status.querySelector(".bar > div");
+      announce("종목 스캔을 시작했습니다. 완료되면 알려드립니다.");
     }
     el.status.querySelector(".scan-label").textContent = label;
     bar.style.width = pct + "%";
@@ -113,6 +125,13 @@
       if (seq !== reqSeq) return;
       pollFails = 0;
       if (body.status === "running") {
+        if (lastBody) {
+          // 서버 재시작 등으로 done -> running 으로 되돌아간 경우: 이전 결과 정리
+          destroyCharts();
+          el.matches.innerHTML = "";
+          lastBody = null;
+          renderedWhileRefreshing = false;
+        }
         showParty(true);
         updateProgress(body);
         pollTimer = setTimeout(() => load(true), 2000);
@@ -124,6 +143,7 @@
         el.matches.innerHTML = "";
         lastBody = null;
         el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
+        announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000);
         return;
       }
@@ -143,7 +163,13 @@
         return;
       }
       showParty(false);
+      // 테마 전환 재렌더가 "백그라운드 갱신 중"이라고 거짓 표시하지 않게 정리
+      if (lastBody) lastBody.refreshing = false;
+      renderedWhileRefreshing = false;
       el.status.textContent = "스캔 실패: " + err.message;
+      announce(el.status.textContent);
+      // 체인을 죽이지 않고 느리게 재시도 (네트워크 복구 시 자동 회복)
+      pollTimer = setTimeout(() => { pollFails = 0; load(true); }, 30000);
     }
   }
 
