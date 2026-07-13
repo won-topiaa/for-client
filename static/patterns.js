@@ -241,7 +241,9 @@
       }
       render(body);
       renderedWhileRefreshing = !!body.refreshing;
-      if (body.refreshing) pollTimer = setTimeout(() => load(true), 5000);
+      // 갱신 중이면 5초, 아니면 5분 간격 keep-alive — 열려 있는 탭도
+      // 서버의 30분 재스캔 결과를 실제로 받아보게 한다
+      pollTimer = setTimeout(() => load(true), body.refreshing ? 5000 : 5 * 60 * 1000);
     } catch (err) {
       if (seq !== reqSeq) return;
       // 폴링 중 일시적 네트워크 오류로 체인을 끊지 않는다 — 3회까지 재시도
@@ -263,7 +265,13 @@
 
   // OS 테마가 바뀌면 마지막 결과를 새 팔레트로 다시 그린다
   let lastBody = null;
-  function onThemeChange() { if (lastBody) render(lastBody); }
+  function onThemeChange() {
+    if (!lastBody) return;
+    // 포기-대기 중(30초 재시도) 표시된 실패 문구가 덮이지 않게 보존
+    const statusText = el.status.textContent;
+    render(lastBody);
+    el.status.textContent = statusText;
+  }
   if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);
   else if (darkMq.addListener) darkMq.addListener(onThemeChange);
 
@@ -276,6 +284,7 @@
       (body.totalMatches > body.matches.length
         ? ` (상위 ${body.matches.length}개 표시)` : "") +
       (body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+    announce(el.status.textContent); // 시작을 알렸으니 완료도 알린다
     if (!body.matches.length) {
       el.matches.innerHTML =
         `<div class="empty">지금 이 패턴에 해당하는 종목이 없습니다.<br>` +

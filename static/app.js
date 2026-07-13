@@ -169,6 +169,8 @@
   function renderSuggest() {
     el.suggest.innerHTML = "";
     activeIdx = -1;
+    // 목록이 새로 그려지면 이전 활성 항목 참조도 무효 — AT 오보 방지
+    el.search.removeAttribute("aria-activedescendant");
     if (!suggestItems.length) { hideSuggest(); return; }
     suggestItems.forEach((item, i) => {
       const div = document.createElement("div");
