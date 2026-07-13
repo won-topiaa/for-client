@@ -301,3 +301,9 @@ async def patterns_page():
 @app.get("/touches")
 async def touches_page():
     return FileResponse(STATIC_DIR / "touches.html")
+
+
+@app.get("/about")
+async def about_page():
+    """원토피아 회사 소개."""
+    return FileResponse(STATIC_DIR / "about.html")

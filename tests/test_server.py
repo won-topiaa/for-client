@@ -120,3 +120,10 @@ def test_indices_api(client):
     for it in idx:
         assert {"key", "name", "value", "changePct", "date"} <= set(it)
         assert it["value"] > 0
+
+
+def test_about_page(client):
+    r = client.get("/about")
+    assert r.status_code == 200
+    assert "원토피아" in r.text and "양주원" in r.text
+    assert "mailto:yangjoodol1@gmail.com" in r.text
