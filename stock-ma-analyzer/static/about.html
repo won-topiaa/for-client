@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>원토피아 소개 — 주식 레이더</title>
+<meta name="description" content="원토피아(Wontopia) — 자유롭게 아이디어를 만들어보는 공간. 데이터 도구를 만들어 공개합니다. 협업 문의 환영.">
+<meta property="og:title" content="원토피아 소개">
+<meta property="og:description" content="원토피아(Wontopia) — 자유롭게 아이디어를 만들어보는 공간. 데이터 도구를 만들어 공개합니다.">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
+<style>
+  /* 주식 레이더 공통 디자인: zinc 팔레트 + 라이트/다크 자동 · 에메랄드=주요 */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626;
+    --header-bg: rgba(255, 255, 255, .8);
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --info: #818cf8;
+      --up: #34d399; --down: #f87171;
+      --header-bg: rgba(24, 24, 27, .8);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: 1152px; margin: 0 auto; padding: 13px 24px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .header-inner h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .header-inner .sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+  .top-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .top-nav a {
+    color: var(--text); text-decoration: none; font-size: 13px;
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel); transition: border-color .15s, color .15s;
+  }
+  .top-nav a:hover { border-color: var(--accent); color: var(--accent); }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 60px; }
+
+  .hero { text-align: center; padding: 58px 0 30px; }
+  .hero .mark { display: inline-flex; margin-bottom: 16px; }
+  .hero .mark svg { width: 56px; height: 56px; border-radius: 14px; }
+  .hero h2 { font-size: 34px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .hero .en { color: var(--muted); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; }
+  .hero p { margin: 14px auto 0; color: var(--muted); font-size: 15px; max-width: 480px; line-height: 1.7; }
+
+  section { margin-top: 34px; }
+  section h3 {
+    font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; margin: 0 0 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 18px 20px; font-size: 14px; line-height: 1.8;
+  }
+  .card p { margin: 0; }
+  .card p + p { margin-top: 10px; }
+  .card b { color: var(--accent); }
+
+  .projects { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .projects { grid-template-columns: 1fr; } }
+  .proj {
+    display: block; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px 18px; text-decoration: none; color: var(--text);
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+  }
+  .proj:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--card-shadow); }
+  .proj .t { font-weight: 600; font-size: 15px; }
+  .proj .d { color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.7; }
+  .proj .u {
+    color: var(--accent); font-size: 11.5px; margin-top: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .hows { display: flex; flex-direction: column; gap: 10px; }
+  .how {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 13px 16px; display: flex; gap: 12px; align-items: baseline;
+  }
+  .how .n { color: var(--accent); font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .how .b { font-weight: 600; }
+  .how .d { color: var(--muted); font-size: 12.5px; }
+
+  .contact {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px; text-align: center;
+  }
+  .contact p { margin: 0 auto; color: var(--muted); max-width: 460px; line-height: 1.8; }
+  .contact .mail {
+    display: inline-block; margin-top: 16px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
+    padding: 11px 22px; border-radius: 10px; text-decoration: none;
+    transition: background .15s;
+  }
+  .contact .mail:hover { background: var(--accent-hover); }
+  .contact .addr {
+    display: block; margin-top: 10px; color: var(--muted); font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .contact .tip { font-size: 12px; color: var(--faint); margin-top: 12px; }
+
+  footer {
+    margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  .f-nav a { color: var(--muted); text-decoration: none; }
+  .f-nav a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand-box" style="display:flex; align-items:center; gap:11px;">
+      <a class="brand" href="/" aria-label="주식 레이더 홈" style="display:inline-flex;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고" style="width:30px;height:30px;border-radius:8px;display:block;"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></a>
+      <div>
+        <h1>원토피아 소개</h1>
+        <p class="sub">주식 레이더를 만드는 곳</p>
+      </div>
+    </div>
+    <nav class="top-nav" aria-label="도구 바로가기">
+      <a href="/">🏠 홈</a>
+      <a href="/ma">📈 이평선 분석</a>
+      <a href="/patterns">🔍 패턴 스크리너</a>
+      <a href="/touches">🚨 오늘의 터치</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <span class="mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></span>
+    <h2>원토피아</h2>
+    <div class="en">WONTOPIA</div>
+    <p>자유롭게 아이디어를 꺼내서, 이것저것 만들어보는 공간입니다.</p>
+  </section>
+
+  <section>
+    <h3>이름 이야기</h3>
+    <div class="card">
+      <p>원토피아는 만든 사람 <b>양주원</b>의 '원'에 <b>유토피아</b>의 '토피아'를 붙인 이름입니다.</p>
+      <p>거창한 뜻이 있다기보다, 아이디어를 자유롭게 꺼내놓고 마음껏 만들어볼 수 있는
+        공간이면 좋겠다는 마음으로 지었습니다. 궁금한 게 생기면 데이터로 확인해보고,
+        쓸 만하다 싶으면 누구나 쓸 수 있는 웹 도구로 만들어 공개합니다.</p>
+    </div>
+  </section>
+
+  <section>
+    <h3>만든 것들</h3>
+    <div class="projects">
+      <a class="proj" href="/">
+        <div class="t">📊 주식 레이더</div>
+        <div class="d">이평선 백테스트 · 차트 패턴 스크리너 · 오늘의 지지선 터치.
+          판단 기준마다 학술 연구와 고전 문헌의 출처를 함께 표기합니다.</div>
+        <div class="u">ma-radar.onrender.com</div>
+      </a>
+      <a class="proj" href="https://earnings-volatility.vercel.app" target="_blank" rel="noopener">
+        <div class="t">📉 실적 발표 변동성</div>
+        <div class="d">미국 주식이 분기 실적 발표일에 얼마나 출렁였는지 5년치 데이터로
+          보여주고, 다음 발표일의 예상 변동을 과거 평균으로 추정합니다.</div>
+        <div class="u">earnings-volatility.vercel.app ↗</div>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h3>일하는 방식</h3>
+    <div class="hows">
+      <div class="how"><span class="n">01</span>
+        <span><span class="b">근거를 밝힙니다.</span>
+        <span class="d">"이 기준은 어디서 왔는가"에 답할 수 없는 기능은 만들지 않으려고 합니다.</span></span></div>
+      <div class="how"><span class="n">02</span>
+        <span><span class="b">작게 만들어 먼저 공개합니다.</span>
+        <span class="d">완벽한 계획보다 쓰면서 고치는 쪽을 택합니다.</span></span></div>
+      <div class="how"><span class="n">03</span>
+        <span><span class="b">재미를 잃지 않습니다.</span>
+        <span class="d">로딩 화면에 춤추는 캔들봇을 넣는 이유입니다.</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <h3>협업 · 연락</h3>
+    <div class="contact">
+      <p>데이터 도구, 투자 콘텐츠, 웹 서비스 — 함께 만들어보고 싶은 아이디어가 있다면
+        편하게 연락 주세요. 제안, 피드백, 버그 제보 모두 환영합니다.</p>
+      <a class="mail" href="mailto:yangjoodol1@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%ED%98%91%EC%97%85%20%EB%AC%B8%EC%9D%98">✉️ 협업 문의 보내기</a>
+      <span class="addr">yangjoodol1@gmail.com</span>
+      <p class="tip">간단한 자기소개와 제안 내용을 함께 보내주시면 답장이 빨라집니다.</p>
+    </div>
+  </section>
+
+  <footer>
+    <nav class="f-nav" aria-label="사이트 링크">
+      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a>
+    </nav>
+    <p style="margin:0">© 원토피아 (Wontopia) · 본 사이트의 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
+  </footer>
+</div>
+</body>
+</html>
