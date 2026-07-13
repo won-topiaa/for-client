@@ -18,6 +18,8 @@
     });
   }
 
+  let hasData = false;
+
   async function refresh() {
     try {
       const r = await fetch("/api/indices");
@@ -37,9 +39,11 @@
         );
       }).join("");
       wrap.style.display = "";
+      hasData = true;
     } catch (err) {
-      // 지수를 못 가져오면 조용히 숨긴다 — 티커는 장식이지 필수가 아님
-      wrap.style.display = "none";
+      // 처음부터 못 가져온 경우만 숨긴다 — 일시 오류에는 마지막 정상
+      // 시세를 유지하는 편이 5분간 빈 줄보다 낫다 (티커는 장식)
+      if (!hasData) wrap.style.display = "none";
     }
   }
 
