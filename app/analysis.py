@@ -55,7 +55,7 @@ class EngineParams:
     top_n: int = 3
     # 추천 목록에서 서로 너무 가까운 기간(비율 차 20% 이내)은 상위 것만 남김
     dedup_ratio: float = 0.2
-    wilson_z: float = 1.2816  # 80% 단측 신뢰수준
+    wilson_z: float = 1.2816  # 90% 단측 신뢰수준 (Φ(1.2816)=0.90)
 
 
 @dataclass
@@ -219,16 +219,24 @@ def analyze_ma(
     p: EngineParams,
     window_start: int,
     half_life: float,
+    precomputed: tuple[np.ndarray, ...] | None = None,
 ) -> MAStat:
     """단일 이동평균선에 대한 지지/저항 통계.
 
     df 는 워밍업 구간을 포함한 전체 데이터, window_start 이후의
     에피소드만 집계한다 (MA/ATR 는 전체에서 계산해 NaN 워밍업 최소화).
+    precomputed=(close, high, low, atr_arr, band) 를 주면 기간과 무관한
+    계산을 후보 이평선마다 반복하지 않는다 (analyze_timeframe 이 한 번만 계산).
     """
     stat = MAStat(period=period)
-    close = df["close"].to_numpy(dtype=float)
-    high = df["high"].to_numpy(dtype=float)
-    low = df["low"].to_numpy(dtype=float)
+    if precomputed is not None:
+        close, high, low, atr_arr, band = precomputed
+    else:
+        close = df["close"].to_numpy(dtype=float)
+        high = df["high"].to_numpy(dtype=float)
+        low = df["low"].to_numpy(dtype=float)
+        atr_arr = atr(high, low, close, p.atr_period)
+        band = np.maximum(p.touch_atr_mult * atr_arr, p.touch_pct_floor * close)
     n = len(close)
 
     # MA가 분석 구간 안에서 유효하려면 워밍업 포함 충분한 데이터 필요
@@ -238,8 +246,6 @@ def analyze_ma(
         return stat
 
     ma = sma(close, period)
-    atr_arr = atr(high, low, close, p.atr_period)
-    band = np.maximum(p.touch_atr_mult * atr_arr, p.touch_pct_floor * close)
 
     touch_mask = (low <= ma + band) & (high >= ma - band)
     touch_mask &= ~np.isnan(ma) & ~np.isnan(band)
@@ -268,7 +274,11 @@ def analyze_ma(
             floor = prev_decided if prev_decided is not None else 0
             side = _episode_side(close, ma, seg_start, p.trend_context_bars, floor)
             if side is None:
-                break
+                # 워밍업 경계 근처라 컨텍스트가 없을 뿐 — 이 세그먼트만 건너뛴다.
+                # (break 로 군집 전체를 버리면, 이평선에 밀착해 하나의 긴 군집을
+                #  이루는 종목은 창 안의 유효한 시험까지 전부 유실돼 통계가 0이 됨)
+                pos += 1
+                continue
             outcome, decided_at = _decide_outcome(
                 close, ma, atr_arr, band, seg_start, int(g_end), side, p
             )
@@ -410,8 +420,17 @@ def analyze_timeframe(
     window_len = max(1, n - window_start)
     half_life = float(params.half_life_bars) if params.half_life_bars else window_len / 3.0
 
+    # 기간과 무관한 배열/ATR/밴드는 한 번만 계산해 후보 전체가 공유
+    close = df["close"].to_numpy(dtype=float)
+    high = df["high"].to_numpy(dtype=float)
+    low = df["low"].to_numpy(dtype=float)
+    atr_arr = atr(high, low, close, params.atr_period)
+    band = np.maximum(params.touch_atr_mult * atr_arr,
+                      params.touch_pct_floor * close)
+    pre = (close, high, low, atr_arr, band)
+
     stats = [
-        analyze_ma(df, period, params, window_start, half_life)
+        analyze_ma(df, period, params, window_start, half_life, precomputed=pre)
         for period in candidates
     ]
     for s in stats:

@@ -260,12 +260,19 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
     best: PatternHit | None = None
     rims = [(i, p) for i, p, k in ctx["pivots"] if k > 0 and i < n - 40]
     for li, lp in rims:
-        # 컵의 오른쪽 테두리: 왼쪽 테두리의 95% 이상 회복한 첫 지점
+        # 컵의 오른쪽 테두리: '바닥 이후' 왼쪽 테두리의 95% 이상 회복한 첫 지점.
+        # 테두리 직후 20봉 뒤 첫 교차만 보면, 완만하게 내려가는 얕은 컵은
+        # 하락이 끝나기도 전의 가짜 회복점(아직 95% 위)에 걸려 길이 미달로
+        # 영영 탐지되지 않는다 — 바닥(argmin)을 먼저 찾고 그 뒤를 검색한다.
         seg = close[li:]
-        rel = np.flatnonzero(seg[20:] >= lp * 0.95)
+        if seg.size < 21:
+            continue
+        bot_rel = int(np.argmin(seg))
+        search_from = max(bot_rel, 20)
+        rel = np.flatnonzero(seg[search_from:] >= lp * 0.95)
         if rel.size == 0:
             continue
-        ri = li + 20 + int(rel[0])
+        ri = li + search_from + int(rel[0])
         length = ri - li
         if not (30 <= length <= 220) or n - 1 - ri > 45:
             continue

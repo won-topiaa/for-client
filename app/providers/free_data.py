@@ -256,7 +256,10 @@ class FreeDataProvider:
                     window_bound = df["date"].iloc[0] <= (
                         pd.Timestamp(start) + pd.Timedelta(days=10))
                     if window_bound:
-                        df.attrs["truncated"] = True
+                        # 'truncated'(시간예산 등으로 잘림 — 받은 만큼만 신뢰)와
+                        # 달리, 창이 자른 경우 같은 크기 요청은 같은 결과이므로
+                        # 캐시가 같은/작은 요청을 그대로 응답해도 된다.
+                        df.attrs["window_bound"] = True
                 return df
             errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
         except Exception as exc:  # noqa: BLE001
@@ -273,7 +276,7 @@ class FreeDataProvider:
                 expected_start = (pd.Timestamp.today().normalize()
                                   - pd.DateOffset(years=years))
                 if df["date"].iloc[0] <= expected_start + pd.Timedelta(days=10):
-                    df.attrs["truncated"] = True
+                    df.attrs["window_bound"] = True
             return df
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Yahoo: {exc}")
