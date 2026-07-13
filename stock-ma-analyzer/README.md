@@ -50,7 +50,8 @@ API 키도, IP 등록도 필요 없어서 그대로 실행하면 실제 데이�
 2. 설정 방법 (둘 중 하나):
    - 환경변수: `TOSS_CLIENT_ID=... TOSS_CLIENT_SECRET=... python -m uvicorn app.server:app`
    - 또는 `config.example.json` 을 `config.json` 으로 복사해 키 입력
-3. 키가 감지되면 자동으로 토스 공급자로 전환됩니다 (`provider: "toss"` 로 강제 가능).
+3. 키를 넣은 뒤 `provider: "toss"` (또는 `MA_PROVIDER=toss`)로 설정해야 토스 공급자로
+전환됩니다 — 키만 넣는 것으로는 자동 전환되지 않습니다.
 
 ### 공식 스펙 반영 상태
 
@@ -128,16 +129,22 @@ UI에서 기간을 자유롭게 바꿀 수 있고, **0을 입력하면 전체 �
 stock-ma-analyzer/
 ├── app/
 │   ├── analysis.py      # 핵심 백테스트 엔진 (터치/판정/점수)
+│   ├── patterns.py      # 차트 패턴 탐지기 (H&S/삼각/컵앤핸들/2단계)
+│   ├── pattern_scan.py  # 패턴 스크리너 (유니버스 스캔 상태기계)
+│   ├── touch_scan.py    # 오늘의 지지선 터치 스캐너
 │   ├── service.py       # 데이터 취득 → 분석 → JSON 직렬화
-│   ├── server.py        # FastAPI (검색/분석 API + 정적 서빙)
+│   ├── server.py        # FastAPI (검색/분석/스크리너 API + 정적 서빙)
 │   ├── config.py        # 설정 로딩 (env > config.json > 기본값)
 │   ├── resample.py      # 일봉 → 주봉/월봉
 │   └── providers/
+│       ├── base.py      # 공급자 인터페이스 + 캔들 검증
 │       ├── free_data.py # 무료 시세 (FinanceDataReader/Yahoo) — 기본
 │       ├── toss.py      # 토스증권 Open API 클라이언트 (선택)
 │       ├── sample.py    # 합성 데이터 + data/*.csv 공급자
+│       ├── kr_symbols.py# 내장 국내 종목 사전 (목록 실패 시 폴백)
 │       └── cache.py     # TTL 캐시 + 동시요청 single-flight
-├── static/              # 프런트엔드 (lightweight-charts v5 vendored)
+├── static/              # 프런트엔드 5페이지 (홈/이평선/패턴/터치/소개) + JS
+│                        # (lightweight-charts v5 vendored)
 ├── tests/               # pytest 스위트
 ├── data/                # (선택) 실제 CSV 데이터 넣는 곳
 └── config.example.json
@@ -158,7 +165,7 @@ stock-ma-analyzer/
 5. 이후 이 브랜치에 푸시할 때마다 **자동으로 재배포**됩니다
 
 무료 플랜 특성: 15분 동안 접속이 없으면 잠들었다가 다음 접속 때 깨어나는 데
-30초~1분 걸립니다. 실제 시세 호출은 10분 캐시 + 동시요청 합치기로 보호되어
+30초~1분 걸립니다. 실제 시세 호출은 30분 캐시 + 동시요청 합치기로 보호되어
 소스에 부담을 주지 않습니다.
 
 > 공개 배포 시 참고: 무료 소스(Yahoo/네이버 등)도 대량 상업적 재배포는 제한될
