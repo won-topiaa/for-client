@@ -62,6 +62,7 @@
   let pollTimer = null;
   let reqSeq = 0;
   let renderedWhileRefreshing = false;
+  let lastFp = null; // 직전 렌더의 지문 — 같은 결과 재렌더(깜빡임) 방지
   let pollFails = 0;
   const charts = [];
 
@@ -115,6 +116,7 @@
       el.matches.innerHTML = "";
       renderedWhileRefreshing = false;
       lastBody = null;
+      lastFp = null;
       el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
     }
     try {
@@ -152,6 +154,16 @@
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
+      const fp = JSON.stringify([body.scanned, body.elapsedSec, body.universe,
+        body.totalMatches, body.matches.length && body.matches[0].symbol,
+        body.refreshing]);
+      if (isPoll && fp === lastFp) {
+        // 내용이 그대로면 재렌더(차트 재생성) 없이 다음 keep-alive 만 예약
+        pollTimer = setTimeout(() => load(true),
+          body.refreshing ? 5000 : 5 * 60 * 1000);
+        return;
+      }
+      lastFp = fp;
       render(body);
       renderedWhileRefreshing = !!body.refreshing;
       // 갱신 중이면 5초, 아니면 5분 간격 keep-alive — 열려 있는 탭도

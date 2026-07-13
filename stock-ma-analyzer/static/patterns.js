@@ -119,6 +119,7 @@
   let pollTimer = null;
   let reqSeq = 0;
   let renderedWhileRefreshing = false; // 만료 결과를 보여주며 재스캔 대기 중인지
+  let lastFp = null; // 직전 렌더의 지문 — 같은 결과 재렌더(깜빡임) 방지
   let pollFails = 0; // 연속 폴링 실패 횟수 (일시 오류는 재시도, 지속 오류만 포기)
   const charts = [];
 
@@ -201,6 +202,7 @@
       renderDesc();
       renderedWhileRefreshing = false;
       lastBody = null;
+      lastFp = null;
       el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
     }
     try {
@@ -239,6 +241,16 @@
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
+      const fp = JSON.stringify([body.scanned, body.elapsedSec, body.universe,
+        body.totalMatches, body.matches.length && body.matches[0].symbol,
+        body.refreshing]);
+      if (isPoll && fp === lastFp) {
+        // 내용이 그대로면 재렌더(차트 재생성) 없이 다음 keep-alive 만 예약
+        pollTimer = setTimeout(() => load(true),
+          body.refreshing ? 5000 : 5 * 60 * 1000);
+        return;
+      }
+      lastFp = fp;
       render(body);
       renderedWhileRefreshing = !!body.refreshing;
       // 갱신 중이면 5초, 아니면 5분 간격 keep-alive — 열려 있는 탭도
