@@ -218,6 +218,7 @@
           destroyCharts();
           el.matches.innerHTML = "";
           lastBody = null;
+          lastFp = null;
           renderedWhileRefreshing = false;
         }
         showParty(true);
@@ -230,6 +231,7 @@
         destroyCharts();
         el.matches.innerHTML = "";
         lastBody = null; // 테마 변경 시 지워진 옛 결과가 되살아나지 않게
+        lastFp = null;
         el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
@@ -241,7 +243,7 @@
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
-      const fp = JSON.stringify([body.scanned, body.elapsedSec, body.universe,
+      const fp = JSON.stringify([body.generatedAt, body.scanned, body.elapsedSec, body.universe,
         body.totalMatches, body.matches.length && body.matches[0].symbol,
         body.refreshing]);
       if (isPoll && fp === lastFp) {
@@ -268,6 +270,7 @@
       // 테마 전환 재렌더가 "백그라운드 갱신 중"이라고 거짓 표시하지 않게 정리
       if (lastBody) lastBody.refreshing = false;
       renderedWhileRefreshing = false;
+      lastFp = null; // 회복 폴이 실패 문구를 확실히 걷어내도록 재렌더 강제
       el.status.textContent = "스캔 실패: " + err.message;
       announce(el.status.textContent);
       // 체인을 죽이지 않고 느리게 재시도 (네트워크 복구 시 자동 회복)

@@ -219,6 +219,7 @@ async def patterns_api(
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
         "refreshing": bool(snap.get("refreshing")),  # 만료 결과 재스캔 중 여부
+        "generatedAt": snap.get("generatedAt"),      # 스캔 고유 식별자
         "matches": matches[:4],  # 요청 스펙: 3~4개
         "totalMatches": len(matches),
     }
@@ -271,6 +272,7 @@ async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
         "refreshing": bool(snap.get("refreshing")),
+        "generatedAt": snap.get("generatedAt"),  # 스캔 고유 식별자
         "matches": snap.get("matches") or [],
         "totalMatches": snap.get("totalMatches", 0),
     }
