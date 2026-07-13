@@ -203,7 +203,10 @@ class BaseScanner:
                 scanned_n: int, started: float) -> float:
         """결과 확정 + 커버리지 기반 TTL 결정. 커버리지를 반환."""
         results.update({"universe": universe_n, "scanned": scanned_n,
-                        "elapsedSec": round(time.monotonic() - started, 1)})
+                        "elapsedSec": round(time.monotonic() - started, 1),
+                        # 스캔 고유 식별자 — 프런트가 '같은 결과인지'를 근사치
+                        # (elapsedSec 등) 대신 이 값으로 판별한다
+                        "generatedAt": round(time.time(), 3)})
         coverage = scanned_n / universe_n if universe_n else 1.0
         # 절반도 못 훑었으면(부분 장애) 결과 수명을 짧게 잡아 금방 재시도
         self._ttl = RESULT_TTL_SEC if coverage >= 0.5 else LOW_COVERAGE_TTL_SEC
