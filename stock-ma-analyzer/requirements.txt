@@ -1,7 +1,9 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-httpx>=0.27
-pandas>=2.0
-numpy>=1.26
-finance-datareader>=0.9.90
-yfinance>=0.2.40
+# 정확 고정(==): 검증된 조합이 재현되도록 — 무제한 상한은 공급망/호환성 리스크.
+# 업그레이드는 의도적으로: 버전 올린 뒤 pytest + E2E 통과를 확인하고 커밋.
+fastapi==0.139.0
+uvicorn[standard]==0.50.0
+httpx==0.28.1
+pandas==3.0.3
+numpy==2.4.6
+finance-datareader==0.9.202
+yfinance==1.5.1

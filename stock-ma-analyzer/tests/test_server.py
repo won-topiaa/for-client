@@ -127,3 +127,53 @@ def test_about_page(client):
     assert r.status_code == 200
     assert "원토피아" in r.text and "양주원" in r.text
     assert "mailto:yangjuwon240@gmail.com" in r.text
+
+
+def test_password_with_non_ascii_returns_401_not_500(monkeypatch):
+    """비ASCII 비밀번호 헤더가 500(compare_digest TypeError)이 아니라 401."""
+    import base64
+
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "SITE_PASSWORD", "test1234")
+    with TestClient(server_mod.app) as c:
+        cred = base64.b64encode("u:pässwörd".encode()).decode()
+        r = c.get("/api/health/../..", headers={"Authorization": f"Basic {cred}"})
+        r = c.get("/", headers={"Authorization": f"Basic {cred}"})
+        assert r.status_code == 401
+
+
+def test_security_headers_present(client):
+    r = client.get("/")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert "default-src 'self'" in r.headers.get("Content-Security-Policy", "")
+
+
+def test_analyze_rate_limit(monkeypatch):
+    """/api/analyze 는 IP 당 분당 호출 제한 — 초과 시 429."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "ANALYZE_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        codes = [c.get("/api/analyze", params={"symbol": "005930"}).status_code
+                 for _ in range(5)]
+    server_mod._rate_windows.clear()
+    assert codes[:3] == [200, 200, 200]
+    assert 429 in codes[3:]
+
+
+def test_vendored_chart_lib_checksum():
+    """벤더 파일 변조/실수 수정 감지 — 의도적 업그레이드 시 체크섬도 갱신할 것."""
+    import hashlib
+    from pathlib import Path
+
+    vendor = Path(__file__).resolve().parent.parent / "static" / "vendor"
+    recorded = (vendor / "CHECKSUMS.sha256").read_text().split()[0]
+    actual = hashlib.sha256(
+        (vendor / "lightweight-charts.standalone.production.js").read_bytes()
+    ).hexdigest()
+    assert actual == recorded, "벤더 라이브러리가 기록된 체크섬과 다름"

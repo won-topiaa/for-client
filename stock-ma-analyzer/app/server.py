@@ -120,14 +120,72 @@ def _password_ok(auth_header: str | None) -> bool:
         return False
     try:
         decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
+        _, _, password = decoded.partition(":")
+        # bytes 로 비교: compare_digest 는 비ASCII 문자열에서 TypeError 를 던져
+        # 공격자가 헤더 하나로 500 을 유발할 수 있었다 (타이밍 안전성은 동일)
+        return secrets.compare_digest(password.encode("utf-8"),
+                                      SITE_PASSWORD.encode("utf-8"))
     except Exception:
         return False
-    _, _, password = decoded.partition(":")
-    return secrets.compare_digest(password, SITE_PASSWORD)
+
+
+# /api/analyze 는 요청마다 업스트림 페치 + CPU 분석이 도는 증폭 지점이라
+# IP 당 분당 호출 수를 제한한다 (같은 종목 반복은 어차피 캐시가 흡수).
+ANALYZE_RATE_LIMIT_PER_MIN = 30
+_rate_windows: dict[str, tuple[float, int]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def _rate_limited(ip: str) -> bool:
+    import time as _time
+    now = _time.time()
+    window, count = _rate_windows.get(ip, (now, 0))
+    if now - window >= 60.0:
+        window, count = now, 0
+    count += 1
+    if len(_rate_windows) > 10_000:  # 메모리 보호
+        _rate_windows.clear()
+    _rate_windows[ip] = (window, count)
+    return count > ANALYZE_RATE_LIMIT_PER_MIN
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """공용 배포용 기본 보안 헤더 — esc() 뒤의 2차 방어선.
+
+    스크립트는 전부 자체 호스팅(인라인 <script> 없음)이라 script-src 'self' 로
+    조여도 깨지지 않는다. 인라인 style 속성은 쓰므로 unsafe-inline 유지,
+    파비콘이 data: URI 라 img-src 에 data: 허용.
+    """
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "no-referrer")
+    h.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'",
+    )
+    return response
 
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
+    if request.url.path == "/api/analyze" and _rate_limited(_client_ip(request)):
+        return Response(
+            status_code=429,
+            content="요청이 너무 잦습니다 — 잠시 후 다시 시도해 주세요.",
+            headers={"Retry-After": "30"},
+            media_type="text/plain; charset=utf-8",
+        )
     # /api/health 는 호스팅 플랫폼의 생존 확인용이라 인증 예외 (민감정보 없음)
     if (
         SITE_PASSWORD
