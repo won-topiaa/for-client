@@ -674,3 +674,19 @@ def test_hs_fresh_breakdown_reports_state():
     hit = detect_head_shoulders(ctx)
     assert hit.matched
     assert "넥라인 이탈" in hit.detail["state"] or hit.detail["state"] == "넥라인 접근 중"
+
+
+def test_cup_handle_detects_slow_shallow_cup():
+    """완만하게 내려가는 얕은 컵(깊이 13%·길이 200)도 문서화된 범위
+    (깊이 12~50%, 길이 30~220) 안이므로 탐지돼야 한다.
+
+    오른쪽 테두리를 '테두리 +20봉 뒤 첫 95% 교차'로 찾으면, 하락이 끝나기
+    전의 가짜 회복점에 걸려 길이 미달로 영영 탐지되지 않는다 — 바닥(argmin)
+    이후에서 찾아야 한다.
+    """
+    x = np.linspace(-1, 1, 200)
+    cup = 100 - 13 * (1 - x ** 2)
+    handle = np.concatenate([_seg(100, 96, 12), _seg(96, 98.5, 12)])
+    closes = np.concatenate([_seg(85, 100, 40), cup, handle])
+    ctx = _prep(_df(closes, noise_seed=33))
+    assert detect_cup_handle(ctx).matched

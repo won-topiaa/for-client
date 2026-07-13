@@ -6,6 +6,7 @@ import base64
 import logging
 import os
 import secrets
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -72,6 +73,12 @@ async def lifespan(app: FastAPI):
     from .pattern_scan import INDEX_SYMBOL, US_FALLBACK, PatternScanner, make_universe_fn
     from .providers.base import SymbolInfo
     from .touch_scan import TouchScanner
+
+    # 업스트림 라이브러리(FDR/yfinance 내부 requests)가 소켓 타임아웃 없이
+    # 요청을 여는 경우가 있어, 블랙홀 커넥션에 걸린 스레드가 몇 시간씩 살아남아
+    # 기본 스레드 실행기를 잠식할 수 있다. 전역 기본 타임아웃이 안전망이 된다
+    # (asyncio 소켓은 논블로킹이라 영향 없음, httpx 는 자체 타임아웃 사용).
+    socket.setdefaulttimeout(30)
 
     settings = load_settings()
     app.state.settings = settings
@@ -229,7 +236,9 @@ async def indices():
     """주요 지수 스냅샷 — 헤더 티커용. 실패한 지수는 조용히 생략한다."""
     async def one(sym: str, name: str):
         try:
-            df = await app.state.provider.candles(sym, "day", 5)
+            # 300봉 요청: 패턴 스캐너의 지수(RS) 조회와 같은 크기로 맞춰
+            # 캐시 항목 하나를 공유한다 (5봉으로 받으면 스캐너가 재페치)
+            df = await app.state.provider.candles(sym, "day", 300)
             if len(df) < 2:
                 return None
             last = float(df["close"].iloc[-1])

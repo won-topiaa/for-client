@@ -21,15 +21,21 @@ def test_low_volatility_no_instant_verdict_inside_band():
     n = 200
     closes = np.full(n, 100000.0)
     closes[:100] = np.linspace(99000, 100000, 100)
-    # ATR 을 아주 작게: 고저폭 0.05%
-    highs = closes * 1.00025
-    lows = closes * 0.99975
     # 100~110: 종가가 MA 바로 아래 (밴드 안, ATR 몇 배지만 밴드 폭 이내)
     closes[100:110] = closes[99] * 0.9990
     closes[110:] = np.linspace(closes[109], closes[109] * 1.03, n - 110)
+    # 고저는 '모든 종가 조작이 끝난 뒤' 계산해야 유효한 캔들이 된다 —
+    # 이전엔 조작 전에 계산해 close>high 인 무효 캔들이 되어 터치가 0이었고,
+    # 아래 루프가 한 번도 돌지 않는 무력화된 테스트였다.
+    highs = closes * 1.00025   # ATR 아주 작게: 고저폭 0.05%
+    lows = closes * 0.99975
     df = make_df(closes, highs=highs, lows=lows)
     p = EngineParams(min_touches=1)
     stat = analyze_ma(df, 20, p, window_start=30, half_life=100.0)
+    # 픽스처 무력화 방지: 터치와 판정이 실제로 존재해야 아래 검증이 의미 있다
+    assert stat.touches >= 1, "픽스처가 터치를 만들지 못함"
+    assert any(e.outcome in ("bounce", "break") for e in stat.episodes), \
+        "판정된 에피소드가 없음"
     # 밴드 안 미세한 아래 마감이 '즉시 break' 로 판정되던 버그:
     # 판정이 나더라도 밴드 밖 조건을 통과해야 한다. 여기선 3% 반등이 있으므로
     # break 가 성급하게 확정되지 않아야 한다.
@@ -231,3 +237,19 @@ def test_cache_does_not_store_empty_search():
     first, second = _run(go())
     assert first == [] and len(second) == 1
     assert inner.calls == 2
+
+# --- v6 전수 감사에서 확정된 결함들의 회귀 테스트 ---
+
+def test_ma_hugging_stock_still_counts_touches():
+    """이평선에 밀착한 종목의 통계 유실 방지.
+
+    밀착 종목은 터치가 하나의 긴 군집을 이루는데, 군집 첫 세그먼트가
+    워밍업 경계에 걸려 컨텍스트가 없다고 군집 '전체'를 버리면(break)
+    창 안의 유효한 시험까지 전부 유실돼 터치/성공률이 0이 된다.
+    """
+    rng = np.random.default_rng(42)
+    closes = 100 * np.cumprod(1 + rng.normal(0.0002, 0.001, 300))
+    df = make_df(closes)
+    stat = analyze_ma(df, 20, EngineParams(min_touches=1),
+                      window_start=60, half_life=80.0)
+    assert stat.touches > 0, "밀착 종목의 터치가 전부 유실됨"
