@@ -126,4 +126,4 @@ def test_about_page(client):
     r = client.get("/about")
     assert r.status_code == 200
     assert "원토피아" in r.text and "양주원" in r.text
-    assert "mailto:yangjoodol1@gmail.com" in r.text
+    assert "mailto:yangjuwon240@gmail.com" in r.text
