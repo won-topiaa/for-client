@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/*.csv
+
+# 시크릿 파일은 어떤 형태든 커밋 금지
+*_secret.*
+*.secret
