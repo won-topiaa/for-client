@@ -130,6 +130,39 @@ def test_scan_always_settles_no_infinite_running(Prov, kind):
 
 # ---------- ③ analyze 직렬화는 퇴화 프레임에도 NaN/Inf 무누수 ----------
 
+@pytest.mark.parametrize("kind", ["pattern", "touch"])
+def test_slow_source_yields_partial_not_infinite_loading(kind, monkeypatch):
+    """느린 소스에서도 스캔이 소프트 시간예산 안에 '부분 결과'로 끝나야 한다 —
+    워치독(900초)까지 갈아버리며 취소→재시도를 반복(=무한 로딩)하지 않게."""
+    import app.pattern_scan as ps
+    import app.touch_scan as ts
+
+    monkeypatch.setattr(ps, "SCAN_SOFT_BUDGET_SEC", 2.0)
+    monkeypatch.setattr(ts, "SCAN_SOFT_BUDGET_SEC", 2.0)
+
+    class Slow:
+        name = "fake"
+        async def candles(self, s, tf, mb, use_fail_cache=False):
+            await asyncio.sleep(0.25)
+            return _good(seed=hash(s) % 9999)
+        async def search(self, q):
+            return []
+
+    async def go():
+        cache = CachingProvider(Slow())
+        if kind == "touch":
+            sc = TouchScanner(cache, _universe(300), candidates=CAND)
+        else:
+            sc = PatternScanner(cache, _universe(300), index_symbol="KS11")
+        t0 = asyncio.get_event_loop().time()
+        snap = await _drive_to_settle(sc, deadline=15)
+        assert snap["status"] == "done", snap
+        assert snap.get("partial") is True, "예산 초과인데 partial 로 표시 안 됨"
+        assert 0 < snap["scanned"] < 300, f"부분이 아님: {snap['scanned']}"
+        assert asyncio.get_event_loop().time() - t0 < 10, "예산 안에 끝나지 않음"
+    asyncio.new_event_loop().run_until_complete(asyncio.wait_for(go(), timeout=20))
+
+
 @pytest.mark.parametrize("kind", ["constant", "tiny", "spikes", "onebar", "normal"])
 def test_analyze_serializes_without_nan_on_degenerate_frames(kind):
     settings = load_settings()

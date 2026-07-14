@@ -32,6 +32,12 @@ RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
 LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
 ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
 SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 행(hang)으로 보고 중단
+# 소프트 시간예산: 이 시간을 넘기면 새 종목 조회를 멈추고 '지금까지 모은
+# 결과'로 마무리한다. 무료 소스가 느리거나(미국 야후 페이싱) 일부가 hang 에
+# 걸려도 스캔이 워치독(900초)까지 갈아버리며 취소→재시도를 반복(=무한 로딩)
+# 하지 않게 하는 핵심 장치. 부분 결과는 낮은 커버리지 → 짧은 TTL 로 백그라운드
+# 재스캔이 이어받아(따뜻한 캐시라 빠름) 점점 채워진다.
+SCAN_SOFT_BUDGET_SEC = 150.0
 # 종목당 일봉 수 — 터치 스캐너와 같은 값으로 맞춰, 두 스캐너가 시세 캐시의
 # 같은 페치 한 번을 공유하게 한다 (패턴 자체는 뒤쪽 500봉만 사용)
 FETCH_BARS = 1050
@@ -153,6 +159,7 @@ class BaseScanner:
         self._error: str | None = None   # 마지막 스캔 전체 실패 사유
         self._error_ts = 0.0
         self._scan_started = 0.0         # 워치독용: 현재 스캔 시작 시각
+        self._partial = False            # 시간예산으로 일부만 훑고 끝났는지
 
     def _fresh(self) -> bool:
         return (self._results is not None
@@ -184,6 +191,7 @@ class BaseScanner:
             self._done = 0
             self._total = 0   # 유니버스 선정 동안 이전 스캔의 total 이 비치지 않게
             self._errors = 0
+            self._partial = False
             self._scan_started = time.monotonic()
             self._task = asyncio.create_task(self._scan())
             idle = False
@@ -208,13 +216,15 @@ class BaseScanner:
                 scanned_n: int, started: float) -> float:
         """결과 확정 + 커버리지 기반 TTL 결정. 커버리지를 반환."""
         results.update({"universe": universe_n, "scanned": scanned_n,
+                        "partial": self._partial,
                         "elapsedSec": round(time.monotonic() - started, 1),
                         # 스캔 고유 식별자 — 프런트가 '같은 결과인지'를 근사치
                         # (elapsedSec 등) 대신 이 값으로 판별한다
                         "generatedAt": round(time.time(), 3)})
         coverage = scanned_n / universe_n if universe_n else 1.0
-        # 절반도 못 훑었으면(부분 장애) 결과 수명을 짧게 잡아 금방 재시도
-        self._ttl = RESULT_TTL_SEC if coverage >= 0.5 else LOW_COVERAGE_TTL_SEC
+        # 부분 결과이거나 절반도 못 훑었으면 수명을 짧게 잡아 곧 재스캔해 채운다
+        self._ttl = (LOW_COVERAGE_TTL_SEC if (self._partial or coverage < 0.5)
+                     else RESULT_TTL_SEC)
         self._results = results
         self._generated = time.monotonic()
         return coverage
@@ -245,20 +255,24 @@ class PatternScanner(BaseScanner):
 
         sem = _shared_fetch_sem()
         per_symbol: list[tuple[SymbolInfo, dict, pd.DataFrame]] = []
-        abort = asyncio.Event()  # 조기 실패 감지 시 남은 종목을 건너뛴다
+        abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
+        budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
 
         async def one(info: SymbolInfo):
             nonlocal attempted
-            if abort.is_set():
+            if abort.is_set() or budget_hit.is_set():
                 return
             async with sem:
-                if abort.is_set():
+                if abort.is_set() or budget_hit.is_set():
+                    return
+                if time.monotonic() - started > SCAN_SOFT_BUDGET_SEC:
+                    budget_hit.set()  # 시간예산 초과 — 새 종목은 그만, 모은 것으로 마무리
                     return
                 skipped = False
                 try:
                     # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
-                    await asyncio.sleep(0.05 + random.random() * 0.2)
+                    await asyncio.sleep(0.02 + random.random() * 0.08)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
                                                      use_fail_cache=True)
                     if len(df) < 60:
@@ -285,14 +299,18 @@ class PatternScanner(BaseScanner):
 
         await asyncio.gather(*(one(s) for s in universe))
         if abort.is_set():
-            # 중단 직전 동시 진행분(≤동시성)이 뒤늦게 성공했더라도 결과를
-            # 공개하지 않는다 — 유니버스의 몇 %만 담긴 '완료'는 빈 목록보다
-            # 해롭다 (5분간 캐시되어 전 사용자에게 보임)
+            # 전면 장애 조기중단 — 중단 직전 스트래글러가 뒤늦게 성공했더라도
+            # 유니버스의 몇 %만 담긴 '완료'는 빈 목록보다 해로우므로 공개하지 않는다
             raise RuntimeError(
                 "스캔 초반 종목 시세 조회가 모두 실패했습니다 "
                 "(데이터 소스 장애 또는 요청 제한)")
-        if universe and not per_symbol:
-            raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
+        if not per_symbol:
+            # 시간예산 초과 등으로 성공이 하나도 없으면 보여줄 게 없다
+            raise RuntimeError(
+                "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
+        # per_symbol 이 있으면 완주했든 시간예산으로 부분이든 결과를 발행한다.
+        # (부분이면 커버리지가 낮아 _finish 가 TTL 을 짧게 잡아 곧 재스캔한다)
+        self._partial = budget_hit.is_set()
 
         results: dict[str, Any] = {"patterns": {}}
         for key in PATTERN_KEYS:

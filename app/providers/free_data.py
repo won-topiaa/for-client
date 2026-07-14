@@ -202,7 +202,10 @@ def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
 
 _LISTING_TIMEOUT_SEC = 15.0   # 상장목록 다운로드 시간 상한
 _LISTING_RETRY_SEC = 60.0     # 실패 후 재시도 억제 (실패 폭주 방지)
-_CANDLES_TIMEOUT_SEC = 60.0   # 종목별 시세 조회 시간 상한
+# 종목별 시세 조회 시간 상한 — 정상 조회는 1~3초라 넉넉하다. 짧게 잡을수록
+# hang 걸린 종목이 동시성 슬롯을 빨리 반납해, 수백 종목 스캔이 소프트 예산 안에
+# 더 많은 종목을 훑는다 (lifespan 의 socket 기본 타임아웃 20초가 더 깊은 방어선).
+_CANDLES_TIMEOUT_SEC = 25.0
 
 
 class FreeDataProvider:
