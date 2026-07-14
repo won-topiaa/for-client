@@ -26,6 +26,7 @@ from .analysis import EngineParams, analyze_timeframe, atr as atr_fn, sma
 from .pattern_scan import (
     FAIL_FAST_PROBE,
     FETCH_BARS,
+    SCAN_SOFT_BUDGET_SEC,
     BaseScanner,
     UniverseFn,
     _shared_fetch_sem,
@@ -58,20 +59,24 @@ class TouchScanner(BaseScanner):
         sem = _shared_fetch_sem()
         matches: list[dict[str, Any]] = []
         scanned = 0
-        abort = asyncio.Event()  # 조기 실패 감지 시 남은 종목을 건너뛴다
+        abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
+        budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
 
         async def one(info: SymbolInfo):
             nonlocal scanned, attempted
-            if abort.is_set():
+            if abort.is_set() or budget_hit.is_set():
                 return
             async with sem:
-                if abort.is_set():
+                if abort.is_set() or budget_hit.is_set():
+                    return
+                if time.monotonic() - started > SCAN_SOFT_BUDGET_SEC:
+                    budget_hit.set()  # 시간예산 초과 — 새 종목은 그만, 모은 것으로 마무리
                     return
                 skipped = False
                 try:
                     # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
-                    await asyncio.sleep(0.05 + random.random() * 0.2)
+                    await asyncio.sleep(0.02 + random.random() * 0.08)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
                                                      use_fail_cache=True)
                     if len(df) < MIN_BARS:
@@ -97,15 +102,17 @@ class TouchScanner(BaseScanner):
 
         await asyncio.gather(*(one(s) for s in universe))
         if abort.is_set():
-            # 중단 직전 동시 진행분이 뒤늦게 성공했더라도 반쪽 결과는
+            # 전면 장애 조기중단 — 스트래글러가 뒤늦게 성공했더라도 반쪽 결과는
             # 공개하지 않는다 (pattern_scan 과 동일한 규칙)
             raise RuntimeError(
                 "스캔 초반 종목 시세 조회가 모두 실패했습니다 "
                 "(데이터 소스 장애 또는 요청 제한)")
-        # 주의: matches 가 비는 것은 정상(오늘 터치 없음) — 분석 자체가 전부
-        # 실패했을 때만 오류로 본다
+        # scanned==0 이면 보여줄 게 없다 (시간예산 초과 등). scanned>0 이면
+        # matches 가 비어도 정상(오늘 터치 없음) — 결과를 발행한다.
         if universe and scanned == 0:
-            raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
+            raise RuntimeError(
+                "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
+        self._partial = budget_hit.is_set()
 
         # 믿을 만한 선 순서: 선의 점수(자주+믿을만) 우선, 같은 점수면 더 가까이
         matches.sort(key=lambda m: (-m["maScore"], abs(m["distPct"])))

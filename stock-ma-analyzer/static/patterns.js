@@ -250,11 +250,12 @@
       }
       const fp = JSON.stringify([body.generatedAt, body.scanned, body.elapsedSec, body.universe,
         body.totalMatches, body.matches.length && body.matches[0].symbol,
-        body.refreshing]);
+        body.refreshing, body.partial]);
+      // 부분 결과이거나 갱신 중이면 빠르게(5초) 폴링해 채워지는 대로 받아본다
+      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
       if (isPoll && fp === lastFp) {
         // 내용이 그대로면 재렌더(차트 재생성) 없이 다음 keep-alive 만 예약
-        pollTimer = setTimeout(() => load(true),
-          body.refreshing ? 5000 : 5 * 60 * 1000);
+        pollTimer = setTimeout(() => load(true), keepAlive);
         return;
       }
       render(body);
@@ -263,9 +264,7 @@
       // 고장난 화면이 5분 keep-alive 에 갇히는 것을 방지
       lastFp = fp;
       renderedWhileRefreshing = !!body.refreshing;
-      // 갱신 중이면 5초, 아니면 5분 간격 keep-alive — 열려 있는 탭도
-      // 서버의 30분 재스캔 결과를 실제로 받아보게 한다
-      pollTimer = setTimeout(() => load(true), body.refreshing ? 5000 : 5 * 60 * 1000);
+      pollTimer = setTimeout(() => load(true), keepAlive);
     } catch (err) {
       if (seq !== reqSeq) return;
       // 폴링 중 일시적 네트워크 오류로 체인을 끊지 않는다 — 3회까지 재시도
@@ -310,10 +309,11 @@
     destroyCharts();
     el.matches.innerHTML = "";
     el.status.textContent =
-      `${body.scanned}개 종목 스캔 완료 · 매칭 ${body.totalMatches}개` +
+      `${body.scanned}개 종목 ${body.partial ? "스캔" : "스캔 완료"} · 매칭 ${body.totalMatches}개` +
       (body.totalMatches > body.matches.length
         ? ` (상위 ${body.matches.length}개 표시)` : "") +
-      (body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+      (body.partial ? " · 남은 종목 계속 확인 중…"
+        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
     announce(el.status.textContent); // 시작을 알렸으니 완료도 알린다
     if (!body.matches.length) {
       el.matches.innerHTML =

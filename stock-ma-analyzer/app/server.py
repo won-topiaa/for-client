@@ -78,7 +78,9 @@ async def lifespan(app: FastAPI):
     # 요청을 여는 경우가 있어, 블랙홀 커넥션에 걸린 스레드가 몇 시간씩 살아남아
     # 기본 스레드 실행기를 잠식할 수 있다. 전역 기본 타임아웃이 안전망이 된다
     # (asyncio 소켓은 논블로킹이라 영향 없음, httpx 는 자체 타임아웃 사용).
-    socket.setdefaulttimeout(30)
+    # candles 조회 wait_for(25초)보다 짧게 잡아, hang 소켓이 wait_for 취소 직후
+    # 스스로 죽어 페치 스레드가 오래 남지 않게 한다.
+    socket.setdefaulttimeout(20)
 
     settings = load_settings()
     app.state.settings = settings
@@ -294,6 +296,7 @@ async def patterns_api(
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
         "refreshing": bool(snap.get("refreshing")),  # 만료 결과 재스캔 중 여부
+        "partial": bool(snap.get("partial")),        # 시간예산으로 일부만 훑음
         "generatedAt": snap.get("generatedAt"),      # 스캔 고유 식별자
         "matches": matches[:4],  # 요청 스펙: 3~4개
         "totalMatches": len(matches),
@@ -347,6 +350,7 @@ async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
         "universe": snap.get("universe"),
         "elapsedSec": snap.get("elapsedSec"),
         "refreshing": bool(snap.get("refreshing")),
+        "partial": bool(snap.get("partial")),    # 시간예산으로 일부만 훑음
         "generatedAt": snap.get("generatedAt"),  # 스캔 고유 식별자
         "matches": snap.get("matches") or [],
         "totalMatches": snap.get("totalMatches", 0),
