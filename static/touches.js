@@ -32,25 +32,30 @@
     sr: document.getElementById("srStatus"),
   };
 
-  const CAPTIONS = [
-    "양봉이와 음봉이가 지지선을 짚어보는 중…",
-    "3년치 반등 기록을 뒤지는 중…",
-    "오늘 저가가 선에 닿았는지 자로 재보는 중…",
-    "성공률 낮은 선은 걸러내는 중…",
-    "허용 밴드(max(0.5×ATR, 0.15%))를 재는 중…",
-  ];
-  let captionIdx = 0;
+  // 로딩 카드: tips.js 의 한입 지식(전일 시장·패턴 사전·이론·명언·매크로)을
+  // 7초에 한 장씩 돌려 보여준다 (두 줄까지 읽을 시간)
+  const TIP_INTERVAL_MS = 7000;
   let captionTimer = null;
+
+  function showTip() {
+    const t = window.LoadingTips && window.LoadingTips.next();
+    if (!t) { // tips.js 로드 실패 시 안전한 기본 문구
+      el.partyCaption.textContent = "양봉이와 음봉이가 지지선을 짚어보는 중…";
+      return;
+    }
+    el.partyCaption.innerHTML =
+      `<span class="tip-tag">${esc(t.tag)}</span>${esc(t.text)}`;
+  }
 
   function showParty(on) {
     el.party.style.display = on ? "flex" : "none";
     el.partyCaption.style.display = on ? "block" : "none";
     if (on) {
+      // 폴링(2초)마다 다시 호출돼도 타이머를 새로 만들지 않아야
+      // 카드 로테이션이 실제로 돌아간다
       if (!captionTimer) {
-        captionTimer = setInterval(() => {
-          captionIdx = (captionIdx + 1) % CAPTIONS.length;
-          el.partyCaption.textContent = CAPTIONS[captionIdx];
-        }, 3500);
+        showTip();
+        captionTimer = setInterval(showTip, TIP_INTERVAL_MS);
       }
     } else if (captionTimer) {
       clearInterval(captionTimer);

@@ -177,3 +177,28 @@ def test_vendored_chart_lib_checksum():
         (vendor / "lightweight-charts.standalone.production.js").read_bytes()
     ).hexdigest()
     assert actual == recorded, "벤더 라이브러리가 기록된 체크섬과 다름"
+
+
+def test_loading_tips_served_and_wired(client):
+    """로딩 한입 지식 카드(tips.js)가 서빙되고 두 스캐너 페이지에 연결되어 있다."""
+    r = client.get("/static/tips.js")
+    assert r.status_code == 200
+    assert "LoadingTips" in r.text
+    for page in ("/patterns", "/touches"):
+        assert "/static/tips.js" in client.get(page).text
+
+
+def test_loading_tips_fit_two_lines():
+    """카드 규칙: 본문 85자 이내(길어야 두 줄) · 태그는 정해진 분류만 사용."""
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "static" / "tips.js").read_text()
+    tips = re.findall(r'T\("([^"]+)", "([^"]+)"\)', src)
+    assert len(tips) >= 20, "지식 카드가 예상보다 적음"
+    allowed = {"패턴 사전", "패턴 이론", "명언", "매크로"}
+    for tag, text in tips:
+        assert tag in allowed, f"미정의 태그: {tag}"
+        assert len(text) <= 85, f"두 줄 규칙(85자) 초과 ({len(text)}자): {text}"
+    # 전일 시장 요약 카드(동적 생성)도 존재해야 한다
+    assert '"전일 시장"' in src
