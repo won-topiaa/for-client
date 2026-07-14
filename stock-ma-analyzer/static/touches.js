@@ -86,8 +86,9 @@
   // 스크린리더 알림: 폴링마다 재잘대지 않도록 시작/완료/실패 같은
   // 굵직한 전환만, 같은 문장은 반복하지 않고 알린다
   let lastAnnounced = "";
+  let suppressAnnounce = false; // 테마 재렌더는 상태 변화가 아니므로 침묵
   function announce(msg) {
-    if (!el.sr || msg === lastAnnounced) return;
+    if (!el.sr || suppressAnnounce || msg === lastAnnounced) return;
     lastAnnounced = msg;
     el.sr.textContent = msg;
   }
@@ -122,6 +123,7 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
+      showParty(false); // 이전 스캔의 봇+캡션이 스피너와 겹쳐 보이지 않게
       el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
     }
     try {
@@ -170,8 +172,11 @@
           body.refreshing ? 5000 : 5 * 60 * 1000);
         return;
       }
-      lastFp = fp;
       render(body);
+      // 지문은 렌더가 '성공한 뒤'에만 확정한다 — 렌더 도중 예외가 나면
+      // (예: 차트 라이브러리 로드 실패) 다음 폴이 같은 지문에 막혀
+      // 고장난 화면이 5분 keep-alive 에 갇히는 것을 방지
+      lastFp = fp;
       renderedWhileRefreshing = !!body.refreshing;
       // 갱신 중이면 5초, 아니면 5분 간격 keep-alive — 열려 있는 탭도
       // 서버의 30분 재스캔 결과를 실제로 받아보게 한다
@@ -199,9 +204,16 @@
   let lastBody = null;
   function onThemeChange() {
     if (!lastBody) return;
-    // 포기-대기 중(30초 재시도) 표시된 실패 문구가 덮이지 않게 보존
+    // 포기-대기 중(30초 재시도) 표시된 실패 문구가 덮이지 않게 보존.
+    // 스크린리더에도 '스캔 완료'가 잘못 나가지 않게 재렌더 동안 침묵
+    // (lastAnnounced 를 오염시키면 진짜 회복 알림이 중복 제거로 묻힌다)
     const statusText = el.status.textContent;
-    render(lastBody);
+    suppressAnnounce = true;
+    try {
+      render(lastBody);
+    } finally {
+      suppressAnnounce = false;
+    }
     el.status.textContent = statusText;
   }
   if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);

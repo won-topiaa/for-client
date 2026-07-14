@@ -123,6 +123,8 @@
   });
 
   el.search.addEventListener("keydown", (e) => {
+    // Escape 는 목록이 아직 안 열렸어도(디바운스/요청 대기 중) 취소로 동작해야 한다
+    if (e.key === "Escape") { hideSuggest(); return; }
     if (el.suggest.style.display !== "block") return;
     if (e.key === "ArrowDown") { e.preventDefault(); moveActive(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1); }
@@ -130,7 +132,7 @@
       e.preventDefault();
       if (activeIdx >= 0 && suggestItems[activeIdx]) pick(suggestItems[activeIdx]);
       else if (suggestItems.length === 1) pick(suggestItems[0]);
-    } else if (e.key === "Escape") hideSuggest();
+    }
   });
 
   document.addEventListener("click", (e) => {
@@ -192,6 +194,10 @@
   }
 
   function hideSuggest() {
+    // 닫기는 '취소'다: 대기 중인 디바운스와 진행 중인 응답도 무효화해야
+    // 닫힌 직후 뒤늦은 결과가 목록을 다시 열지 않는다
+    clearTimeout(searchTimer);
+    searchSeq++;
     el.suggest.style.display = "none";
     el.search.setAttribute("aria-expanded", "false");
     el.search.removeAttribute("aria-activedescendant");
