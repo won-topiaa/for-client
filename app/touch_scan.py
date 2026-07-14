@@ -85,13 +85,15 @@ class TouchScanner(BaseScanner):
                 abort.set()
 
         await asyncio.gather(*(one(s) for s in universe))
+        if abort.is_set():
+            # 중단 직전 동시 진행분이 뒤늦게 성공했더라도 반쪽 결과는
+            # 공개하지 않는다 (pattern_scan 과 동일한 규칙)
+            raise RuntimeError(
+                "스캔 초반 종목 시세 조회가 모두 실패했습니다 "
+                "(데이터 소스 장애 또는 요청 제한)")
         # 주의: matches 가 비는 것은 정상(오늘 터치 없음) — 분석 자체가 전부
         # 실패했을 때만 오류로 본다
         if universe and scanned == 0:
-            if abort.is_set():
-                raise RuntimeError(
-                    f"초반 {self._done}종목 시세 조회가 모두 실패했습니다 "
-                    "(데이터 소스 장애 또는 요청 제한)")
             raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
         # 믿을 만한 선 순서: 선의 점수(자주+믿을만) 우선, 같은 점수면 더 가까이

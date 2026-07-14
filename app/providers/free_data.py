@@ -28,6 +28,8 @@ _LISTING_TTL_SEC = 12 * 3600  # 상장 목록은 거의 안 바뀜
 # 국내 신형 종목코드 (2024.1 개편 — normalize_listing 의 유효성 규칙과 동일)
 _KR_NEW_CODE_RE = re.compile(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
 _KR_INDEXES = {"KS11", "KQ11"}
+# FDR 지수 표기 전체 — 개별 종목이 아니므로 Stooq(*.us) 폴백 대상이 아니다
+_FDR_INDEX_NOTATIONS = {"US500", "IXIC", "DJI", "KS11", "KQ11"}
 
 
 def _kr_route(symbol: str) -> bool:
@@ -346,8 +348,10 @@ class FreeDataProvider:
                 return None
 
         def via_stooq() -> pd.DataFrame | None:
-            # 미국 일반 티커 전용 — 지수 표기(US500 등)·국내 코드는 제외
-            if not re.match(r"^[A-Za-z][A-Za-z.\-]*$", symbol):
+            # 미국 일반 티커 전용 — 지수 표기(문자만인 IXIC/DJI 포함)·국내
+            # 코드는 제외 (Stooq 의 *.us 네임스페이스는 개별 종목 전용)
+            if (symbol.upper() in _FDR_INDEX_NOTATIONS
+                    or not re.match(r"^[A-Za-z][A-Za-z.\-]*$", symbol)):
                 return None
             try:
                 return mark_window_bound(
