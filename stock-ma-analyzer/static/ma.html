@@ -253,6 +253,42 @@
   .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
   .f-nav a { color: var(--muted); text-decoration: none; }
   .f-nav a:hover { color: var(--accent); }
+
+  /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
+  @media (max-width: 640px) {
+    .header-inner { padding: 10px 16px; gap: 6px 10px; }
+    .header-inner h1 { font-size: 16px; }
+    .header-inner .sub { font-size: 11px; line-height: 1.35; }
+    .brand svg { width: 28px; height: 28px; }
+    .brand-box { gap: 9px; }
+    .header-inner > span { flex-wrap: wrap; gap: 8px 16px; }
+    .nav-link { padding: 4px 0; }  /* 탭 영역 확대 */
+    .wrap { padding-left: 16px; padding-right: 16px; gap: 16px; }
+    /* 지수 티커: 한 줄 가로 스크롤 (세로 공간 절약) */
+    .ticker {
+      flex-wrap: nowrap; overflow-x: auto; gap: 16px; padding: 6px 16px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .ticker::-webkit-scrollbar { display: none; }
+    .tk { flex: none; }
+    /* 검색/기간 컨트롤: 검색은 한 줄, 기간 3칸 균등, 분석 버튼은 폭 전체 */
+    input { font-size: 16px; }  /* iOS 포커스 시 자동 확대 방지 (16px 미만이면 확대됨) */
+    .controls { padding: 14px; gap: 10px 8px; }
+    .search-box { flex-basis: 100%; min-width: 0; }
+    .controls .field:not(.search-box) { flex: 1; }
+    .years-input { width: 100%; }
+    /* 분석 버튼은 자체 행에서 폭 전체 — 기간 필드 flex:1 규칙(우선순위 0,3,0)을
+       이기도록 .controls 를 붙여 0,3,1 로 올린다 */
+    .controls .field:has(> button.primary) { flex: 1 1 100%; }
+    button.primary { width: 100%; padding: 13px; }
+    .hint { margin-top: -6px; }
+    .qp-label { min-width: 100%; }  /* 라벨을 한 줄로 올려 칩이 다음 줄 전체 폭을 쓰게 */
+    .qp { padding: 8px 14px; font-size: 13px; }  /* 탭하기 좋은 크기 */
+    .tabs button { flex: 1; padding: 10px 0; }  /* 일/주/월봉 균등·크게 */
+    #chart { height: 340px; }
+    .f-nav { gap: 12px 18px; }
+    .f-nav a { padding: 3px 0; }
+  }
 </style>
 </head>
 <body>
