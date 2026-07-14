@@ -65,7 +65,11 @@
         const pct = Number(it.changePct);
         return `${it.name} ${pct > 0 ? "+" : ""}${pct.toFixed(2)}%`;
       });
-      const tip = T("전일 시장", `${items[0].date} 종가 기준 — ${parts.join(" · ")}`);
+      // 휴장일이 어긋나면(예: 국내 휴장 중 미국 개장) 지수마다 마지막 거래일이
+      // 다를 수 있다 — 전부 같은 날일 때만 날짜를 못 박고, 아니면 두루뭉술하게
+      const dates = new Set(items.map((it) => it.date));
+      const label = dates.size === 1 ? `${items[0].date} 종가 기준` : "최근 종가 기준";
+      const tip = T("전일 시장", `${label} — ${parts.join(" · ")}`);
       priority.push(tip); // 지금 로딩 중이면 다음 로테이션에서 바로 보여준다
       TIPS.push(tip);     // 이후 덱에도 합류
     })

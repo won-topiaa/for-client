@@ -196,6 +196,11 @@ def test_loading_tips_fit_two_lines():
     src = (Path(__file__).resolve().parent.parent / "static" / "tips.js").read_text()
     tips = re.findall(r'T\("([^"]+)", "([^"]+)"\)', src)
     assert len(tips) >= 20, "지식 카드가 예상보다 적음"
+    # 형식이 어긋난 카드(이스케이프 따옴표·문자열 연결 등)가 아래 규칙 검사를
+    # 조용히 빠져나가지 못하게, 정적 카드 + 동적(백틱) 카드 수를 전체와 대조
+    total_calls = len(re.findall(r'T\("', src))
+    dynamic_calls = len(re.findall(r'T\("[^"]+", `', src))
+    assert len(tips) + dynamic_calls == total_calls, "규칙 검사를 비껴간 카드가 있음"
     allowed = {"패턴 사전", "패턴 이론", "명언", "매크로"}
     for tag, text in tips:
         assert tag in allowed, f"미정의 태그: {tag}"
