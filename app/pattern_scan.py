@@ -35,6 +35,10 @@ SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 �
 # 같은 페치 한 번을 공유하게 한다 (패턴 자체는 뒤쪽 500봉만 사용)
 FETCH_BARS = 1050
 CONCURRENCY = 6
+# 조기 실패 감지: 초반 이 수만큼 훑었는데 성공이 0이면 데이터 소스 전면
+# 장애(요청 제한 등)로 보고, 수백 종목을 헛되이 훑는 대신 즉시 실패시킨다
+# — 사용자에게 명확한 오류가 빨리 보이고, 쿨다운 후 자동 재시도된다.
+FAIL_FAST_PROBE = 12
 TOP_N = 8                   # 패턴별 보관 상위 개수
 CHART_BARS = 200            # 결과 카드에 실어줄 봉 수
 
@@ -240,9 +244,14 @@ class PatternScanner(BaseScanner):
 
         sem = _shared_fetch_sem()
         per_symbol: list[tuple[SymbolInfo, dict, pd.DataFrame]] = []
+        abort = asyncio.Event()  # 조기 실패 감지 시 남은 종목을 건너뛴다
 
         async def one(info: SymbolInfo):
+            if abort.is_set():
+                return
             async with sem:
+                if abort.is_set():
+                    return
                 try:
                     # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
                     await asyncio.sleep(0.05 + random.random() * 0.2)
@@ -256,9 +265,15 @@ class PatternScanner(BaseScanner):
                     logger.info("패턴 스캔 스킵 %s (%s)", info.symbol, exc)
                 finally:
                     self._done += 1
+            if self._done >= FAIL_FAST_PROBE and not per_symbol:
+                abort.set()
 
         await asyncio.gather(*(one(s) for s in universe))
         if universe and not per_symbol:
+            if abort.is_set():
+                raise RuntimeError(
+                    f"초반 {self._done}종목 시세 조회가 모두 실패했습니다 "
+                    "(데이터 소스 장애 또는 요청 제한)")
             raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
         results: dict[str, Any] = {"patterns": {}}

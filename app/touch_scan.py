@@ -23,7 +23,13 @@ import numpy as np
 import pandas as pd
 
 from .analysis import EngineParams, analyze_timeframe, atr as atr_fn, sma
-from .pattern_scan import FETCH_BARS, BaseScanner, UniverseFn, _shared_fetch_sem
+from .pattern_scan import (
+    FAIL_FAST_PROBE,
+    FETCH_BARS,
+    BaseScanner,
+    UniverseFn,
+    _shared_fetch_sem,
+)
 from .providers.base import Provider, SymbolInfo
 
 logger = logging.getLogger("ma-analyzer")
@@ -51,10 +57,15 @@ class TouchScanner(BaseScanner):
         sem = _shared_fetch_sem()
         matches: list[dict[str, Any]] = []
         scanned = 0
+        abort = asyncio.Event()  # 조기 실패 감지 시 남은 종목을 건너뛴다
 
         async def one(info: SymbolInfo):
             nonlocal scanned
+            if abort.is_set():
+                return
             async with sem:
+                if abort.is_set():
+                    return
                 try:
                     # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
                     await asyncio.sleep(0.05 + random.random() * 0.2)
@@ -70,11 +81,17 @@ class TouchScanner(BaseScanner):
                     logger.info("터치 스캔 스킵 %s (%s)", info.symbol, exc)
                 finally:
                     self._done += 1
+            if self._done >= FAIL_FAST_PROBE and scanned == 0:
+                abort.set()
 
         await asyncio.gather(*(one(s) for s in universe))
         # 주의: matches 가 비는 것은 정상(오늘 터치 없음) — 분석 자체가 전부
         # 실패했을 때만 오류로 본다
         if universe and scanned == 0:
+            if abort.is_set():
+                raise RuntimeError(
+                    f"초반 {self._done}종목 시세 조회가 모두 실패했습니다 "
+                    "(데이터 소스 장애 또는 요청 제한)")
             raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
         # 믿을 만한 선 순서: 선의 점수(자주+믿을만) 우선, 같은 점수면 더 가까이
