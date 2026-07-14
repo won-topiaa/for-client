@@ -50,4 +50,9 @@ def validate_candles(df: pd.DataFrame) -> pd.DataFrame:
         .sort_values("date")
         .reset_index(drop=True)
     )
+    # 주가는 항상 양수 — 0/음수 봉은 소스 이상값이다. 그대로 두면 수익률·
+    # ATR·분모(넥라인·테두리)에 NaN/발산이 섞여 점수로 새므로 여기서 거른다
+    # (거래량은 0 이 정상이라 검사 대상 아님).
+    ohlc = ["open", "high", "low", "close"]
+    out = out[(out[ohlc] > 0).all(axis=1)].reset_index(drop=True)
     return out
