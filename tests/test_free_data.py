@@ -314,3 +314,23 @@ def test_yahoo_pace_enforces_min_interval(monkeypatch):
     mod._yahoo_pace()
     mod._yahoo_pace()
     assert _t.perf_counter() - t0 >= 0.08, "간격 강제가 동작하지 않음"
+
+
+def test_validate_candles_drops_nonpositive_prices():
+    """0/음수 가격 봉은 소스 이상값 — 거르지 않으면 수익률·ATR·분모에 NaN/
+    발산이 섞여 패턴 점수로 샌다 (거래량 0 은 정상이라 유지)."""
+    from app.providers.base import validate_candles
+
+    raw = pd.DataFrame({
+        "date": pd.bdate_range("2024-01-01", periods=5),
+        "open": [10.0, 0.0, 11.0, -3.0, 12.0],
+        "high": [11.0, 1.0, 12.0, 1.0, 13.0],
+        "low": [9.0, 0.5, 10.0, 0.5, 11.0],
+        "close": [10.5, 0.8, 11.5, 0.9, 12.5],
+        "volume": [100, 0, 200, 300, 0],  # 0 거래량은 유지돼야 함
+    })
+    out = validate_candles(raw)
+    assert len(out) == 3, "0/음수 가격 봉이 걸러지지 않음"
+    assert (out[["open", "high", "low", "close"]] > 0).all().all()
+    assert list(out["close"]) == [10.5, 11.5, 12.5]
+    assert 0 in list(out["volume"]), "정상인 0 거래량까지 제거됨"
