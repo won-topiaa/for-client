@@ -25,6 +25,18 @@ _MAX_ENTRIES = 200        # 검색 캐시 상한
 # 밀어내 히트율이 0% 가 된다 (약 60~80MB, 무료 인스턴스에서 감당 가능).
 _CANDLE_MAX_ENTRIES = 1000
 
+# 실패 네거티브 캐시 — 방금 실패한 종목을 잠시 기억해 즉시 실패시킨다.
+# · 빠른 실패(429 등): 짧게만 기억 (일시 오류일 수 있음)
+# · 느린 실패(타임아웃/행): 길게 기억 — 행 걸리는 종목 수십 개가 스캔을
+#   워치독(900초)까지 끌고 가 「취소 → 쿨다운 → 재시도」 무한 사이클에
+#   빠지는 것을 막는 핵심 장치다. 다음 스캔이 이들을 즉시 건너뛰므로
+#   나머지 종목으로 스캔이 완주하고, 록 대기자들도 같은 실패를 반복하지
+#   않는다 (핫키 컨보이 해소).
+_FAIL_TTL_FAST_SEC = 120.0
+_FAIL_TTL_SLOW_SEC = 900.0
+_SLOW_FAILURE_SEC = 30.0   # 이보다 오래 걸린 실패는 '행'으로 간주
+_FAIL_MAX_ENTRIES = 2000
+
 
 class _TTLCache:
     def __init__(self, ttl: float, max_entries: int = _MAX_ENTRIES):
@@ -66,6 +78,29 @@ class CachingProvider:
         self._candles = _TTLCache(_CANDLE_TTL_SEC, _CANDLE_MAX_ENTRIES)
         self._searches = _TTLCache(_SEARCH_TTL_SEC)
         self._locks: dict[Any, asyncio.Lock] = {}
+        self._fails: dict[Any, tuple[float, str]] = {}  # key -> (만료시각, 사유)
+
+    def _fail_hit(self, key: Any) -> str | None:
+        item = self._fails.get(key)
+        if item is None:
+            return None
+        expiry, msg = item
+        if time.monotonic() >= expiry:
+            self._fails.pop(key, None)
+            return None
+        return msg
+
+    def _record_fail(self, key: Any, elapsed: float, exc: Exception) -> None:
+        if len(self._fails) >= _FAIL_MAX_ENTRIES:
+            now = time.monotonic()
+            for k in [k for k, (exp, _) in self._fails.items() if exp <= now]:
+                self._fails.pop(k, None)
+            while len(self._fails) >= _FAIL_MAX_ENTRIES:
+                self._fails.pop(next(iter(self._fails)))
+        ttl = (_FAIL_TTL_SLOW_SEC if elapsed >= _SLOW_FAILURE_SEC
+               else _FAIL_TTL_FAST_SEC)
+        self._fails[key] = (time.monotonic() + ttl,
+                            str(exc) or exc.__class__.__name__)
 
     def _lock_for(self, key: Any) -> asyncio.Lock:
         lock = self._locks.get(key)
@@ -99,14 +134,30 @@ class CachingProvider:
 
     async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
         key = ("candles", symbol, timeframe)
+        fail = self._fail_hit(key)
+        if fail is not None:
+            raise RuntimeError(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
         hit = self._candle_hit(self._candles.get(key), max_bars)
         if hit is not None:
             return hit
         async with self._lock_for(key):
+            # 록 대기 중 다른 요청이 실패를 기록했을 수 있다 — 여기서 확인해야
+            # 대기자들이 같은 실패(각 60초)를 줄줄이 반복하지 않는다
+            fail = self._fail_hit(key)
+            if fail is not None:
+                raise RuntimeError(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
             hit = self._candle_hit(self._candles.get(key), max_bars)
             if hit is not None:
                 return hit
-            df = await self.inner.candles(symbol, timeframe, max_bars)
+            started = time.monotonic()
+            try:
+                df = await self.inner.candles(symbol, timeframe, max_bars)
+            except asyncio.CancelledError:
+                raise  # 취소는 실패가 아니다 (워치독/종료)
+            except Exception as exc:
+                self._record_fail(key, time.monotonic() - started, exc)
+                raise
+            self._fails.pop(key, None)
             # 받은 수가 요청보다 적으면 히스토리가 끝난 것 -> 더 큰 요청도 캐시로 응답.
             # 단, 공급자가 '잘렸다'고 표시한 데이터는 소진이 아니다:
             #  · truncated    = 시간 예산 초과 등 — 받은 양만 신뢰, 같은 요청도 재시도

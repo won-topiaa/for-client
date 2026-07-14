@@ -135,6 +135,35 @@ def test_cup_handle_rejects_v_bottom():
     assert not detect_cup_handle(ctx).matched
 
 
+def test_cup_handle_rejects_wide_v_bottom():
+    """넓은 V(길이 80·깊이 25%)는 길이 게이트(30~220)를 통과한다 — 2차
+    적합도만으로는 대칭 V 의 r²가 0.94까지 올라가 배제되지 않으므로,
+    V-모델 대비 비교로 걸러내야 한다 (O'Neil: 컵은 U자, V자 아님)."""
+    wide_v = np.concatenate([
+        _seg(80, 100, 40),                       # 진입 전 상승
+        _seg(100, 75, 40), _seg(75, 100, 40),    # 넓은 대칭 V (깊이 25%)
+        _seg(100, 96, 12), _seg(96, 98, 12),     # 얕은 핸들
+    ])
+    ctx = _prep(_df(wide_v, noise_seed=44))
+    assert not detect_cup_handle(ctx).matched, "넓은 V가 둥근 컵으로 오탐됨"
+
+
+def test_inv_hs_deep_head_symmetric_shoulders_detected():
+    """머리가 깊은 역H&S에서 어깨 대칭도 넥라인 기준으로 재야 한다.
+
+    넥라인 100·머리 60·어깨 78/82(간격 4)는 넥라인 대비 4%로 대칭 조건
+    (5% 이내)을 만족한다. 머리(60)를 분모로 쓰면 6.7%가 되어, 정형과
+    거울상인 같은 기하가 부당하게 탈락한다."""
+    parts = [
+        _seg(100, 78, 22), _seg(78, 100, 22),   # 왼어깨(78) -> 넥라인
+        _seg(100, 60, 26), _seg(60, 100, 26),   # 깊은 머리(60) -> 넥라인
+        _seg(100, 82, 22), _seg(82, 96, 14),    # 오른어깨(82) -> 넥라인 이탈
+    ]
+    ctx = _prep(_df(np.concatenate(parts), noise_seed=45))
+    hit = detect_head_shoulders(ctx, inverse=True)
+    assert hit.matched, "넥라인 대비 4% 대칭인데 머리 깊이 때문에 탈락하면 안 됨"
+
+
 # ---------- 와인스타인 단계 ----------
 
 def test_stage2_uptrend():
