@@ -122,35 +122,54 @@ class TouchScanner(BaseScanner):
         logger.info("터치 스캔 완료: %d종목 중 터치 %d / %.1fs (커버리지 %.0f%%)",
                     scanned, len(matches), results["elapsedSec"], coverage * 100)
 
+    def _touched_today(self, close: np.ndarray, low: np.ndarray,
+                       band_now: float) -> dict[int, float]:
+        """오늘 '지지 터치' 조건을 만족하는 후보 이평선 {period: ma_now}.
+
+        본 판정과 완전히 같은 조건(문맥이 선 위 + 오늘 저가가 밴드까지 닿음 +
+        종가가 밴드 아래로 확정이탈 아님)을 싸게(SMA 만) 먼저 확인한다.
+        """
+        touched: dict[int, float] = {}
+        for period in self.candidates:
+            ma = sma(close, period)
+            if not np.isfinite(ma[-1]) or ma[-1] <= 0:
+                continue
+            ma_now = float(ma[-1])
+            ctx = close[-21:-1] - ma[-21:-1]
+            if not np.isfinite(ctx).all() or float(np.mean(ctx)) <= 0:
+                continue
+            if low[-1] <= ma_now + band_now and close[-1] >= ma_now - band_now:
+                touched[period] = ma_now
+        return touched
+
     def _analyze_sync(self, info: SymbolInfo, df: pd.DataFrame) -> dict[str, Any] | None:
-        """한 종목: 3년 백테스트 -> 추천 이평선 중 '오늘 지지 터치'가 있으면 직렬화."""
+        """한 종목: 오늘 이평선 터치가 있으면 백테스트로 '검증된 선'인지 확인해 직렬화."""
         close = df["close"].to_numpy(float)
         high = df["high"].to_numpy(float)
         low = df["low"].to_numpy(float)
         n = len(df)
-        window_start = max(0, n - WINDOW_BARS)
-        report = analyze_timeframe(df, self.candidates, self.params, "day", window_start)
 
         a = atr_fn(high, low, close, 14)
         atr_now = a[-1] if np.isfinite(a[-1]) else 0.0
         band_now = max(self.params.touch_atr_mult * atr_now,
                        self.params.touch_pct_floor * close[-1])
 
+        # 싼 사전 필터: 오늘 어떤 후보 이평선에도 안 닿아 있으면(대부분 종목이
+        # 그렇다) 비싼 3년 백테스트를 아예 돌리지 않는다 — 터치 스캔 속도의 핵심.
+        touched = self._touched_today(close, low, band_now)
+        if not touched:
+            return None
+
+        window_start = max(0, n - WINDOW_BARS)
+        report = analyze_timeframe(df, self.candidates, self.params, "day", window_start)
+
         best: dict[str, Any] | None = None
         for s in report.recommended:
             if not s.qualified or s.support_bounces < 2:
                 continue  # 지지 이력이 검증된 선만
-            ma = sma(close, s.period)
-            if not np.isfinite(ma[-1]) or ma[-1] <= 0:
-                continue
-            ma_now = float(ma[-1])
-            # 최근 문맥이 선 '위' (지지로 접근 중) — 직전 20봉 평균 이격
-            ctx = close[-21:-1] - ma[-21:-1]
-            if not np.isfinite(ctx).all() or float(np.mean(ctx)) <= 0:
-                continue
-            # 오늘 저가가 밴드까지 닿았고, 종가가 밴드 아래로 확정 이탈은 아님
-            if not (low[-1] <= ma_now + band_now and close[-1] >= ma_now - band_now):
-                continue
+            ma_now = touched.get(s.period)
+            if ma_now is None:
+                continue  # 오늘 안 닿은 선은 볼 필요 없음
             dist_pct = (close[-1] / ma_now - 1) * 100
             cand = {
                 "symbol": info.symbol, "name": info.name, "market": info.market,

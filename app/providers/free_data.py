@@ -224,11 +224,12 @@ class FreeDataProvider:
         # KR/US 목록은 상태를 공유하지 않으므로 락도 분리 (KR 갱신 15초가
         # US 스캔 시작을 막지 않게)
         self._us_lock = asyncio.Lock()
-        # 네트워크 페치 전용 스레드풀 — wait_for(60초)에 버려진 행 스레드가
-        # 기본 실행기(작은 인스턴스에선 5칸)를 잠식해 분석 연산·상장목록까지
-        # 굶기는 것을 막는다. 여기서 새면 다른 '페치'만 느려질 뿐이다.
+        # 네트워크 페치 전용 스레드풀 — wait_for 에 버려진 행 스레드가 기본
+        # 실행기(작은 인스턴스에선 5칸)를 잠식해 분석 연산·상장목록까지 굶기는
+        # 것을 막는다. 여기서 새면 다른 '페치'만 느려질 뿐이다. 동시 페치
+        # 상한(CONCURRENCY=10)보다 넉넉히 잡아 큐잉으로 병목되지 않게 한다.
         self._fetch_pool = ThreadPoolExecutor(
-            max_workers=8, thread_name_prefix="candle-fetch")
+            max_workers=14, thread_name_prefix="candle-fetch")
 
     def _listing_fresh(self) -> bool:
         return (self._listing is not None

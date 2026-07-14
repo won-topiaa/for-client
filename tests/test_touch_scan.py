@@ -165,3 +165,31 @@ def test_touch_scanner_fail_fast_on_total_outage():
     assert scanner._error and "실패" in scanner._error
     assert calls["n"] < 60, "조기 중단 없이 유니버스 전체를 훑었음"
     assert calls["n"] >= FAIL_FAST_PROBE, "판정 표본도 훑기 전에 중단됨"
+
+
+def test_touch_prefilter_skips_backtest_when_no_touch(monkeypatch):
+    """오늘 어떤 이평선에도 안 닿은 종목은 비싼 백테스트(analyze_timeframe)를
+    아예 건너뛴다 — 터치 스캔 속도의 핵심 최적화."""
+    import app.touch_scan as mod
+
+    calls = {"n": 0}
+    real = mod.analyze_timeframe
+
+    def spy(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(mod, "analyze_timeframe", spy)
+    sc = TouchScanner(None, None, candidates=[5, 10, 20, 60, 120])
+
+    # 강한 상승 추세 마지막에 급등 — 오늘 종가/저가가 어떤 이평선보다도 훨씬 위 →
+    # 사전 필터에서 '터치 없음'으로 걸러져 백테스트가 안 돌아야 한다
+    n = 800
+    closes = np.linspace(10, 100, n)
+    closes[-1] = 200.0  # 오늘 급등: 모든 이평선 위로 멀리
+    df = validate_candles(pd.DataFrame({
+        "date": pd.bdate_range("2020-01-02", periods=n),
+        "open": closes, "high": closes * 1.02, "low": closes * 0.99,
+        "close": closes, "volume": 1e6}))
+    assert sc._analyze_sync(SymbolInfo("X", "x", "T"), df) is None
+    assert calls["n"] == 0, "터치가 없는데 백테스트가 돌았음"
