@@ -134,3 +134,34 @@ def test_scanner_watchdog_cancels_hung_scan():
             pass
 
     asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_touch_scanner_fail_fast_on_total_outage():
+    """터치 스캐너도 초반 전멸 시 조기 실패한다 (패턴 스캐너와 동일 규칙)."""
+    from app.pattern_scan import FAIL_FAST_PROBE
+
+    calls = {"n": 0}
+
+    class DeadProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            calls["n"] += 1
+            raise RuntimeError("upstream down")
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"s{i}", "T") for i in range(60)]
+
+    scanner = TouchScanner(DeadProvider(), universe_fn, candidates=[5, 10, 20])
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert scanner._error and "실패" in scanner._error
+    assert calls["n"] < 60, "조기 중단 없이 유니버스 전체를 훑었음"
+    assert calls["n"] >= FAIL_FAST_PROBE, "판정 표본도 훑기 전에 중단됨"

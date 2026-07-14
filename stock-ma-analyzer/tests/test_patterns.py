@@ -690,3 +690,36 @@ def test_cup_handle_detects_slow_shallow_cup():
     closes = np.concatenate([_seg(85, 100, 40), cup, handle])
     ctx = _prep(_df(closes, noise_seed=33))
     assert detect_cup_handle(ctx).matched
+
+
+def test_scanner_fail_fast_on_total_outage():
+    """유니버스가 커도 초반 종목이 전부 실패하면 끝까지 훑지 않고 일찍 실패한다
+    (미국 시세 소스가 통째로 막혔을 때 수백 종목을 헛되이 돌지 않게)."""
+    from app.pattern_scan import FAIL_FAST_PROBE, PatternScanner
+    from app.providers.base import SymbolInfo
+
+    calls = {"n": 0}
+
+    class DeadProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            calls["n"] += 1
+            raise RuntimeError("upstream down")
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"s{i}", "T") for i in range(60)]
+
+    scanner = PatternScanner(DeadProvider(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert scanner._error and "실패" in scanner._error
+    assert calls["n"] < 60, "조기 중단 없이 유니버스 전체를 훑었음"
+    assert calls["n"] >= FAIL_FAST_PROBE, "판정 표본도 훑기 전에 중단됨"

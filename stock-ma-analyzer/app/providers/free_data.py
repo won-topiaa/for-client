@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,37 @@ from .base import SymbolInfo, validate_candles
 # 종목코드(6자리 숫자)/미국 티커
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
 _LISTING_TTL_SEC = 12 * 3600  # 상장 목록은 거의 안 바뀜
+
+# 국내 신형 종목코드 (2024.1 개편 — normalize_listing 의 유효성 규칙과 동일)
+_KR_NEW_CODE_RE = re.compile(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
+_KR_INDEXES = {"KS11", "KQ11"}
+
+
+def _kr_route(symbol: str) -> bool:
+    """국내 경로(네이버/KRX 소스) 여부 — 이 경로는 야후 요청 제한과 무관하다."""
+    return (symbol.isdigit()
+            or bool(_KR_NEW_CODE_RE.match(symbol))
+            or symbol.upper() in _KR_INDEXES)
+
+
+# ---- 야후 요청 전역 페이싱 ----
+# 무료 야후 API 는 데이터센터 IP(Render 등)에서 초당 몇 건만 넘어도 429 로
+# IP 를 잠근다. 스캐너가 동시 6개로 훑으면 순식간에 전 종목이 막히므로,
+# 야후로 가는 모든 요청(FDR 미국 리더 포함)의 시작 간격에 하한을 둔다.
+# (페치는 to_thread 로 도는 동기 코드라 threading 락을 쓴다)
+_YAHOO_MIN_INTERVAL_SEC = 0.35
+_yahoo_gate = threading.Lock()
+_yahoo_next_ts = 0.0
+
+
+def _yahoo_pace() -> None:
+    global _yahoo_next_ts
+    with _yahoo_gate:
+        now = time.monotonic()
+        wait = _yahoo_next_ts - now
+        _yahoo_next_ts = max(now, _yahoo_next_ts) + _YAHOO_MIN_INTERVAL_SEC
+    if wait > 0:
+        time.sleep(wait)
 
 
 def _pick_col(df: pd.DataFrame, *names: str) -> str | None:
@@ -132,12 +164,36 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
             candidates.append(symbol.replace(".", "-"))
     for tkr in candidates:
         try:
+            _yahoo_pace()
             hist = yf.Ticker(tkr).history(period=period, interval="1d", auto_adjust=False)
         except Exception:
             hist = None
         if hist is not None and len(hist) > 0:
             return hist
     raise ValueError(f"{symbol} Yahoo 조회 실패")
+
+
+def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
+    """Stooq 일봉 CSV — 야후가 통째로 막혔을 때의 마지막 폴백 (미국 티커 전용).
+
+    무료·무키 소스로, 형식은 Date,Open,High,Low,Close,Volume CSV.
+    클래스주는 대시 표기(brk-b.us)를 쓴다.
+    """
+    import io
+
+    import httpx
+
+    t = symbol.lower().replace(".", "-")
+    d1 = start.replace("-", "")
+    d2 = pd.Timestamp.today().strftime("%Y%m%d")
+    url = f"https://stooq.com/q/d/l/?s={t}.us&d1={d1}&d2={d2}&i=d"
+    r = httpx.get(url, timeout=15.0, follow_redirects=True)
+    r.raise_for_status()
+    text = r.text.strip()
+    first = text.splitlines()[0] if text else ""
+    if not text or "," not in first:  # 실패 시 "No data" 등 단문이 온다
+        raise ValueError("Stooq: 데이터 없음")
+    return pd.read_csv(io.StringIO(text))
 
 
 _LISTING_TIMEOUT_SEC = 15.0   # 상장목록 다운로드 시간 상한
@@ -239,47 +295,77 @@ class FreeDataProvider:
         return df.tail(max_bars).reset_index(drop=True)
 
     def _fetch_daily_sync(self, symbol: str, max_bars: int | None = None) -> pd.DataFrame:
-        errors = []
+        errors: list[str] = []
         start = _start_for(max_bars)
         windowed = start != "1990-01-01"
-        try:
-            raw = _fetch_fdr_sync(symbol, start)
-            if raw is not None and len(raw) > 0:
-                df = normalize_ohlcv(raw)
-                # 창 제한 조회가 요청량보다 적게 돌아오면 (장기 거래정지 등)
-                # '히스토리 소진'이 아니라 '창이 짧았던 것'일 수 있다 —
-                # 캐시가 잘린 데이터를 전체 기간으로 오인하지 않게 표시.
-                # 단, 첫 봉이 요청 시작일보다 한참 뒤라면 상장이 늦어 히스토리
-                # 자체가 짧은 것(진짜 소진)이므로 표시하지 않는다 — 아니면
-                # 신생 종목이 캐시 불가가 되어 매 요청 재조회하게 된다.
-                if windowed and max_bars and len(df) < max_bars:
-                    window_bound = df["date"].iloc[0] <= (
-                        pd.Timestamp(start) + pd.Timedelta(days=10))
-                    if window_bound:
-                        # 'truncated'(시간예산 등으로 잘림 — 받은 만큼만 신뢰)와
-                        # 달리, 창이 자른 경우 같은 크기 요청은 같은 결과이므로
-                        # 캐시가 같은/작은 요청을 그대로 응답해도 된다.
-                        df.attrs["window_bound"] = True
-                return df
-            errors.append("FDR: 빈 응답")  # FDR 은 무효 종목이면 예외 없이 빈 df
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"FDR: {exc}")
-        try:
-            market = self._market_by_symbol.get(symbol, "")
-            period = "max" if not max_bars or max_bars > 2000 else "3y" if max_bars <= 520 else "10y"
-            raw = _fetch_yahoo_sync(symbol, market, period)
-            df = normalize_ohlcv(raw)
-            if period != "max" and max_bars and len(df) < max_bars:
-                # FDR 경로와 같은 이유: 기간(period)이 실제로 데이터를 자른
-                # 경우에만 표시. 첫 봉이 기간 시작보다 한참 뒤면 진짜 소진.
-                years = 3 if period == "3y" else 10
-                expected_start = (pd.Timestamp.today().normalize()
-                                  - pd.DateOffset(years=years))
-                if df["date"].iloc[0] <= expected_start + pd.Timedelta(days=10):
+
+        def mark_window_bound(df: pd.DataFrame) -> pd.DataFrame:
+            # 창 제한 조회가 요청량보다 적게 돌아오면 (장기 거래정지 등)
+            # '히스토리 소진'이 아니라 '창이 짧았던 것'일 수 있다 —
+            # 캐시가 잘린 데이터를 전체 기간으로 오인하지 않게 표시.
+            # 단, 첫 봉이 요청 시작일보다 한참 뒤라면 상장이 늦어 히스토리
+            # 자체가 짧은 것(진짜 소진)이므로 표시하지 않는다 — 아니면
+            # 신생 종목이 캐시 불가가 되어 매 요청 재조회하게 된다.
+            # ('truncated' 와 달리 창이 자른 경우 같은 크기 요청은 같은
+            # 결과이므로 캐시가 같은/작은 요청을 그대로 응답해도 된다.)
+            if windowed and max_bars and len(df) < max_bars:
+                if df["date"].iloc[0] <= pd.Timestamp(start) + pd.Timedelta(days=10):
                     df.attrs["window_bound"] = True
             return df
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"Yahoo: {exc}")
+
+        def via_fdr() -> pd.DataFrame | None:
+            try:
+                if not _kr_route(symbol):
+                    _yahoo_pace()  # FDR 의 미국 리더도 야후를 때린다
+                raw = _fetch_fdr_sync(symbol, start)
+                if raw is None or len(raw) == 0:
+                    errors.append("FDR: 빈 응답")  # 무효 종목이면 예외 없이 빈 df
+                    return None
+                return mark_window_bound(normalize_ohlcv(raw))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"FDR: {exc}")
+                return None
+
+        def via_yahoo() -> pd.DataFrame | None:
+            try:
+                market = self._market_by_symbol.get(symbol, "")
+                period = ("max" if not max_bars or max_bars > 2000
+                          else "3y" if max_bars <= 520 else "10y")
+                df = normalize_ohlcv(_fetch_yahoo_sync(symbol, market, period))
+                if period != "max" and max_bars and len(df) < max_bars:
+                    # mark_window_bound 와 같은 이유 — 기간(period)이 실제로
+                    # 데이터를 자른 경우에만 표시.
+                    years = 3 if period == "3y" else 10
+                    expected_start = (pd.Timestamp.today().normalize()
+                                      - pd.DateOffset(years=years))
+                    if df["date"].iloc[0] <= expected_start + pd.Timedelta(days=10):
+                        df.attrs["window_bound"] = True
+                return df
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Yahoo: {exc}")
+                return None
+
+        def via_stooq() -> pd.DataFrame | None:
+            # 미국 일반 티커 전용 — 지수 표기(US500 등)·국내 코드는 제외
+            if not re.match(r"^[A-Za-z][A-Za-z.\-]*$", symbol):
+                return None
+            try:
+                return mark_window_bound(
+                    normalize_ohlcv(_fetch_stooq_sync(symbol, start)))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Stooq: {exc}")
+                return None
+
+        # 국내(네이버/KRX 소스)는 FDR 우선 — 빠르고 제한이 없다.
+        # 그 외(미국 티커·해외 지수)는 FDR 의 야후 리더가 쿠키 없는 요청이라
+        # 데이터센터 IP 에서 429 로 잘 막히므로, 브라우저 위장·쿠키를 처리하는
+        # yfinance 를 먼저 쓰고 FDR → Stooq 순으로 폴백한다.
+        chain = ((via_fdr, via_yahoo) if _kr_route(symbol)
+                 else (via_yahoo, via_fdr, via_stooq))
+        for fetch in chain:
+            df = fetch()
+            if df is not None and len(df) > 0:
+                return df
         raise RuntimeError(
             f"{symbol} 시세를 가져오지 못했습니다 ({' / '.join(errors)})"
         )

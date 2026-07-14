@@ -206,3 +206,111 @@ def test_fetch_daily_both_fail_raises(monkeypatch):
     p = FreeDataProvider()
     with pytest.raises(RuntimeError):
         p._fetch_daily_sync("005930")
+
+
+def test_us_symbol_prefers_yahoo(monkeypatch):
+    """미국 티커는 yfinance 를 먼저 쓴다 — FDR 의 야후 리더는 쿠키 없는 요청이라
+    데이터센터 IP(Render 등)에서 요청 제한(429)에 걸려 미국 스캔 전체를 막았다."""
+    import app.providers.free_data as mod
+
+    dates = pd.date_range("2024-01-01", periods=3, name="Date")
+    yahoo_df = pd.DataFrame({
+        "Open": [1, 2, 3], "High": [2, 3, 4], "Low": [0.5, 1, 1.5],
+        "Close": [1.5, 2.5, 3.5], "Volume": [10, 20, 30],
+    }, index=dates)
+    called = {"fdr": 0}
+
+    def spy_fdr(*a, **k):
+        called["fdr"] += 1
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", spy_fdr)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", lambda s, m="", p="max": yahoo_df)
+    p = FreeDataProvider()
+    df = p._fetch_daily_sync("UBER", 300)
+    assert len(df) == 3
+    assert called["fdr"] == 0, "미국 티커에서 FDR 이 yfinance 보다 먼저 불림"
+
+
+def test_kr_symbol_still_prefers_fdr(monkeypatch):
+    """국내 코드는 기존대로 FDR(네이버 소스) 우선 — 야후 제한과 무관한 경로."""
+    import app.providers.free_data as mod
+
+    dates = pd.date_range("2024-01-01", periods=3, name="Date")
+    fdr_df = pd.DataFrame({
+        "Open": [1, 2, 3], "High": [2, 3, 4], "Low": [0.5, 1, 1.5],
+        "Close": [1.5, 2.5, 3.5], "Volume": [10, 20, 30],
+    }, index=dates)
+    called = {"yahoo": 0}
+
+    def spy_yahoo(*a, **k):
+        called["yahoo"] += 1
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", lambda s, start="1990-01-01": fdr_df)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", spy_yahoo)
+    p = FreeDataProvider()
+    df = p._fetch_daily_sync("005930", 300)
+    assert len(df) == 3
+    assert called["yahoo"] == 0, "국내 코드에서 yfinance 가 FDR 보다 먼저 불림"
+
+
+def test_us_falls_back_to_stooq(monkeypatch):
+    """야후·FDR 이 모두 막혔을 때 미국 티커는 Stooq 로 마지막 폴백."""
+    import app.providers.free_data as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    stooq_df = pd.DataFrame({
+        "Date": ["2024-01-02", "2024-01-03"], "Open": [1.0, 2.0],
+        "High": [2.0, 3.0], "Low": [0.5, 1.0], "Close": [1.5, 2.5],
+        "Volume": [10, 20],
+    })
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_stooq_sync", lambda s, start: stooq_df)
+    monkeypatch.setattr(mod, "_YAHOO_MIN_INTERVAL_SEC", 0.0)
+    p = FreeDataProvider()
+    df = p._fetch_daily_sync("UBER", 300)
+    assert len(df) == 2
+    assert df["close"].iloc[-1] == 2.5
+
+
+def test_stooq_skipped_for_indices_and_kr(monkeypatch):
+    """Stooq 폴백은 미국 일반 티커 전용 — 지수 표기·국내 코드에는 안 쓴다."""
+    import app.providers.free_data as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("down")
+
+    counts = {"stooq": 0}
+
+    def spy_stooq(s, start):
+        counts["stooq"] += 1
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", boom)
+    monkeypatch.setattr(mod, "_fetch_stooq_sync", spy_stooq)
+    monkeypatch.setattr(mod, "_YAHOO_MIN_INTERVAL_SEC", 0.0)
+    p = FreeDataProvider()
+    for sym in ("US500", "005930"):
+        with pytest.raises(RuntimeError):
+            p._fetch_daily_sync(sym, 300)
+    assert counts["stooq"] == 0
+
+
+def test_yahoo_pace_enforces_min_interval(monkeypatch):
+    """야후행 요청은 전역 최소 간격을 지킨다 (429 IP 잠금 예방)."""
+    import time as _t
+
+    import app.providers.free_data as mod
+
+    monkeypatch.setattr(mod, "_YAHOO_MIN_INTERVAL_SEC", 0.05)
+    monkeypatch.setattr(mod, "_yahoo_next_ts", 0.0)
+    t0 = _t.perf_counter()
+    mod._yahoo_pace()
+    mod._yahoo_pace()
+    mod._yahoo_pace()
+    assert _t.perf_counter() - t0 >= 0.08, "간격 강제가 동작하지 않음"
