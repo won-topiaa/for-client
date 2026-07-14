@@ -295,7 +295,7 @@ def test_stooq_skipped_for_indices_and_kr(monkeypatch):
     monkeypatch.setattr(mod, "_fetch_stooq_sync", spy_stooq)
     monkeypatch.setattr(mod, "_YAHOO_MIN_INTERVAL_SEC", 0.0)
     p = FreeDataProvider()
-    for sym in ("US500", "005930"):
+    for sym in ("US500", "IXIC", "DJI", "005930"):
         with pytest.raises(RuntimeError):
             p._fetch_daily_sync(sym, 300)
     assert counts["stooq"] == 0

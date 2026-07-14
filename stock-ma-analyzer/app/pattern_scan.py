@@ -269,11 +269,14 @@ class PatternScanner(BaseScanner):
                 abort.set()
 
         await asyncio.gather(*(one(s) for s in universe))
+        if abort.is_set():
+            # 중단 직전 동시 진행분(≤동시성)이 뒤늦게 성공했더라도 결과를
+            # 공개하지 않는다 — 유니버스의 몇 %만 담긴 '완료'는 빈 목록보다
+            # 해롭다 (5분간 캐시되어 전 사용자에게 보임)
+            raise RuntimeError(
+                "스캔 초반 종목 시세 조회가 모두 실패했습니다 "
+                "(데이터 소스 장애 또는 요청 제한)")
         if universe and not per_symbol:
-            if abort.is_set():
-                raise RuntimeError(
-                    f"초반 {self._done}종목 시세 조회가 모두 실패했습니다 "
-                    "(데이터 소스 장애 또는 요청 제한)")
             raise RuntimeError("종목 데이터를 하나도 가져오지 못했습니다")
 
         results: dict[str, Any] = {"patterns": {}}

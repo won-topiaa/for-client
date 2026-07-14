@@ -723,3 +723,40 @@ def test_scanner_fail_fast_on_total_outage():
     assert scanner._error and "실패" in scanner._error
     assert calls["n"] < 60, "조기 중단 없이 유니버스 전체를 훑었음"
     assert calls["n"] >= FAIL_FAST_PROBE, "판정 표본도 훑기 전에 중단됨"
+
+
+def test_scanner_fail_fast_discards_straggler_successes():
+    """조기 중단이 결정된 뒤 동시 진행분 몇 개가 뒤늦게 성공해도, 유니버스의
+    몇 %짜리 '완료' 결과를 공개하지 않고 오류로 처리한다 (레이스 회귀 방지)."""
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class PartialOutage:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            if symbol.startswith("BAD"):
+                raise RuntimeError("429")
+            await asyncio.sleep(1.0)  # 실패 12개가 먼저 끝나도록 지연
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        # 실패 12개(즉시) + 성공 8개(느림): 실패가 모두 먼저 완료되어
+        # abort 가 확정된 뒤 성공이 뒤늦게 도착하는 순서를 강제한다
+        return ([SymbolInfo(f"BAD{i}", "b", "T") for i in range(12)]
+                + [SymbolInfo(f"GOOD{i}", "g", "T") for i in range(8)])
+
+    scanner = PatternScanner(PartialOutage(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert scanner._error and "실패" in scanner._error, scanner._error
+    assert scanner._results is None, "중단된 스캔의 반쪽 결과가 공개됨"

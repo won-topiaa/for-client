@@ -65,7 +65,8 @@ def test_young_symbol_not_marked_truncated(monkeypatch):
 
     monkeypatch.setattr(mod, "_fetch_fdr_sync", fake_fdr)
     p = FreeDataProvider()
-    df = p._fetch_daily_sync("NEWBIE", max_bars=1050)
+    # 국내 코드(FDR 우선 경로)를 써야 테스트가 야후 실호출 없이 밀폐된다
+    df = p._fetch_daily_sync("900001", max_bars=1050)
     assert not df.attrs.get("truncated", False)
     assert not df.attrs.get("window_bound", False), \
         "신생 종목이 창-절단으로 오판돼 캐시 효율이 떨어짐"
@@ -83,7 +84,8 @@ def test_window_bound_fetch_marked_window_bound(monkeypatch):
 
     monkeypatch.setattr(mod, "_fetch_fdr_sync", fake_fdr)
     p = FreeDataProvider()
-    df = p._fetch_daily_sync("OLDIE", max_bars=1050)
+    # 국내 코드(FDR 우선 경로)를 써야 테스트가 야후 실호출 없이 밀폐된다
+    df = p._fetch_daily_sync("900002", max_bars=1050)
     assert df.attrs.get("window_bound", False) is True
 
 
