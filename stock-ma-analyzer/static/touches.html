@@ -173,7 +173,17 @@
     25% { opacity: 1; }
     100% { opacity: 0; transform: translateY(-46px) rotate(10deg); }
   }
-  .party-caption { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 18px; }
+  .party-caption {
+    text-align: center; color: var(--muted); font-size: 12.5px;
+    margin: 18px auto 0; max-width: 660px; line-height: 1.75; padding: 0 16px;
+    text-wrap: balance; /* 두 줄로 꺾일 때 한두 글자만 남는 줄 방지 */
+    word-break: keep-all; /* 한국어: 단어 중간이 아니라 어절 단위로 줄바꿈 */
+  }
+  .party-caption .tip-tag {
+    display: inline-block; padding: 1px 9px; margin-right: 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    background: var(--info-bg); color: var(--info); border: 1px solid var(--info-border);
+  }
   @media (prefers-reduced-motion: reduce) {
     .bot, .bot *, .notes span { animation: none !important; }
   }
@@ -306,7 +316,7 @@
     </div>
   </div>
   <div class="party-caption" id="partyCaption" style="display:none">
-    양봉이와 음봉이가 지지선을 짚어보는 중…
+    스캔하는 동안 시장 한입 지식을 보여드립니다…
   </div>
 
   <div class="status" id="scanStatus"></div>
@@ -328,6 +338,7 @@
   </footer>
 </div>
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/tips.js"></script>
 <script src="/static/touches.js"></script>
 <script src="/static/ticker.js"></script>
 </body>
