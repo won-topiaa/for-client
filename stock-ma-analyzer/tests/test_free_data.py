@@ -208,9 +208,37 @@ def test_fetch_daily_both_fail_raises(monkeypatch):
         p._fetch_daily_sync("005930")
 
 
-def test_us_symbol_prefers_yahoo(monkeypatch):
-    """미국 티커는 yfinance 를 먼저 쓴다 — FDR 의 야후 리더는 쿠키 없는 요청이라
-    데이터센터 IP(Render 등)에서 요청 제한(429)에 걸려 미국 스캔 전체를 막았다."""
+def test_us_symbol_prefers_stooq(monkeypatch):
+    """미국 티커는 Stooq 를 먼저 쓴다 — 야후(yfinance/FDR)는 쿠키 없는 요청이
+    데이터센터 IP(Render 등)에서 429·행에 걸려 미국 스캔 전체를 느리게 만든다.
+    Stooq(무키·데이터센터 친화적)가 성공하면 야후·FDR 은 아예 부르지 않는다."""
+    import app.providers.free_data as mod
+
+    stooq_df = pd.DataFrame({
+        "Date": ["2024-01-02", "2024-01-03", "2024-01-04"], "Open": [1., 2., 3.],
+        "High": [2., 3., 4.], "Low": [.5, 1., 1.5], "Close": [1.5, 2.5, 3.5],
+        "Volume": [10, 20, 30]})
+    called = {"yahoo": 0, "fdr": 0}
+
+    def spy_yahoo(*a, **k):
+        called["yahoo"] += 1
+        raise RuntimeError("down")
+
+    def spy_fdr(*a, **k):
+        called["fdr"] += 1
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(mod, "_fetch_stooq_sync", lambda s, start: stooq_df)
+    monkeypatch.setattr(mod, "_fetch_yahoo_sync", spy_yahoo)
+    monkeypatch.setattr(mod, "_fetch_fdr_sync", spy_fdr)
+    p = FreeDataProvider()
+    df = p._fetch_daily_sync("UBER", 300)
+    assert len(df) == 3 and df["close"].iloc[-1] == 3.5
+    assert called["yahoo"] == 0 and called["fdr"] == 0, "Stooq 성공인데 야후/FDR 이 불림"
+
+
+def test_us_falls_back_to_yahoo_when_stooq_fails(monkeypatch):
+    """Stooq 가 실패하면 미국 티커는 yfinance 로 폴백한다."""
     import app.providers.free_data as mod
 
     dates = pd.date_range("2024-01-01", periods=3, name="Date")
@@ -218,18 +246,13 @@ def test_us_symbol_prefers_yahoo(monkeypatch):
         "Open": [1, 2, 3], "High": [2, 3, 4], "Low": [0.5, 1, 1.5],
         "Close": [1.5, 2.5, 3.5], "Volume": [10, 20, 30],
     }, index=dates)
-    called = {"fdr": 0}
-
-    def spy_fdr(*a, **k):
-        called["fdr"] += 1
-        raise RuntimeError("down")
-
-    monkeypatch.setattr(mod, "_fetch_fdr_sync", spy_fdr)
+    monkeypatch.setattr(mod, "_fetch_stooq_sync",
+                        lambda s, start: (_ for _ in ()).throw(RuntimeError("stooq down")))
     monkeypatch.setattr(mod, "_fetch_yahoo_sync", lambda s, m="", p="max": yahoo_df)
+    monkeypatch.setattr(mod, "_YAHOO_MIN_INTERVAL_SEC", 0.0)
     p = FreeDataProvider()
     df = p._fetch_daily_sync("UBER", 300)
-    assert len(df) == 3
-    assert called["fdr"] == 0, "미국 티커에서 FDR 이 yfinance 보다 먼저 불림"
+    assert len(df) == 3 and df["close"].iloc[-1] == 3.5
 
 
 def test_kr_symbol_still_prefers_fdr(monkeypatch):
@@ -255,8 +278,8 @@ def test_kr_symbol_still_prefers_fdr(monkeypatch):
     assert called["yahoo"] == 0, "국내 코드에서 yfinance 가 FDR 보다 먼저 불림"
 
 
-def test_us_falls_back_to_stooq(monkeypatch):
-    """야후·FDR 이 모두 막혔을 때 미국 티커는 Stooq 로 마지막 폴백."""
+def test_us_uses_stooq_data(monkeypatch):
+    """미국 티커는 Stooq CSV 를 정규화해 그대로 쓴다 (야후 없이도 동작)."""
     import app.providers.free_data as mod
 
     def boom(*a, **k):
