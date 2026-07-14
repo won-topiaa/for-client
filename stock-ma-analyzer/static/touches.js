@@ -98,6 +98,22 @@
     charts.length = 0;
   }
 
+  // 보이는 매칭 내용 기준 지문 — 스캔 진행 중 매칭이 바뀔 때만 재렌더한다
+  function matchFp(body) {
+    return JSON.stringify([
+      body.totalMatches, !!body.refreshing, !!body.partial,
+      (body.matches || []).map((m) => [m.symbol, m.maScore, m.distPct]),
+    ]);
+  }
+
+  function statusText(body) {
+    return `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · 오늘 지지선 터치 ${body.totalMatches}개` +
+      (body.totalMatches > body.matches.length
+        ? ` (상위 ${body.matches.length}개 표시)` : "") +
+      (body.partial ? " · 남은 종목 계속 확인 중…"
+        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+  }
+
   function updateProgress(body) {
     const label =
       `${market === "kr" ? "국내" : "미국"} 종목 백테스트 중… ` +
@@ -159,24 +175,24 @@
         return;
       }
       showParty(false);
-      if (isPoll && renderedWhileRefreshing && body.refreshing) {
+      // '완성된 만료 결과'를 배경 재스캔 중 보여주는 경우만 재렌더 생략한다.
+      // 부분(partial) 결과는 스캔이 돌며 점점 채워지므로 계속 갱신해야 한다.
+      if (isPoll && renderedWhileRefreshing && body.refreshing && !body.partial) {
+        el.status.textContent = statusText(body);
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
-      const fp = JSON.stringify([body.generatedAt, body.scanned, body.elapsedSec, body.universe,
-        body.totalMatches, body.matches.length && body.matches[0].symbol,
-        body.refreshing, body.partial]);
-      // 부분 결과이거나 갱신 중이면 빠르게(5초) 폴링해 채워지는 대로 받아본다
+      // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 재렌더 없음
+      const fp = matchFp(body);
       const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
       if (isPoll && fp === lastFp) {
-        // 내용이 그대로면 재렌더(차트 재생성) 없이 다음 keep-alive 만 예약
+        el.status.textContent = statusText(body);
         pollTimer = setTimeout(() => load(true), keepAlive);
         return;
       }
       render(body);
       // 지문은 렌더가 '성공한 뒤'에만 확정한다 — 렌더 도중 예외가 나면
-      // (예: 차트 라이브러리 로드 실패) 다음 폴이 같은 지문에 막혀
-      // 고장난 화면이 5분 keep-alive 에 갇히는 것을 방지
+      // 고장난 화면이 keep-alive 에 갇히는 것을 방지
       lastFp = fp;
       renderedWhileRefreshing = !!body.refreshing;
       pollTimer = setTimeout(() => load(true), keepAlive);
@@ -222,13 +238,9 @@
     lastBody = body;
     destroyCharts();
     el.matches.innerHTML = "";
-    el.status.textContent =
-      `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · 오늘 지지선 터치 ${body.totalMatches}개` +
-      (body.totalMatches > body.matches.length
-        ? ` (상위 ${body.matches.length}개 표시)` : "") +
-      (body.partial ? " · 남은 종목 계속 확인 중…"
-        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
-    announce(el.status.textContent); // 시작을 알렸으니 완료도 알린다
+    el.status.textContent = statusText(body);
+    // 진행 중(부분) 결과는 스크린리더에 알리지 않고, 최종 결과만 알린다
+    if (!body.partial) announce(el.status.textContent);
     if (!body.matches.length) {
       el.matches.innerHTML =
         `<div class="empty">오늘 검증된 지지선에 닿아 있는 종목이 없습니다.<br>` +

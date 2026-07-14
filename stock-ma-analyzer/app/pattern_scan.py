@@ -38,6 +38,10 @@ SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 �
 # 하지 않게 하는 핵심 장치. 부분 결과는 낮은 커버리지 → 짧은 TTL 로 백그라운드
 # 재스캔이 이어받아(따뜻한 캐시라 빠름) 점점 채워진다.
 SCAN_SOFT_BUDGET_SEC = 150.0
+# 스캔이 도는 동안 이 간격마다 '지금까지 모은 결과'를 부분(partial)으로 공개한다.
+# 첫 결과가 몇 초 만에 뜨고 스캔이 진행되며 점점 채워져, 다 끝날 때까지
+# 기다리는 체감 대기시간을 없앤다 (프런트는 partial 이면 5초마다 폴링).
+PUBLISH_INTERVAL_SEC = 6.0
 # 종목당 일봉 수 — 터치 스캐너와 같은 값으로 맞춰, 두 스캐너가 시세 캐시의
 # 같은 페치 한 번을 공유하게 한다 (패턴 자체는 뒤쪽 500봉만 사용)
 FETCH_BARS = 1050
@@ -261,9 +265,16 @@ class PatternScanner(BaseScanner):
         abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
         budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
+        last_publish = time.monotonic()
+
+        def publish(partial: bool) -> None:
+            """지금까지 모은 per_symbol 로 결과를 만들어 공개 (동기 — 레이스 없음)."""
+            self._partial = partial
+            self._finish(self._build_results(per_symbol), len(universe),
+                         len(per_symbol), started)
 
         async def one(info: SymbolInfo):
-            nonlocal attempted
+            nonlocal attempted, last_publish
             if abort.is_set() or budget_hit.is_set():
                 return
             async with sem:
@@ -299,6 +310,10 @@ class PatternScanner(BaseScanner):
             # 선두가 캐시된 실패여도 스캔이 신선한 종목까지 진행해 완주한다)
             if attempted >= FAIL_FAST_PROBE and not per_symbol:
                 abort.set()
+            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다
+            if per_symbol and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC:
+                last_publish = time.monotonic()
+                publish(partial=True)
 
         await asyncio.gather(*(one(s) for s in universe))
         if abort.is_set():
@@ -311,10 +326,12 @@ class PatternScanner(BaseScanner):
             # 시간예산 초과 등으로 성공이 하나도 없으면 보여줄 게 없다
             raise RuntimeError(
                 "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
-        # per_symbol 이 있으면 완주했든 시간예산으로 부분이든 결과를 발행한다.
-        # (부분이면 커버리지가 낮아 _finish 가 TTL 을 짧게 잡아 곧 재스캔한다)
-        self._partial = budget_hit.is_set()
+        # 완주했든 시간예산으로 부분이든 최종 결과를 발행한다.
+        publish(partial=budget_hit.is_set())
+        logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d",
+                    len(per_symbol), self._results["elapsedSec"], self._errors)
 
+    def _build_results(self, per_symbol: list) -> dict[str, Any]:
         results: dict[str, Any] = {"patterns": {}}
         for key in PATTERN_KEYS:
             matched = [(info, hits[key], df) for info, hits, df in per_symbol
@@ -323,10 +340,7 @@ class PatternScanner(BaseScanner):
             results["patterns"][key] = [
                 _serialize_match(info, hit, df) for info, hit, df in matched[:TOP_N]
             ]
-        coverage = self._finish(results, len(universe), len(per_symbol), started)
-        logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d (커버리지 %.0f%%)",
-                    len(per_symbol), results["elapsedSec"], self._errors,
-                    coverage * 100)
+        return results
 
 
 def _serialize_match(info: SymbolInfo, hit, df: pd.DataFrame) -> dict[str, Any]:
