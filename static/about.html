@@ -134,6 +134,30 @@
   .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
   .f-nav a { color: var(--muted); text-decoration: none; }
   .f-nav a:hover { color: var(--accent); }
+
+  /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
+  @media (max-width: 640px) {
+    .header-inner { padding: 10px 16px; gap: 6px 10px; }
+    .header-inner h1 { font-size: 16px; }
+    .header-inner .sub { font-size: 11px; line-height: 1.35; }
+    .brand-box svg { width: 28px !important; height: 28px !important; }
+    .brand-box { gap: 9px !important; }
+    .wrap { padding-left: 16px; padding-right: 16px; }
+    /* 상단 내비: 2열 그리드로 균등·크게 (엄지로 누르기 좋게) */
+    .top-nav { width: 100%; gap: 8px; }
+    .top-nav a {
+      flex: 1 1 calc(50% - 4px); text-align: center; min-width: 0;
+      padding: 10px 8px; font-size: 12.5px;
+    }
+    .hero { padding: 34px 0 24px; }
+    .hero h2 { font-size: 28px; }
+    .hero .mark svg { width: 48px; height: 48px; }
+    section { margin-top: 26px; }
+    .contact { padding: 20px 16px; }
+    .contact .mail { display: block; padding: 13px; }  /* 메일 버튼 폭 전체 */
+    .f-nav { gap: 12px 18px; }
+    .f-nav a { padding: 3px 0; }
+  }
 </style>
 </head>
 <body>

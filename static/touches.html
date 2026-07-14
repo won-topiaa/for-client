@@ -252,6 +252,31 @@
   .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
   .f-nav a { color: var(--muted); text-decoration: none; }
   .f-nav a:hover { color: var(--accent); }
+
+  /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
+  @media (max-width: 640px) {
+    .header-inner { padding: 10px 16px; gap: 6px 10px; }
+    .header-inner h1 { font-size: 16px; }
+    .header-inner .sub { font-size: 11px; line-height: 1.35; }
+    .brand svg { width: 28px; height: 28px; }
+    .brand-box { gap: 9px; }
+    .header-inner > span { flex-wrap: wrap; gap: 8px 16px; }
+    .nav-link { padding: 4px 0; }  /* 탭 영역 확대 */
+    .wrap { padding-left: 16px; padding-right: 16px; gap: 16px; }
+    /* 지수 티커: 한 줄 가로 스크롤 (세로 공간 절약) */
+    .ticker {
+      flex-wrap: nowrap; overflow-x: auto; gap: 16px; padding: 6px 16px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .ticker::-webkit-scrollbar { display: none; }
+    .tk { flex: none; }
+    /* 국내/미국 토글: 폭을 반씩 나눠 큼직하게 */
+    .market-toggle { width: 100%; }
+    .market-toggle button { flex: 1; padding: 11px 0; font-size: 14px; }
+    .method { padding: 13px 15px; font-size: 12.5px; }
+    .f-nav { gap: 12px 18px; }
+    .f-nav a { padding: 3px 0; }
+  }
 </style>
 </head>
 <body>
