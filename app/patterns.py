@@ -104,13 +104,16 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
         (i1, p1, _), (t1i, t1p, _), (hi, hp, _), (t2i, t2p, _), (i3, p3, _) = window
         if i3 < n - 90:  # 오른어깨가 최근 90봉 안이어야 '지금' 유효
             continue
-        ref = abs(hp)
+        # 분모는 넥라인(되돌림 저/고점 평균 = 돌파 기준 가격대). 머리 가격을
+        # 쓰면 머리가 깊은 역H&S 에서 밴드가 비정상적으로 좁아져, 정형과
+        # 거울상인 역형이 같은 기하인데도 탈락한다 (dist_now 5% 룰과 동일 이유).
+        ref = max(abs(t1p + t2p) / 2, 1e-9)
         # 머리가 양쪽 어깨보다 유의미하게 돌출 (3% 이상)
         prom1 = sign * (hp - p1) / ref
         prom3 = sign * (hp - p3) / ref
         if prom1 < 0.03 or prom3 < 0.03:
             continue
-        # 어깨 높이 대칭 (가격의 5% 이내)
+        # 어깨 높이 대칭 (넥라인 대비 5% 이내)
         sym = abs(p1 - p3) / ref
         if sym > 0.05:
             continue
@@ -291,7 +294,19 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         ss_res = float(np.sum((cup - fit) ** 2))
         ss_tot = float(np.sum((cup - cup.mean()) ** 2)) or 1.0
         r2 = 1 - ss_res / ss_tot
-        if coef[0] <= 0 or r2 < 0.70:  # 위로 볼록(V자·직선) 배제
+        # 위로 볼록(∪)이 아니면 컵이 아니고, 적합도가 노이즈 수준이면 배제.
+        if coef[0] <= 0 or r2 < 0.70:
+            continue
+        # V자 배제: 대칭 V 는 2차 적합도가 0.94 수준까지 올라가 단순 r² 문턱을
+        # 넘어버린다. 그래서 같은 바닥을 'V-모델'(꼭짓점 절댓값 선형)로도
+        # 맞춰 보고, 포물선이 V 보다 확실히 더 잘 맞을 때만 둥근 컵으로 본다
+        # (V 는 V-모델이 r²≈1 로 이기고, 진짜 ∪ 는 포물선이 이긴다).
+        vx = xs[int(np.argmin(cup))]
+        vfeat = np.abs(xs - vx)
+        vA = np.vstack([vfeat, np.ones_like(vfeat)]).T
+        (va, vb), *_ = np.linalg.lstsq(vA, cup, rcond=None)
+        r2_v = 1 - float(np.sum((cup - (va * vfeat + vb)) ** 2)) / ss_tot
+        if r2 <= r2_v:  # V(또는 직선)가 포물선만큼/더 잘 맞으면 둥근 바닥 아님
             continue
         # 핸들: 테두리 회복 후 얕은 되돌림, 현재가는 테두리 부근.
         # 탈락 기준 1 (핸들 붕괴, O'Neil 1988): 핸들 조정이 컵 깊이의 50% 를

@@ -102,6 +102,17 @@ async def lifespan(app: FastAPI):
         for m in ("kr", "us")
     }
     yield
+    # 진행 중인 백그라운드 스캔을 정리하고 종료 — 안 하면 "Task was destroyed
+    # but it is pending!" 경고와 함께 행 스레드가 셧다운을 지연시킨다
+    for scanner in (list(app.state.scanners.values())
+                    + list(app.state.touch_scanners.values())):
+        task = scanner._task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
     if hasattr(app.state.provider, "aclose"):
         await app.state.provider.aclose()
 
@@ -136,9 +147,12 @@ _rate_windows: dict[str, tuple[float, int]] = {}
 
 
 def _client_ip(request: Request) -> str:
+    # XFF 는 「클라이언트가 보낸 값들, ..., 마지막 프록시가 덧붙인 실제 접속 IP」
+    # 형태다. 첫 항목은 클라이언트가 마음대로 위조할 수 있어 (요청마다 바꾸면
+    # 제한 우회) 신뢰할 수 있는 마지막 홉을 쓴다 (Render 등 단일 LB 전제).
     fwd = request.headers.get("x-forwarded-for", "")
     if fwd:
-        return fwd.split(",")[0].strip()
+        return fwd.split(",")[-1].strip()
     return request.client.host if request.client else "?"
 
 
@@ -150,7 +164,10 @@ def _rate_limited(ip: str) -> bool:
         window, count = now, 0
     count += 1
     if len(_rate_windows) > 10_000:  # 메모리 보호
-        _rate_windows.clear()
+        # 전체 초기화는 다량의 가짜 IP 로 정상 사용자들의 창까지 리셋시키는
+        # 우회 수단이 된다 — 오래된(=대부분 만료된) 창부터 절반만 비운다
+        for k in sorted(_rate_windows, key=lambda k: _rate_windows[k][0])[:5_000]:
+            _rate_windows.pop(k, None)
     _rate_windows[ip] = (window, count)
     return count > ANALYZE_RATE_LIMIT_PER_MIN
 

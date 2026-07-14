@@ -11,9 +11,11 @@ FinanceDataReader/yfinance 는 비공식·무료 소스라 간헐적으로 느�
 from __future__ import annotations
 
 import asyncio
+import functools
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +220,11 @@ class FreeDataProvider:
         # KR/US 목록은 상태를 공유하지 않으므로 락도 분리 (KR 갱신 15초가
         # US 스캔 시작을 막지 않게)
         self._us_lock = asyncio.Lock()
+        # 네트워크 페치 전용 스레드풀 — wait_for(60초)에 버려진 행 스레드가
+        # 기본 실행기(작은 인스턴스에선 5칸)를 잠식해 분석 연산·상장목록까지
+        # 굶기는 것을 막는다. 여기서 새면 다른 '페치'만 느려질 뿐이다.
+        self._fetch_pool = ThreadPoolExecutor(
+            max_workers=8, thread_name_prefix="candle-fetch")
 
     def _listing_fresh(self) -> bool:
         return (self._listing is not None
@@ -238,7 +245,8 @@ class FreeDataProvider:
                 # 데이터 소스가 응답을 안 주면 검색 전체가 영구 블록되므로
                 # 시간 상한 필수 (락과 API 는 풀리고, 스레드는 알아서 끝남)
                 raw = await asyncio.wait_for(
-                    asyncio.to_thread(_load_listing_sync),
+                    asyncio.get_running_loop().run_in_executor(
+                        self._fetch_pool, _load_listing_sync),
                     timeout=_LISTING_TIMEOUT_SEC,
                 )
                 listing = normalize_listing(raw)
@@ -285,8 +293,12 @@ class FreeDataProvider:
                 f"FreeDataProvider 는 일봉만 제공합니다 (요청: {timeframe})"
             )
         try:
+            loop = asyncio.get_running_loop()
             df = await asyncio.wait_for(
-                asyncio.to_thread(self._fetch_daily_sync, symbol, max_bars),
+                loop.run_in_executor(
+                    self._fetch_pool,
+                    functools.partial(self._fetch_daily_sync, symbol, max_bars),
+                ),
                 timeout=_CANDLES_TIMEOUT_SEC,
             )
         except (asyncio.TimeoutError, TimeoutError) as exc:
@@ -398,7 +410,8 @@ class FreeDataProvider:
                 return self._us_listing
             try:
                 raw = await asyncio.wait_for(
-                    asyncio.to_thread(_load_us_listing_sync),
+                    asyncio.get_running_loop().run_in_executor(
+                        self._fetch_pool, _load_us_listing_sync),
                     timeout=_LISTING_TIMEOUT_SEC,
                 )
                 sym = _pick_col(raw, "symbol", "code", "ticker")
@@ -421,8 +434,9 @@ class FreeDataProvider:
             self._us_ts = time.monotonic()
             return out
 
-    async def aclose(self) -> None:  # 인터페이스 호환
-        return None
+    async def aclose(self) -> None:
+        # 대기 중인 페치는 버리고 즉시 종료 — 행 스레드가 셧다운을 붙잡지 않게
+        self._fetch_pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _load_listing_sync() -> pd.DataFrame:

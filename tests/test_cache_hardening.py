@@ -126,3 +126,115 @@ def test_window_bound_cached_serves_same_size_request():
 
     asyncio.new_event_loop().run_until_complete(go())
     assert calls["n"] == 2, f"upstream 호출 {calls['n']}회 (기대 2)"
+
+
+def _mkdf(n=800):
+    import pandas as pd
+    from app.providers.base import validate_candles
+    return validate_candles(pd.DataFrame({
+        "date": pd.bdate_range("2021-01-04", periods=n),
+        "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10,
+    }))
+
+
+def test_negative_cache_skips_recently_failed_symbol():
+    """한 번 실패한 종목은 잠시 즉시 실패시켜, 행 걸리는 종목 수십 개가
+    스캔을 워치독까지 끌고 가 '취소→쿨다운→재시도' 무한 사이클에 빠지는
+    것을 막는다."""
+    import asyncio
+
+    from app.providers.cache import CachingProvider
+
+    calls = {"n": 0}
+
+    class Flaky:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            calls["n"] += 1
+            raise RuntimeError("429 막힘")
+
+        async def search(self, q):
+            return []
+
+    cache = CachingProvider(Flaky())
+
+    async def go():
+        for _ in range(5):
+            try:
+                await cache.candles("BAD", "day", 300)
+            except RuntimeError:
+                pass
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert calls["n"] == 1, f"실패가 네거티브 캐시되지 않아 {calls['n']}번 재시도됨"
+
+
+def test_negative_cache_convoy_waiters_share_failure():
+    """같은 키를 동시에 기다리던 요청들도 한 번의 실패를 공유한다 (핫키
+    컨보이 방지) — /api/indices 를 여러 탭이 폴링할 때 지수 실패가 대기열
+    길이 × 60초로 늘어나지 않게."""
+    import asyncio
+
+    from app.providers.cache import CachingProvider
+
+    calls = {"n": 0}
+
+    class SlowFail:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            calls["n"] += 1
+            await asyncio.sleep(0.05)
+            raise RuntimeError("느린 실패")
+
+        async def search(self, q):
+            return []
+
+    cache = CachingProvider(SlowFail())
+
+    async def go():
+        results = await asyncio.gather(
+            *(cache.candles("IDX", "day", 300) for _ in range(6)),
+            return_exceptions=True,
+        )
+        assert all(isinstance(r, RuntimeError) for r in results)
+
+    asyncio.new_event_loop().run_until_complete(go())
+    assert calls["n"] == 1, f"대기자들이 같은 실패를 {calls['n']}번 반복함"
+
+
+def test_negative_cache_cleared_on_success():
+    """실패 후 성공하면 네거티브 캐시가 풀려 정상 응답한다."""
+    import asyncio
+
+    from app.providers.cache import CachingProvider
+
+    state = {"fail": True}
+
+    class Recovering:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            if state["fail"]:
+                raise RuntimeError("일시 실패")
+            return _mkdf()
+
+        async def search(self, q):
+            return []
+
+    cache = CachingProvider(Recovering())
+
+    async def go():
+        try:
+            await cache.candles("SYM", "day", 300)
+        except RuntimeError:
+            pass
+        # 네거티브 캐시 만료를 앞당겨 재조회 허용
+        cache._fails[("candles", "SYM", "day")] = (0.0, "x")
+        state["fail"] = False
+        df = await cache.candles("SYM", "day", 300)
+        assert len(df) == 300
+        assert ("candles", "SYM", "day") not in cache._fails
+
+    asyncio.new_event_loop().run_until_complete(go())

@@ -166,6 +166,42 @@ def test_analyze_rate_limit(monkeypatch):
     assert 429 in codes[3:]
 
 
+def test_client_ip_uses_last_forwarded_hop():
+    """XFF 는 클라이언트가 앞쪽 항목을 위조할 수 있으므로, 신뢰할 수 있는
+    마지막 홉(LB 가 덧붙인 실제 접속 IP)을 써야 제한 우회를 막는다."""
+    import app.server as server_mod
+
+    class FakeReq:
+        def __init__(self, xff):
+            self.headers = {"x-forwarded-for": xff}
+            self.client = None
+
+    ip = server_mod._client_ip(FakeReq("1.1.1.1, 2.2.2.2, 9.9.9.9"))
+    assert ip == "9.9.9.9", "위조 가능한 첫 홉 대신 마지막 홉을 써야 함"
+
+
+def test_rate_window_overflow_keeps_recent_ips():
+    """제한창 초과 정리는 전체 초기화가 아니라 오래된 절반만 비워야 한다 —
+    가짜 IP 를 대량으로 보내 정상 사용자 창까지 리셋시키는 우회를 막는다."""
+    import time as _t
+
+    import app.server as server_mod
+
+    server_mod._rate_windows.clear()
+    now = _t.time()
+    # 최신 IP 하나가 현재 창에서 이미 한도까지 찬 상태
+    server_mod._rate_windows["recent"] = (now, 999)
+    # 오래된 가짜 IP 로 10k 초과 유발 (창은 지났지만 아직 dict 에 남아 있음)
+    for i in range(10_050):
+        server_mod._rate_windows[f"old{i}"] = (now - 1000.0, 1)
+    server_mod._rate_limited("recent")  # 정리 트리거 (recent 는 같은 창이라 +1)
+    # 최신 IP 의 카운트가 살아남아야 (전체 초기화면 1로 리셋됨)
+    assert server_mod._rate_windows["recent"][1] >= 1000
+    assert len(server_mod._rate_windows) < 10_050
+    assert server_mod._rate_windows.get("recent") is not None
+    server_mod._rate_windows.clear()
+
+
 def test_vendored_chart_lib_checksum():
     """벤더 파일 변조/실수 수정 감지 — 의도적 업그레이드 시 체크섬도 갱신할 것."""
     import hashlib
