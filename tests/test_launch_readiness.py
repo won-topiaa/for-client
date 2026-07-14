@@ -194,3 +194,35 @@ def test_analyze_serializes_without_nan_on_degenerate_frames(kind):
         analyze_symbol(Prov(), settings, "005930", {"day": 3.0, "week": 7.0, "month": None}))
     # FastAPI JSONResponse 와 동일하게 allow_nan=False — NaN/Inf 있으면 여기서 터진다
     json.dumps(out, allow_nan=False)
+
+
+def test_scan_publishes_partial_results_while_running(monkeypatch):
+    """스캔이 도는 동안 '부분 결과'가 완료 전에 여러 번 공개돼, 사용자가 첫
+    결과를 몇 초 만에 보고 점점 채워지는 것을 보게 한다 (점진 공개)."""
+    import app.pattern_scan as ps
+
+    monkeypatch.setattr(ps, "PUBLISH_INTERVAL_SEC", 0.3)
+
+    class Net:
+        name = "fake"
+        async def candles(self, s, tf, mb, use_fail_cache=False):
+            await asyncio.sleep(0.1)
+            return _good(seed=hash(s) % 9999)
+        async def search(self, q):
+            return []
+
+    async def go():
+        cache = CachingProvider(Net())
+        sc = PatternScanner(cache, _universe(60), index_symbol="KS11")
+        task = asyncio.create_task(sc._scan())
+        seen_scanned = set()
+        while not task.done():
+            await asyncio.sleep(0.25)
+            if sc._results is not None:
+                seen_scanned.add(sc._results["scanned"])
+        await task
+        # 완료 전 서로 다른 scanned 값의 부분 스냅샷이 2회 이상 있어야 한다
+        partial_counts = [s for s in seen_scanned if s < 60]
+        assert len(partial_counts) >= 2, f"점진 공개 안 됨: {sorted(seen_scanned)}"
+        assert sc._results["scanned"] == 60 and sc._partial is False
+    asyncio.new_event_loop().run_until_complete(asyncio.wait_for(go(), timeout=30))

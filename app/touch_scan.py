@@ -26,6 +26,7 @@ from .analysis import EngineParams, analyze_timeframe, atr as atr_fn, sma
 from .pattern_scan import (
     FAIL_FAST_PROBE,
     FETCH_BARS,
+    PUBLISH_INTERVAL_SEC,
     SCAN_SOFT_BUDGET_SEC,
     BaseScanner,
     UniverseFn,
@@ -62,9 +63,17 @@ class TouchScanner(BaseScanner):
         abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
         budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
+        last_publish = time.monotonic()
+
+        def publish(partial: bool) -> None:
+            """지금까지 모은 matches 로 결과를 만들어 공개 (동기 — 레이스 없음)."""
+            self._partial = partial
+            ranked = sorted(matches, key=lambda m: (-m["maScore"], abs(m["distPct"])))
+            self._finish({"matches": ranked[:TOP_N], "totalMatches": len(matches)},
+                         len(universe), scanned, started)
 
         async def one(info: SymbolInfo):
-            nonlocal scanned, attempted
+            nonlocal scanned, attempted, last_publish
             if abort.is_set() or budget_hit.is_set():
                 return
             async with sem:
@@ -99,6 +108,11 @@ class TouchScanner(BaseScanner):
                         attempted += 1
             if attempted >= FAIL_FAST_PROBE and scanned == 0:
                 abort.set()
+            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다
+            # (scanned>0 이어야 '검증 시도는 하고 있다'는 뜻이라 공개할 가치가 있다)
+            if scanned and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC:
+                last_publish = time.monotonic()
+                publish(partial=True)
 
         await asyncio.gather(*(one(s) for s in universe))
         if abort.is_set():
@@ -112,15 +126,9 @@ class TouchScanner(BaseScanner):
         if universe and scanned == 0:
             raise RuntimeError(
                 "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
-        self._partial = budget_hit.is_set()
-
-        # 믿을 만한 선 순서: 선의 점수(자주+믿을만) 우선, 같은 점수면 더 가까이
-        matches.sort(key=lambda m: (-m["maScore"], abs(m["distPct"])))
-        results: dict[str, Any] = {"matches": matches[:TOP_N],
-                                   "totalMatches": len(matches)}
-        coverage = self._finish(results, len(universe), scanned, started)
-        logger.info("터치 스캔 완료: %d종목 중 터치 %d / %.1fs (커버리지 %.0f%%)",
-                    scanned, len(matches), results["elapsedSec"], coverage * 100)
+        publish(partial=budget_hit.is_set())
+        logger.info("터치 스캔 완료: %d종목 중 터치 %d / %.1fs",
+                    scanned, len(matches), self._results["elapsedSec"])
 
     def _touched_today(self, close: np.ndarray, low: np.ndarray,
                        band_now: float) -> dict[int, float]:
