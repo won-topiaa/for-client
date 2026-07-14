@@ -50,7 +50,7 @@ class _DummyProvider:
     async def search(self, q):
         return []
 
-    async def candles(self, symbol, timeframe, max_bars):
+    async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
         raise NotImplementedError
 
 
@@ -79,7 +79,7 @@ def test_touch_scanner_end_to_end():
     class FakeProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             return dfs[symbol]
 
         async def search(self, q):
@@ -145,7 +145,7 @@ def test_touch_scanner_fail_fast_on_total_outage():
     class DeadProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             calls["n"] += 1
             raise RuntimeError("upstream down")
 

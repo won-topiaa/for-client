@@ -261,8 +261,9 @@
     .header-inner .sub { font-size: 11px; line-height: 1.35; }
     .brand svg { width: 28px; height: 28px; }
     .brand-box { gap: 9px; }
-    .header-inner > span { flex-wrap: wrap; gap: 8px 16px; }
-    .nav-link { padding: 4px 0; }  /* 탭 영역 확대 */
+    .header-inner > span { flex-wrap: wrap; }
+    /* 헤더 내비: 탭 영역 40px 확보 (엄지로 누르기 좋게) */
+    .nav-link { display: inline-flex; align-items: center; min-height: 40px; }
     .wrap { padding-left: 16px; padding-right: 16px; gap: 16px; }
     /* 지수 티커: 한 줄 가로 스크롤 (세로 공간 절약) */
     .ticker {
@@ -283,11 +284,12 @@
     button.primary { width: 100%; padding: 13px; }
     .hint { margin-top: -6px; }
     .qp-label { min-width: 100%; }  /* 라벨을 한 줄로 올려 칩이 다음 줄 전체 폭을 쓰게 */
-    .qp { padding: 8px 14px; font-size: 13px; }  /* 탭하기 좋은 크기 */
+    /* 대표종목 칩: 탭 영역 40px 확보 */
+    .qp { padding: 0 14px; font-size: 13px; display: inline-flex; align-items: center; min-height: 40px; }
     .tabs button { flex: 1; padding: 10px 0; }  /* 일/주/월봉 균등·크게 */
     #chart { height: 340px; }
-    .f-nav { gap: 12px 18px; }
-    .f-nav a { padding: 3px 0; }
+    .f-nav { gap: 10px 18px; }
+    .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
   }
 </style>
 </head>

@@ -31,6 +31,7 @@ from .pattern_scan import (
     _shared_fetch_sem,
 )
 from .providers.base import Provider, SymbolInfo
+from .providers.cache import NegativeCacheSkip
 
 logger = logging.getLogger("ma-analyzer")
 
@@ -58,30 +59,40 @@ class TouchScanner(BaseScanner):
         matches: list[dict[str, Any]] = []
         scanned = 0
         abort = asyncio.Event()  # 조기 실패 감지 시 남은 종목을 건너뛴다
+        attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
 
         async def one(info: SymbolInfo):
-            nonlocal scanned
+            nonlocal scanned, attempted
             if abort.is_set():
                 return
             async with sem:
                 if abort.is_set():
                     return
+                skipped = False
                 try:
                     # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
                     await asyncio.sleep(0.05 + random.random() * 0.2)
-                    df = await self.provider.candles(info.symbol, "day", FETCH_BARS)
+                    df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
+                                                     use_fail_cache=True)
                     if len(df) < MIN_BARS:
                         raise ValueError("데이터 부족")
                     item = await asyncio.to_thread(self._analyze_sync, info, df)
                     scanned += 1
                     if item:
                         matches.append(item)
+                except NegativeCacheSkip:
+                    # 방금 실패해 건너뛴 종목 — 조기중단 판정에서 제외 (선두가
+                    # 캐시된 실패여도 스캔이 신선한 종목까지 진행해 완주한다)
+                    skipped = True
+                    self._errors += 1
                 except Exception as exc:  # noqa: BLE001
                     self._errors += 1
                     logger.info("터치 스캔 스킵 %s (%s)", info.symbol, exc)
                 finally:
                     self._done += 1
-            if self._done >= FAIL_FAST_PROBE and scanned == 0:
+                    if not skipped:
+                        attempted += 1
+            if attempted >= FAIL_FAST_PROBE and scanned == 0:
                 abort.set()
 
         await asyncio.gather(*(one(s) for s in universe))

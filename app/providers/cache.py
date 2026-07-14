@@ -14,6 +14,11 @@ import pandas as pd
 
 from .base import Provider, SymbolInfo
 
+
+class NegativeCacheSkip(RuntimeError):
+    """방금 실패한 종목이라 실제 조회 없이 건너뛴 경우 — 조기중단 판정에서
+    '업스트림 조회 실패'와 구분하기 위한 별도 예외 (스캐너만 발생시킨다)."""
+
 # 캔들 TTL 은 스캔 워치독(900초)보다 충분히 길어야 한다: 느린 스캔이 워치독에
 # 끊겨 재시도할 때 이미 받아둔 종목을 다시 받지 않고 이어가게 (재페치 라이브락 방지).
 # 일봉 분석이라 30분 신선도면 충분하다.
@@ -25,15 +30,16 @@ _MAX_ENTRIES = 200        # 검색 캐시 상한
 # 밀어내 히트율이 0% 가 된다 (약 60~80MB, 무료 인스턴스에서 감당 가능).
 _CANDLE_MAX_ENTRIES = 1000
 
-# 실패 네거티브 캐시 — 방금 실패한 종목을 잠시 기억해 즉시 실패시킨다.
+# 실패 네거티브 캐시 (스캐너 전용 — use_fail_cache=True 일 때만 동작).
+# 방금 실패한 종목을 잠시 기억해, 수백 종목을 훑는 스캐너가 같은 hang(타임아웃
+# 60초)을 반복 지불하지 않게 한다. 다음 스캔이 이들을 즉시 건너뛰므로 나머지
+# 종목으로 완주하고(스캐너는 캐시 스킵을 조기중단 판정에서 제외한다), 록
+# 대기자들도 같은 실패를 반복하지 않는다 (핫키 컨보이 해소).
 # · 빠른 실패(429 등): 짧게만 기억 (일시 오류일 수 있음)
-# · 느린 실패(타임아웃/행): 길게 기억 — 행 걸리는 종목 수십 개가 스캔을
-#   워치독(900초)까지 끌고 가 「취소 → 쿨다운 → 재시도」 무한 사이클에
-#   빠지는 것을 막는 핵심 장치다. 다음 스캔이 이들을 즉시 건너뛰므로
-#   나머지 종목으로 스캔이 완주하고, 록 대기자들도 같은 실패를 반복하지
-#   않는다 (핫키 컨보이 해소).
+# · 느린 실패(타임아웃/행): 좀 더 길게 — 죽은 종목에 매번 60초를 낭비하지
+#   않되, 업스트림 회복 후 너무 오래 목록에서 빠져 있지 않도록 10분으로 제한.
 _FAIL_TTL_FAST_SEC = 120.0
-_FAIL_TTL_SLOW_SEC = 900.0
+_FAIL_TTL_SLOW_SEC = 600.0
 _SLOW_FAILURE_SEC = 30.0   # 이보다 오래 걸린 실패는 '행'으로 간주
 _FAIL_MAX_ENTRIES = 2000
 
@@ -132,30 +138,46 @@ class CachingProvider:
             return df.tail(max_bars).reset_index(drop=True).copy()
         return None
 
-    async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
+    async def candles(self, symbol: str, timeframe: str, max_bars: int,
+                      use_fail_cache: bool = False) -> pd.DataFrame:
+        """캔들 조회 (TTL 캐시).
+
+        use_fail_cache: 스캐너 전용 실패 네거티브 캐시 사용 여부.
+          True  — 방금 실패한 종목이면 NegativeCacheSkip 을 즉시 던지고, 실패
+                  시 기록한다. 수백 종목을 훑는 스캐너가 같은 hang 을 반복
+                  지불하지 않게 한다.
+          False — 사용자 요청 경로(/api/analyze·/api/indices). 단발 요청은
+                  업스트림을 때리지 않으므로 네거티브 캐시를 읽지도 쓰지도
+                  않는다 — 사용자가 명시적으로 요청한 종목은 항상 실제 조회.
+        """
         key = ("candles", symbol, timeframe)
-        fail = self._fail_hit(key)
-        if fail is not None:
-            raise RuntimeError(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
+        # 살아있는 캐시가 이번 요청을 감당하면 실패 기록보다 먼저 응답한다
+        # (이미 받아둔 데이터가 있으면 굳이 건너뛰지 않는다)
         hit = self._candle_hit(self._candles.get(key), max_bars)
         if hit is not None:
             return hit
-        async with self._lock_for(key):
-            # 록 대기 중 다른 요청이 실패를 기록했을 수 있다 — 여기서 확인해야
-            # 대기자들이 같은 실패(각 60초)를 줄줄이 반복하지 않는다
+        if use_fail_cache:
             fail = self._fail_hit(key)
             if fail is not None:
-                raise RuntimeError(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
+                raise NegativeCacheSkip(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
+        async with self._lock_for(key):
             hit = self._candle_hit(self._candles.get(key), max_bars)
             if hit is not None:
                 return hit
+            if use_fail_cache:
+                # 록 대기 중 다른 요청이 실패를 기록했을 수 있다 — 여기서 확인해야
+                # 대기자들이 같은 실패(각 60초)를 줄줄이 반복하지 않는다
+                fail = self._fail_hit(key)
+                if fail is not None:
+                    raise NegativeCacheSkip(f"{symbol}: 최근 실패로 잠시 건너뜀 ({fail})")
             started = time.monotonic()
             try:
                 df = await self.inner.candles(symbol, timeframe, max_bars)
             except asyncio.CancelledError:
                 raise  # 취소는 실패가 아니다 (워치독/종료)
             except Exception as exc:
-                self._record_fail(key, time.monotonic() - started, exc)
+                if use_fail_cache:
+                    self._record_fail(key, time.monotonic() - started, exc)
                 raise
             self._fails.pop(key, None)
             # 받은 수가 요청보다 적으면 히스토리가 끝난 것 -> 더 큰 요청도 캐시로 응답.

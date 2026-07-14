@@ -260,8 +260,9 @@
     .header-inner .sub { font-size: 11px; line-height: 1.35; }
     .brand svg { width: 28px; height: 28px; }
     .brand-box { gap: 9px; }
-    .header-inner > span { flex-wrap: wrap; gap: 8px 16px; }
-    .nav-link { padding: 4px 0; }  /* 탭 영역 확대 */
+    .header-inner > span { flex-wrap: wrap; }
+    /* 헤더 내비: 탭 영역 40px 확보 (엄지로 누르기 좋게) */
+    .nav-link { display: inline-flex; align-items: center; min-height: 40px; }
     .wrap { padding-left: 16px; padding-right: 16px; gap: 16px; }
     /* 지수 티커: 한 줄 가로 스크롤 (세로 공간 절약) */
     .ticker {
@@ -274,8 +275,8 @@
     .market-toggle { width: 100%; }
     .market-toggle button { flex: 1; padding: 11px 0; font-size: 14px; }
     .method { padding: 13px 15px; font-size: 12.5px; }
-    .f-nav { gap: 12px 18px; }
-    .f-nav a { padding: 3px 0; }
+    .f-nav { gap: 10px 18px; }
+    .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
   }
 </style>
 </head>

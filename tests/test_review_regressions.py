@@ -219,7 +219,7 @@ def test_analyze_fetches_daily_only_once():
     class OneShotProvider:
         name = "toss"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             if timeframe == "day":
                 calls["day"] += 1
             else:
