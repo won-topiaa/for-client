@@ -178,10 +178,11 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
 
 
 def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
-    """Stooq 일봉 CSV — 야후가 통째로 막혔을 때의 마지막 폴백 (미국 티커 전용).
+    """Stooq 일봉 CSV — 미국 티커의 1순위 소스 (무키·데이터센터 친화적).
 
     무료·무키 소스로, 형식은 Date,Open,High,Low,Close,Volume CSV.
-    클래스주는 대시 표기(brk-b.us)를 쓴다.
+    클래스주는 대시 표기(brk-b.us)를 쓴다. 타임아웃을 짧게(8초) 잡아,
+    혹시 막혔더라도 슬롯을 빨리 반납해 야후 폴백으로 넘어가게 한다.
     """
     import io
 
@@ -191,7 +192,7 @@ def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
     d1 = start.replace("-", "")
     d2 = pd.Timestamp.today().strftime("%Y%m%d")
     url = f"https://stooq.com/q/d/l/?s={t}.us&d1={d1}&d2={d2}&i=d"
-    r = httpx.get(url, timeout=15.0, follow_redirects=True)
+    r = httpx.get(url, timeout=8.0, follow_redirects=True)
     r.raise_for_status()
     text = r.text.strip()
     first = text.splitlines()[0] if text else ""
@@ -376,11 +377,15 @@ class FreeDataProvider:
                 return None
 
         # 국내(네이버/KRX 소스)는 FDR 우선 — 빠르고 제한이 없다.
-        # 그 외(미국 티커·해외 지수)는 FDR 의 야후 리더가 쿠키 없는 요청이라
-        # 데이터센터 IP 에서 429 로 잘 막히므로, 브라우저 위장·쿠키를 처리하는
-        # yfinance 를 먼저 쓰고 FDR → Stooq 순으로 폴백한다.
-        chain = ((via_fdr, via_yahoo) if _kr_route(symbol)
-                 else (via_yahoo, via_fdr, via_stooq))
+        # 미국 일반 티커는 Stooq 우선: 야후(yfinance/FDR)는 쿠키 없는 요청이
+        # 데이터센터 IP(Render 등)에서 자주 막히거나(429)·행에 걸려 미국 스캔
+        # 전체를 느리게 만든다. Stooq(*.us CSV)는 무키·데이터센터 친화적이라
+        # 미국을 안정적으로 채운다. Stooq 가 못 주는 티커만 야후로 폴백한다.
+        # (지수 표기는 via_stooq 가 스스로 걸러 내므로 야후→FDR 로 간다.)
+        if _kr_route(symbol):
+            chain = (via_fdr, via_yahoo)
+        else:
+            chain = (via_stooq, via_yahoo, via_fdr)
         for fetch in chain:
             df = fetch()
             if df is not None and len(df) > 0:
