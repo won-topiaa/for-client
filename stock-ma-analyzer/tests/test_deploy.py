@@ -21,7 +21,7 @@ class CountingProvider:
         self.search_calls = 0
         self.total_bars = total_bars
 
-    async def candles(self, symbol, timeframe, max_bars):
+    async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
         self.candle_calls += 1
         n = min(max_bars, self.total_bars)
         dates = pd.bdate_range("2020-01-01", periods=n)
@@ -79,7 +79,7 @@ def test_cache_truncated_data_not_treated_as_exhausted():
     더 큰 요청이 오면 재요청해야 한다."""
 
     class TruncatingProvider(CountingProvider):
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             df = await super().candles(symbol, timeframe, max_bars)
             if self.candle_calls == 1:
                 df = df.head(400)          # 첫 호출: 잘린 부분 응답

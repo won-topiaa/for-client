@@ -138,12 +138,11 @@ def _mkdf(n=800):
 
 
 def test_negative_cache_skips_recently_failed_symbol():
-    """한 번 실패한 종목은 잠시 즉시 실패시켜, 행 걸리는 종목 수십 개가
-    스캔을 워치독까지 끌고 가 '취소→쿨다운→재시도' 무한 사이클에 빠지는
-    것을 막는다."""
+    """스캐너 경로(use_fail_cache=True)에서 한 번 실패한 종목은 잠시 즉시
+    NegativeCacheSkip 으로 건너뛴다 — 같은 hang 을 반복 지불하지 않게."""
     import asyncio
 
-    from app.providers.cache import CachingProvider
+    from app.providers.cache import CachingProvider, NegativeCacheSkip
 
     calls = {"n": 0}
 
@@ -160,20 +159,58 @@ def test_negative_cache_skips_recently_failed_symbol():
     cache = CachingProvider(Flaky())
 
     async def go():
+        skips = 0
         for _ in range(5):
             try:
-                await cache.candles("BAD", "day", 300)
+                await cache.candles("BAD", "day", 300, use_fail_cache=True)
+            except NegativeCacheSkip:
+                skips += 1
+            except RuntimeError:
+                pass
+        return skips
+
+    skips = asyncio.new_event_loop().run_until_complete(go())
+    assert calls["n"] == 1, f"실패가 네거티브 캐시되지 않아 {calls['n']}번 재시도됨"
+    assert skips == 4, f"이후 호출이 스킵으로 처리되지 않음 (skips={skips})"
+
+
+def test_negative_cache_not_used_on_user_path():
+    """사용자 요청 경로(use_fail_cache 기본 False)는 네거티브 캐시를 읽지도
+    쓰지도 않는다 — 사용자가 명시적으로 요청한 종목은 매번 실제 조회한다
+    (스캐너의 실패가 /api/analyze 를 막지 않게)."""
+    import asyncio
+
+    from app.providers.cache import CachingProvider
+
+    calls = {"n": 0}
+
+    class Flaky:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            calls["n"] += 1
+            raise RuntimeError("일시 실패")
+
+        async def search(self, q):
+            return []
+
+    cache = CachingProvider(Flaky())
+
+    async def go():
+        for _ in range(3):
+            try:
+                await cache.candles("SYM", "day", 300)  # 사용자 경로
             except RuntimeError:
                 pass
 
     asyncio.new_event_loop().run_until_complete(go())
-    assert calls["n"] == 1, f"실패가 네거티브 캐시되지 않아 {calls['n']}번 재시도됨"
+    assert calls["n"] == 3, "사용자 경로가 네거티브 캐시에 막혀 재조회하지 못함"
+    assert not cache._fails, "사용자 경로가 네거티브 캐시를 오염시킴"
 
 
 def test_negative_cache_convoy_waiters_share_failure():
-    """같은 키를 동시에 기다리던 요청들도 한 번의 실패를 공유한다 (핫키
-    컨보이 방지) — /api/indices 를 여러 탭이 폴링할 때 지수 실패가 대기열
-    길이 × 60초로 늘어나지 않게."""
+    """같은 키를 동시에 기다리던 스캐너 요청들도 한 번의 실패를 공유한다
+    (핫키 컨보이 방지)."""
     import asyncio
 
     from app.providers.cache import CachingProvider
@@ -195,10 +232,10 @@ def test_negative_cache_convoy_waiters_share_failure():
 
     async def go():
         results = await asyncio.gather(
-            *(cache.candles("IDX", "day", 300) for _ in range(6)),
+            *(cache.candles("IDX", "day", 300, use_fail_cache=True) for _ in range(6)),
             return_exceptions=True,
         )
-        assert all(isinstance(r, RuntimeError) for r in results)
+        assert all(isinstance(r, Exception) for r in results)
 
     asyncio.new_event_loop().run_until_complete(go())
     assert calls["n"] == 1, f"대기자들이 같은 실패를 {calls['n']}번 반복함"
@@ -227,14 +264,48 @@ def test_negative_cache_cleared_on_success():
 
     async def go():
         try:
-            await cache.candles("SYM", "day", 300)
+            await cache.candles("SYM", "day", 300, use_fail_cache=True)
         except RuntimeError:
             pass
         # 네거티브 캐시 만료를 앞당겨 재조회 허용
         cache._fails[("candles", "SYM", "day")] = (0.0, "x")
         state["fail"] = False
-        df = await cache.candles("SYM", "day", 300)
+        df = await cache.candles("SYM", "day", 300, use_fail_cache=True)
         assert len(df) == 300
         assert ("candles", "SYM", "day") not in cache._fails
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_live_cache_served_before_negative_cache():
+    """살아있는 캐시가 있으면 네거티브 캐시보다 먼저 응답한다 — 실패한 큰
+    요청이 이미 받아둔 작은 데이터를 가리지 않게."""
+    import asyncio
+
+    from app.providers.cache import CachingProvider
+
+    class BigFails:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars):
+            if max_bars > 500:
+                raise RuntimeError("큰 요청 실패")
+            return _mkdf(500)
+
+        async def search(self, q):
+            return []
+
+    cache = CachingProvider(BigFails())
+
+    async def go():
+        a = await cache.candles("S", "day", 300, use_fail_cache=True)  # 성공·캐시됨
+        assert len(a) == 300
+        try:
+            await cache.candles("S", "day", 5000, use_fail_cache=True)  # 실패·네거티브 기록
+        except RuntimeError:
+            pass
+        # 살아있는 캐시(500봉)로 감당 가능한 요청은 네거티브 캐시에도 불구하고 응답
+        b = await cache.candles("S", "day", 300, use_fail_cache=True)
+        assert len(b) == 300, "네거티브 캐시가 살아있는 캐시를 가림"
 
     asyncio.new_event_loop().run_until_complete(go())

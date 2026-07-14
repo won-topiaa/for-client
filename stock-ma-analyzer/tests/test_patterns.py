@@ -270,7 +270,7 @@ def test_scanner_end_to_end():
     class FakeProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             if symbol == "IDX":  # 지수
                 return validate_candles(_df(np.full(300, 1000.0)))
             data = {"CUP": (_cup_series(), None), "HS": (_hs_series(), None),
@@ -427,7 +427,7 @@ def test_scanner_error_cooldown_and_recovery():
     class DeadProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             raise RuntimeError("upstream down")
 
         async def search(self, q):
@@ -467,7 +467,7 @@ def test_scanner_stale_while_revalidate():
     class OkProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             return validate_candles(_df(closes, volume=volume))
 
         async def search(self, q):
@@ -506,7 +506,7 @@ def test_scanner_low_coverage_shortens_ttl():
     class FlakyProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             if symbol != "OK":
                 raise RuntimeError("down")
             return validate_candles(_df(closes, volume=volume))
@@ -732,7 +732,7 @@ def test_scanner_fail_fast_on_total_outage():
     class DeadProvider:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             calls["n"] += 1
             raise RuntimeError("upstream down")
 
@@ -765,7 +765,7 @@ def test_scanner_fail_fast_discards_straggler_successes():
     class PartialOutage:
         name = "fake"
 
-        async def candles(self, symbol, timeframe, max_bars):
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
             if symbol.startswith("BAD"):
                 raise RuntimeError("429")
             await asyncio.sleep(1.0)  # 실패 12개가 먼저 끝나도록 지연
@@ -789,3 +789,42 @@ def test_scanner_fail_fast_discards_straggler_successes():
     asyncio.new_event_loop().run_until_complete(go())
     assert scanner._error and "실패" in scanner._error, scanner._error
     assert scanner._results is None, "중단된 스캔의 반쪽 결과가 공개됨"
+
+
+def test_scanner_completes_past_negative_cache_skips():
+    """선두 종목이 네거티브 캐시로 스킵돼도 스캔이 신선한 종목까지 진행해
+    완주한다 — 캐시 스킵을 조기중단(fail-fast) 판정에서 제외해야, 일시적
+    장애가 회복된 뒤 스캐너가 900초 동안 묶이는 웨지(wedge)를 막는다."""
+    from app.pattern_scan import FAIL_FAST_PROBE, PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+    from app.providers.cache import NegativeCacheSkip
+
+    closes, volume = _stage2_series()
+    good = validate_candles(_df(closes, volume=volume))
+
+    class LeadingSkips:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            # 선두(FAIL_FAST_PROBE+2)개는 네거티브 캐시 스킵, 이후는 성공
+            idx = int(symbol[1:])
+            if idx < FAIL_FAST_PROBE + 2:
+                raise NegativeCacheSkip(f"{symbol}: 스킵")
+            return good.copy()
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"s{i}", "T") for i in range(40)]
+
+    scanner = PatternScanner(LeadingSkips(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+        return await scanner.snapshot()
+
+    snap = asyncio.new_event_loop().run_until_complete(go())
+    assert snap["status"] == "done", f"스킵 때문에 완주하지 못함: {snap}"
+    assert snap["scanned"] >= 20, f"신선한 종목까지 진행하지 못함 (scanned={snap['scanned']})"
