@@ -48,5 +48,6 @@
   }
 
   refresh();
-  setInterval(refresh, 5 * 60 * 1000);
+  // 1분마다 갱신 — 서버가 2분 캐시로 신선한 지수를 내주므로 장중 움직임이 보인다
+  setInterval(refresh, 60 * 1000);
 })();

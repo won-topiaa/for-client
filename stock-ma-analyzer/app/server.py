@@ -9,6 +9,7 @@ import secrets
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -310,31 +311,51 @@ INDEX_TICKER = [
 ]
 
 
+# 티커 지수는 30분 캔들 캐시를 우회해 짧게(2분) 따로 캐시한다 — 장중에 지수가
+# 실제로 움직이는 것을 보여주기 위함(무료 소스의 일봉 마지막 값은 장중에 현재가로
+# 갱신된다). 2분 간격이면 저빈도라 야후 등 소스에 부담도 없다.
+_INDICES_TTL_SEC = 120.0
+_indices_cache: dict[str, Any] = {"ts": -1e9, "data": None}
+_indices_last_good: dict[str, dict] = {}  # 실패한 지수는 직전 값을 유지(티커 안정)
+
+
 @app.get("/api/indices")
 async def indices():
-    """주요 지수 스냅샷 — 헤더 티커용. 실패한 지수는 조용히 생략한다."""
+    """주요 지수 스냅샷 — 헤더 티커용. 2분 캐시 + 신선 조회(캔들 30분 캐시 우회)."""
+    import time as _time
+
+    now = _time.monotonic()
+    if (_indices_cache["data"] is not None
+            and now - _indices_cache["ts"] < _INDICES_TTL_SEC):
+        return _indices_cache["data"]
+
+    # 30분 캔들 캐시를 우회해 원 공급자에서 최신 일봉을 직접 받는다 (장중 갱신 반영)
+    inner = getattr(app.state.provider, "inner", app.state.provider)
+
     async def one(sym: str, name: str):
         try:
-            # 300봉 요청: 패턴 스캐너의 지수(RS) 조회와 같은 크기로 맞춰
-            # 캐시 항목 하나를 공유한다 (5봉으로 받으면 스캐너가 재페치)
-            df = await app.state.provider.candles(sym, "day", 300)
-            if len(df) < 2:
-                return None
-            last = float(df["close"].iloc[-1])
-            prev = float(df["close"].iloc[-2])
-            if prev <= 0:
-                return None
-            return {
-                "key": sym, "name": name, "value": round(last, 2),
-                "changePct": round(last / prev * 100 - 100, 2),
-                "date": df["date"].iloc[-1].strftime("%m/%d"),
-            }
+            df = await inner.candles(sym, "day", 10)
+            if len(df) >= 2:
+                last = float(df["close"].iloc[-1])
+                prev = float(df["close"].iloc[-2])
+                if prev > 0:
+                    row = {
+                        "key": sym, "name": name, "value": round(last, 2),
+                        "changePct": round(last / prev * 100 - 100, 2),
+                        "date": df["date"].iloc[-1].strftime("%m/%d"),
+                    }
+                    _indices_last_good[sym] = row
+                    return row
         except Exception:  # noqa: BLE001 — 지수 하나 실패로 티커 전체가 죽지 않게
             logger.info("지수 조회 실패: %s", sym)
-            return None
+        return _indices_last_good.get(sym)  # 이번에 실패하면 직전 값 유지
 
     rows = await asyncio.gather(*(one(s, n) for s, n in INDEX_TICKER))
-    return {"indices": [r for r in rows if r]}
+    data = {"indices": [r for r in rows if r]}
+    if data["indices"]:  # 전부 실패면 캐시하지 않아 다음 호출이 곧바로 재시도
+        _indices_cache["data"] = data
+        _indices_cache["ts"] = now
+    return data
 
 
 @app.get("/api/touches")

@@ -54,8 +54,9 @@
     }
   }
 
-  // 전일 시장 요약: 헤더 티커와 같은 /api/indices 를 재사용해 카드 한 장을 만든다
-  // (같은 캐시 항목을 쓰므로 추가 부하 없음 · 실패하면 조용히 생략)
+  // 시장 등락 요약: 헤더 티커와 같은 /api/indices 를 재사용해 카드 한 장을 만든다
+  // (장중엔 실시간 등락, 장 마감 후엔 종가 기준 — 데이터가 신선하므로 라벨을
+  // '종가'로 못 박지 않는다 · 실패하면 조용히 생략)
   fetch("/api/indices")
     .then((r) => (r.ok ? r.json() : null))
     .then((body) => {
@@ -68,8 +69,8 @@
       // 휴장일이 어긋나면(예: 국내 휴장 중 미국 개장) 지수마다 마지막 거래일이
       // 다를 수 있다 — 전부 같은 날일 때만 날짜를 못 박고, 아니면 두루뭉술하게
       const dates = new Set(items.map((it) => it.date));
-      const label = dates.size === 1 ? `${items[0].date} 종가 기준` : "최근 종가 기준";
-      const tip = T("전일 시장", `${label} — ${parts.join(" · ")}`);
+      const label = dates.size === 1 ? `${items[0].date} 기준` : "최근 지수";
+      const tip = T("시장 등락", `${label} — ${parts.join(" · ")}`);
       priority.push(tip); // 지금 로딩 중이면 다음 로테이션에서 바로 보여준다
       TIPS.push(tip);     // 이후 덱에도 합류
     })
