@@ -108,9 +108,10 @@ class TouchScanner(BaseScanner):
                         attempted += 1
             if attempted >= FAIL_FAST_PROBE and scanned == 0:
                 abort.set()
-            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다
-            # (scanned>0 이어야 '검증 시도는 하고 있다'는 뜻이라 공개할 가치가 있다)
-            if scanned and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC:
+            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다.
+            # abort(전면 장애) 뒤 뒤늦게 성공한 스트래글러의 부분 공개는 막는다.
+            if (scanned and not abort.is_set()
+                    and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC):
                 last_publish = time.monotonic()
                 publish(partial=True)
 

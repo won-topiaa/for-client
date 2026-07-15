@@ -310,8 +310,11 @@ class PatternScanner(BaseScanner):
             # 선두가 캐시된 실패여도 스캔이 신선한 종목까지 진행해 완주한다)
             if attempted >= FAIL_FAST_PROBE and not per_symbol:
                 abort.set()
-            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다
-            if per_symbol and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC:
+            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다.
+            # abort(전면 장애) 뒤 뒤늦게 성공한 스트래글러가 몇 %짜리 부분을
+            # 공개하지 않도록 abort 중이면 건너뛴다 (완주 후 raise 로 버려진다).
+            if (per_symbol and not abort.is_set()
+                    and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC):
                 last_publish = time.monotonic()
                 publish(partial=True)
 
