@@ -226,3 +226,37 @@ def test_scan_publishes_partial_results_while_running(monkeypatch):
         assert len(partial_counts) >= 2, f"점진 공개 안 됨: {sorted(seen_scanned)}"
         assert sc._results["scanned"] == 60 and sc._partial is False
     asyncio.new_event_loop().run_until_complete(asyncio.wait_for(go(), timeout=30))
+
+
+def test_fail_fast_abort_discards_late_straggler_partial(monkeypatch):
+    """전면 장애로 조기중단(abort)된 뒤 뒤늦게 성공한 스트래글러가 몇 %짜리
+    부분 결과를 'done' 으로 공개하지 못하게 한다 (짧은 공개 간격에서도)."""
+    import app.pattern_scan as ps
+
+    monkeypatch.setattr(ps, "PUBLISH_INTERVAL_SEC", 0.15)
+
+    class Outage:
+        name = "fake"
+        async def candles(self, s, tf, mb, use_fail_cache=False):
+            if s == "LATE":
+                await asyncio.sleep(0.5)   # abort 확정된 뒤 성공
+                return _good(seed=1)
+            await asyncio.sleep(0.02)      # 나머지는 빠르게 실패 (per_symbol 계속 빔)
+            raise RuntimeError("outage")
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        # 스트래글러가 먼저 슬롯을 잡되(느린 성공), 빠른 실패들이 abort 를 먼저 낸다
+        return ([SymbolInfo("LATE", "late", "T")]
+                + [SymbolInfo(f"BAD{i}", "b", "T") for i in range(14)])
+
+    scanner = ps.PatternScanner(CachingProvider(Outage()), universe_fn, index_symbol="KS11")
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+        snap = await scanner.snapshot()
+        assert snap["status"] == "error", f"조기중단인데 부분 결과가 공개됨: {snap}"
+        assert scanner._results is None
+    asyncio.new_event_loop().run_until_complete(asyncio.wait_for(go(), timeout=15))
