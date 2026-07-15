@@ -241,5 +241,5 @@ def test_loading_tips_fit_two_lines():
     for tag, text in tips:
         assert tag in allowed, f"미정의 태그: {tag}"
         assert len(text) <= 85, f"두 줄 규칙(85자) 초과 ({len(text)}자): {text}"
-    # 전일 시장 요약 카드(동적 생성)도 존재해야 한다
-    assert '"전일 시장"' in src
+    # 시장 등락 요약 카드(동적 생성)도 존재해야 한다
+    assert '"시장 등락"' in src
