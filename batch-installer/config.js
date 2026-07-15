@@ -22,23 +22,24 @@ module.exports = {
     {
       name: "테스트 3종",
       apps: [
-        { name: "연합뉴스" },
-        { name: "조선일보" },
-        { name: "공영쇼핑" },
+        // 테스트 3종 — 실제 플레이스토어 패키지명 하드코딩(검색 없이 바로 상세페이지 진입 → 오설치 방지)
+        { name: "연합뉴스", pkg: "kr.psynet.yhnews" },
+        { name: "조선일보", pkg: "com.chosunmedia.android" },
+        { name: "공영쇼핑", pkg: "com.pub.fm" },
       ],
     },
     {
       name: "그룹 1",
       apps: [
-        { name: "연합뉴스" },
-        { name: "공영쇼핑" },
+        { name: "연합뉴스", pkg: "kr.psynet.yhnews" },
+        { name: "공영쇼핑", pkg: "com.pub.fm" },
       ],
     },
     {
       name: "그룹 2",
       apps: [
-        { name: "공영쇼핑" },
-        { name: "빗썸" },
+        { name: "공영쇼핑", pkg: "com.pub.fm" },
+        { name: "빗썸" }, // 패키지명 미지정 → 이름으로 검색(확인되면 pkg 추가 권장)
       ],
     },
   ],

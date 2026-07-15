@@ -68,6 +68,65 @@ core.setLogSink(function (line) {
   ui.run(function () { ui.statusBar.setText(line); });
 });
 
+// ── 플로팅 중지 오버레이 (플레이스토어 위에 떠 있는 중지 버튼) ────
+// 설치가 시작되면 이 앱은 뒤로 가고 플레이스토어가 화면을 덮는다.
+// 그래도 언제든 멈출 수 있도록 화면 위에 작은 [■ 중지] 버튼을 띄운다.
+var stopWin = null;
+
+function ensureOverlayPermission() {
+  try {
+    if (floaty.checkPermission && !floaty.checkPermission()) {
+      toast("중지 버튼 표시를 위해 '다른 앱 위에 표시' 권한을 켜주세요");
+      floaty.requestPermission();
+      var t0 = Date.now();
+      while (floaty.checkPermission && !floaty.checkPermission() && Date.now() - t0 < 30000) sleep(800);
+    }
+  } catch (e) {}
+}
+
+function showStopOverlay() {
+  if (stopWin) return;
+  try {
+    stopWin = floaty.window(
+      <horizontal id="bar" bg="#e6212121" padding="8" gravity="center_vertical">
+        <vertical layout_weight="1">
+          <text id="ov" text="설치 진행중…" textColor="#ffffff" textSize="12sp" maxLines="2"/>
+          <text text="↔ 길게 눌러 이동 · 볼륨(-) 비상정지" textColor="#9e9e9e" textSize="9sp"/>
+        </vertical>
+        <button id="stopBtn" text="■ 중지" bg="#d32f2f" textColor="#ffffff" textSize="13sp" marginLeft="8"/>
+      </horizontal>
+    );
+    stopWin.setPosition(30, 80);
+    stopWin.stopBtn.click(function () {
+      core.stop();
+      toast("중지 요청 — 현재 앱만 마무리하고 정지합니다");
+      try { ui.run(function () { stopWin.ov.setText("■ 중지 중…"); }); } catch (e) {}
+    });
+    // 오버레이 드래그 이동
+    var dx = 0, dy = 0, wx = 0, wy = 0;
+    stopWin.ov.setOnTouchListener(function (v, ev) {
+      switch (ev.getAction()) {
+        case ev.ACTION_DOWN:
+          dx = ev.getRawX(); dy = ev.getRawY(); wx = stopWin.getX(); wy = stopWin.getY(); return true;
+        case ev.ACTION_MOVE:
+          stopWin.setPosition(Math.round(wx + ev.getRawX() - dx), Math.round(wy + ev.getRawY() - dy)); return true;
+      }
+      return true;
+    });
+  } catch (e) { toast("중지 오버레이 생성 실패(권한 확인): " + e); }
+}
+
+function setOverlayText(txt) {
+  if (!stopWin) return;
+  try { ui.run(function () { stopWin.ov.setText(txt); }); } catch (e) {}
+}
+
+function hideStopOverlay() {
+  if (!stopWin) return;
+  try { stopWin.close(); } catch (e) {}
+  stopWin = null;
+}
+
 // ── 그룹/앱 카드 동적 렌더링 ─────────────────────────────────────
 function render() {
   ui.groupContainer.removeAllViews();
@@ -145,18 +204,22 @@ function startInstall(apps, label) {
   dialogs.confirm("설치 시작", "[" + (label || "선택") + "] " + apps.length + "개 앱을 순서대로 설치합니다.\n\n" + names + "\n\n진행할까요?")
     .then(function (ok) {
       if (!ok) return;
+      ensureOverlayPermission();
+      showStopOverlay();
+      setOverlayText("설치 준비중… (0/" + apps.length + ")");
       toast("설치 시작 — 화면에서 손을 떼고 지켜봐 주세요");
       worker = threads.start(function () {
         core.installList(apps, function (i, total, name, phase, result) {
-          ui.run(function () {
-            if (phase === "start") ui.statusBar.setText("(" + (i + 1) + "/" + total + ") " + name + " 설치 중…");
-            if (phase === "finished") {
-              var s = result;
+          if (phase === "start") setOverlayText("(" + (i + 1) + "/" + total + ") " + name + " 설치중…");
+          if (phase === "finished") {
+            var s = result;
+            hideStopOverlay();
+            ui.run(function () {
               ui.statusBar.setText("완료 · 설치 " + s.installed + " / 업데이트 " + s.updated +
                 " / 이미있음 " + s.already + " / 건너뜀 " + s.skipped + " / 실패 " + s.failed);
               toast("모든 설치 작업 완료");
-            }
-          });
+            });
+          }
         });
       });
     });
@@ -192,6 +255,22 @@ ui.runSelected.click(function () {
 
 // 뒤로가기로 종료 시 진행 중이면 중지
 ui.emitter.on("back_pressed", function () { try { core.stop(); } catch (e) {} });
+
+// 비상 정지: 볼륨(-) 키 — 플레이스토어 화면에서도 언제든 멈춤
+try {
+  events.observeKey();
+  events.onKeyDown("volume_down", function () {
+    if (core.isRunning()) { core.stop(); toast("비상 정지(볼륨-)"); }
+  });
+} catch (e) {}
+
+// 스크립트 종료 시 오버레이/설치 정리(웨이크락·창 누수 방지)
+try {
+  events.on("exit", function () {
+    try { core.stop(); } catch (e) {}
+    try { hideStopOverlay(); } catch (e) {}
+  });
+} catch (e) {}
 
 // 접근성 서비스 안내(꺼져 있으면 켜기 유도)
 if (!auto.service) {
