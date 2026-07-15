@@ -331,9 +331,12 @@
     // 진행 중(부분) 결과는 스크린리더에 알리지 않고, 최종 결과만 알린다
     if (!body.partial) announce(el.status.textContent);
     if (!body.matches.length) {
-      el.matches.innerHTML =
-        `<div class="empty">지금 이 패턴에 해당하는 종목이 없습니다.<br>` +
-        `<span style="font-size:12px">패턴은 시장 상황에 따라 나타났다 사라집니다 — 다른 패턴/시장을 보거나 나중에 다시 확인해 보세요.</span></div>`;
+      // 아직 스캔 중(부분)이면 '없음'을 성급히 단정하지 않는다
+      el.matches.innerHTML = body.partial
+        ? `<div class="empty">남은 종목을 확인하는 중입니다…<br>` +
+          `<span style="font-size:12px">매칭되는 종목이 나오면 여기 채워집니다.</span></div>`
+        : `<div class="empty">지금 이 패턴에 해당하는 종목이 없습니다.<br>` +
+          `<span style="font-size:12px">패턴은 시장 상황에 따라 나타났다 사라집니다 — 다른 패턴/시장을 보거나 나중에 다시 확인해 보세요.</span></div>`;
       return;
     }
     body.matches.forEach((m) => {
