@@ -83,6 +83,7 @@
     matches: document.getElementById("matches"),
     party: document.getElementById("scanParty"),
     partyCaption: document.getElementById("partyCaption"),
+    partyNote: document.getElementById("partyNote"),
     sr: document.getElementById("srStatus"),
   };
 
@@ -104,6 +105,7 @@
   function showParty(on) {
     el.party.style.display = on ? "flex" : "none";
     el.partyCaption.style.display = on ? "block" : "none";
+    if (el.partyNote) el.partyNote.style.display = on ? "block" : "none";
     if (on) {
       // 폴링(2초)마다 다시 호출돼도 타이머를 새로 만들지 않아야
       // 카드 로테이션이 실제로 돌아간다
