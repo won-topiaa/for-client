@@ -310,6 +310,81 @@
     .f-nav { gap: 10px 18px; }
     .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
   }
+  /* ── 프리미엄 리파인 레이어 (인라인: 추가 요청 없이 즉시 페인트) ──
+     원칙(금융 UI): 중립 팔레트 유지 · 강조색은 의미에만 · 넉넉한 여백 ·
+     큰 제목일수록 좁은 자간 · 하드 보더 대신 부드러운 다층 그림자 · 다크 입체감 */
+  :root {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+      --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+      --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+      --hairline: rgba(255,255,255,.09);
+      --glow: rgba(52,211,153,.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+    --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+    --hairline: rgba(255,255,255,.09);
+    --glow: rgba(52,211,153,.12);
+  }
+  :root[data-theme="light"] {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  /* 타이포: 큰 제목일수록 자간을 좁혀 확신 있는 절제 */
+  .hero h2 { letter-spacing: -.035em; }
+  .stat .k, .m-name, .reco-card .period { letter-spacing: -.025em; }
+  .tool-card h3, .proj .t, .table-head h3 { letter-spacing: -.02em; }
+  /* 카드류: 하드 보더 → 헤어라인 + 부드러운 다층 그림자 */
+  .tool-card, .stat, .p-card, .m-card, .reco-card, .card, .proj, .how,
+  .contact, .table-card, .controls, .quick-picks .qp { border-color: var(--hairline); }
+  .stat, .m-card, .reco-card, .card, .how, .contact, .table-card, .controls {
+    box-shadow: var(--shadow-sm);
+  }
+  .tool-card, .proj {
+    border-color: var(--hairline); box-shadow: var(--shadow-md);
+    transition: transform .22s cubic-bezier(.22,.61,.36,1),
+                box-shadow .22s cubic-bezier(.22,.61,.36,1), border-color .22s ease;
+  }
+  .tool-card:hover, .tool-card:focus-visible, .proj:hover {
+    transform: translateY(-4px); box-shadow: var(--shadow-lg);
+  }
+  /* 히어로: 은은한 시그니처 글로우 */
+  .hero { position: relative; }
+  .hero::before {
+    content: ""; position: absolute; left: 50%; top: -8%;
+    width: min(760px, 92%); height: 300px; transform: translateX(-50%);
+    background: radial-gradient(58% 100% at 50% 0%, var(--glow), transparent 72%);
+    pointer-events: none; z-index: -1; filter: blur(6px);
+  }
+  /* 아이콘 타일: 강조색을 아주 옅게 머금은 표면 */
+  .tool-card .icon {
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel2));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  /* CTA 버튼: 크리스프한 그림자로 입체감 */
+  .tool-card .go, .contact .mail, button.primary {
+    box-shadow: 0 1px 2px rgba(5,150,105,.28), 0 6px 16px -6px rgba(5,150,105,.35);
+  }
+  /* 헤더/티커/정보박스 헤어라인 · 매칭 카드 호버 */
+  .site-header { border-bottom-color: var(--hairline); }
+  .ticker-wrap { border-top-color: var(--hairline); }
+  .pattern-desc, .intro, .method, .basis { box-shadow: var(--shadow-sm); }
+  .m-card { transition: box-shadow .18s ease, transform .18s ease; }
+  .m-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 </style>
 </head>
 <body>
