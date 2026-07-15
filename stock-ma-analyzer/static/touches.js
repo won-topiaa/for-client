@@ -244,9 +244,12 @@
     // 진행 중(부분) 결과는 스크린리더에 알리지 않고, 최종 결과만 알린다
     if (!body.partial) announce(el.status.textContent);
     if (!body.matches.length) {
-      el.matches.innerHTML =
-        `<div class="empty">오늘 검증된 지지선에 닿아 있는 종목이 없습니다.<br>` +
-        `<span style="font-size:12px">터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.</span></div>`;
+      // 아직 스캔 중(부분)이면 '없음'을 성급히 단정하지 않는다
+      el.matches.innerHTML = body.partial
+        ? `<div class="empty">남은 종목을 확인하는 중입니다…<br>` +
+          `<span style="font-size:12px">오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.</span></div>`
+        : `<div class="empty">오늘 검증된 지지선에 닿아 있는 종목이 없습니다.<br>` +
+          `<span style="font-size:12px">터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.</span></div>`;
       return;
     }
     body.matches.forEach((m) => {

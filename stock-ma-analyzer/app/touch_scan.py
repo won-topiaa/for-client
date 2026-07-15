@@ -63,7 +63,7 @@ class TouchScanner(BaseScanner):
         abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
         budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
-        last_publish = time.monotonic()
+        last_publish = 0.0  # 0 으로 시작해 '첫 검증이 끝나는 즉시' 한 번 공개
 
         def publish(partial: bool) -> None:
             """지금까지 모은 matches 로 결과를 만들어 공개 (동기 — 레이스 없음)."""
