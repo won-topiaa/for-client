@@ -296,6 +296,7 @@
       </div>
     </div>
     <nav class="top-nav" aria-label="도구 바로가기">
+      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
       <a href="/ma">📈 이평선 분석</a>
       <a href="/patterns">🔍 패턴 스크리너</a>
       <a href="/touches">🚨 오늘의 터치</a><a href="/about">🏢 원토피아 소개</a>
@@ -384,5 +385,6 @@
   </footer>
 </div>
 <script src="/static/ticker.js"></script>
+<script src="/static/presence.js"></script>
 </body>
 </html>

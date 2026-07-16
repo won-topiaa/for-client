@@ -378,7 +378,8 @@
       <p class="sub">일봉 · 주봉 · 월봉의 주요 지지/저항 이동평균선 백테스트</p>
       </div>
     </div>
-    <span style="display:inline-flex; gap:14px;"><a class="nav-link" href="/">🏠 홈</a><a class="nav-link" href="/patterns">🔍 패턴 스크리너</a><a class="nav-link" href="/touches">🚨 오늘의 터치</a></span>
+    <span style="display:inline-flex; gap:14px;">
+      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span><a class="nav-link" href="/">🏠 홈</a><a class="nav-link" href="/patterns">🔍 패턴 스크리너</a><a class="nav-link" href="/touches">🚨 오늘의 터치</a></span>
   </div>
   <div class="ticker-wrap" id="tickerWrap" style="display:none">
     <div class="ticker" id="tickerBar" aria-label="주요 지수 시세"></div>
@@ -490,5 +491,6 @@
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/ticker.js"></script>
+<script src="/static/presence.js"></script>
 </body>
 </html>

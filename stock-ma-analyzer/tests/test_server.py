@@ -130,6 +130,24 @@ def test_about_page(client):
     assert "mailto:yangjuwon240@gmail.com" in r.text
 
 
+def test_presence_counts_distinct_visitors(client):
+    """동시 접속자: 고유 방문자만 세고, 같은 방문자 재호출은 중복 집계하지 않는다."""
+    a = client.get("/api/presence?cid=pv1").json()["active"]
+    b = client.get("/api/presence?cid=pv2").json()["active"]
+    assert b == a + 1                      # 새 방문자는 +1
+    c = client.get("/api/presence?cid=pv1").json()["active"]
+    assert c == b                          # 기존 방문자 재호출은 그대로
+    # cid 없이 호출하면 세기만 하고 새로 추가하지 않는다
+    assert client.get("/api/presence").json()["active"] == b
+
+
+def test_presence_rejects_bad_cid(client):
+    """비정상 cid(너무 김/허용 안 된 문자)는 422로 거부하고 500이 아니다."""
+    assert client.get("/api/presence?cid=" + "x" * 100).status_code == 422
+    assert client.get("/api/presence?cid=bad chars").status_code == 422
+    assert client.get("/api/presence?cid=drop;table").status_code == 422
+
+
 def test_password_with_non_ascii_returns_401_not_500(monkeypatch):
     """비ASCII 비밀번호 헤더가 500(compare_digest TypeError)이 아니라 401."""
     import base64
