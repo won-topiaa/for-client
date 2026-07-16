@@ -73,6 +73,21 @@ def test_bad_token_is_none(store):
     assert store.user_for_token("garbage-token") is None
 
 
+def test_login_rejects_overlong_password_without_hashing(store):
+    """로그인도 비밀번호 길이 상한(200)을 적용 — 거대한 입력을 해시하지 않는다."""
+    store.signup("cap@b.com", "password123")
+    with pytest.raises(InvalidCredentials):
+        store.login("cap@b.com", "x" * 5000)
+
+
+def test_email_control_chars_rejected(store):
+    """정규식을 통과하는 제어문자(NUL 등) 이메일을 거른다 (유사-중복 계정 방지)."""
+    with pytest.raises(AuthError):
+        store.signup("a\x00@b.com", "password123")
+    with pytest.raises(AuthError):
+        store.signup("x@y.com\x01", "password123")
+
+
 # ---------- 서버 통합 테스트 (게이팅) ----------
 @pytest.fixture(scope="module")
 def client():
