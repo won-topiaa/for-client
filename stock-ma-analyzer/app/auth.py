@@ -42,7 +42,7 @@ from sqlalchemy import (
     insert,
     select,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.engine import Engine, make_url
 
 _PBKDF2_ROUNDS = 200_000
@@ -156,10 +156,28 @@ class AuthStore:
         else:
             # 운영 Postgres(Neon 등 서버리스): 유휴 커넥션이 끊겨도 살아나게
             # pre_ping + 주기적 재활용. 작은 풀로 무료 인스턴스 커넥션 한도 배려.
+            # prepare_threshold=None: psycopg3 자동 서버측 프리페어드 스테이트먼트를
+            # 끈다 — Neon 등의 풀러(PgBouncer 트랜잭션 모드) 엔드포인트에서
+            # 'prepared statement already exists' 오류를 유발할 수 있어서. 인증
+            # 쿼리는 저빈도라 성능 영향은 사실상 없다.
             self._engine = create_engine(
                 self.url, pool_pre_ping=True, pool_recycle=300,
-                pool_size=5, max_overflow=5, future=True)
-        _metadata.create_all(self._engine)
+                pool_size=5, max_overflow=5, future=True,
+                connect_args={"prepare_threshold": None})
+        self._create_schema()
+
+    def _create_schema(self, attempts: int = 5) -> None:
+        """스키마 생성(=최초 DB 연결)을 재시도한다. Neon 등 서버리스 Postgres 는
+        유휴 시 잠들어(scale-to-zero) 콜드 스타트가 느릴 수 있는데, 부팅이 한 번의
+        일시적 연결 실패로 죽어 재시작 루프에 빠지지 않게 짧게 백오프하며 재시도."""
+        for i in range(attempts):
+            try:
+                _metadata.create_all(self._engine)
+                return
+            except OperationalError:
+                if i == attempts - 1:
+                    raise
+                time.sleep(min(2 ** i, 8))  # 1, 2, 4, 8, 8… 초
 
     @staticmethod
     def _hash_pw(password: str, salt: bytes) -> bytes:
