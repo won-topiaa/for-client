@@ -177,22 +177,55 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
     raise ValueError(f"{symbol} Yahoo 조회 실패")
 
 
+# Stooq(미국) 조회는 같은 호스트(stooq.com)에 종목마다 한 번씩, 스캔당 수백 번
+# 연결한다. 매 요청을 httpx.get 으로 새로 열면 TCP+TLS 핸드셰이크가 매번
+# 반복돼(종목당 수백 ms) 스캔 전체가 느려진다. 공유 Client 로 커넥션을
+# 재사용(keep-alive)해 그 비용을 없앤다 — 요청 '수'는 그대로라 소스 부담은
+# 늘지 않고, httpx.Client 는 스레드 세이프라 _fetch_pool 스레드가 함께 써도 안전.
+_stooq_http = None                      # 지연 생성되는 공유 httpx.Client
+_stooq_http_lock = threading.Lock()
+
+
+def _stooq_client():
+    global _stooq_http
+    if _stooq_http is None:
+        with _stooq_http_lock:
+            if _stooq_http is None:
+                import httpx
+                _stooq_http = httpx.Client(
+                    timeout=8.0, follow_redirects=True,
+                    limits=httpx.Limits(max_keepalive_connections=16,
+                                        max_connections=32,
+                                        keepalive_expiry=30.0))
+    return _stooq_http
+
+
+def close_stooq_client() -> None:
+    """공유 Stooq 클라이언트 정리 (셧다운 시). 없거나 두 번 불러도 안전."""
+    global _stooq_http
+    client, _stooq_http = _stooq_http, None
+    if client is not None:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 — 종료 정리는 실패해도 무시
+            pass
+
+
 def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
     """Stooq 일봉 CSV — 미국 티커의 1순위 소스 (무키·데이터센터 친화적).
 
     무료·무키 소스로, 형식은 Date,Open,High,Low,Close,Volume CSV.
     클래스주는 대시 표기(brk-b.us)를 쓴다. 타임아웃을 짧게(8초) 잡아,
     혹시 막혔더라도 슬롯을 빨리 반납해 야후 폴백으로 넘어가게 한다.
+    커넥션은 공유 풀에서 재사용한다(_stooq_client).
     """
     import io
-
-    import httpx
 
     t = symbol.lower().replace(".", "-")
     d1 = start.replace("-", "")
     d2 = pd.Timestamp.today().strftime("%Y%m%d")
     url = f"https://stooq.com/q/d/l/?s={t}.us&d1={d1}&d2={d2}&i=d"
-    r = httpx.get(url, timeout=8.0, follow_redirects=True)
+    r = _stooq_client().get(url)
     r.raise_for_status()
     text = r.text.strip()
     first = text.splitlines()[0] if text else ""
@@ -457,6 +490,7 @@ class FreeDataProvider:
     async def aclose(self) -> None:
         # 대기 중인 페치는 버리고 즉시 종료 — 행 스레드가 셧다운을 붙잡지 않게
         self._fetch_pool.shutdown(wait=False, cancel_futures=True)
+        close_stooq_client()  # 공유 커넥션 풀 정리
 
 
 def _load_listing_sync() -> pd.DataFrame:
