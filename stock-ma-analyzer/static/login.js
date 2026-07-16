@@ -15,10 +15,11 @@
 
   var mode = "login"; // "login" | "signup"
 
-  // 로그인 후 돌아갈 경로 — 반드시 사이트 내부(/로 시작, //는 금지)만 허용(오픈 리다이렉트 방지)
+  // 로그인 후 돌아갈 경로 — 사이트 내부(/로 시작)만 허용. //나 /\ 는 프로토콜-상대
+  // URL 로 외부(예: //evil.com, 브라우저가 \를 /로 정규화)로 튀므로 막는다.
   function safeNext() {
     var n = new URLSearchParams(location.search).get("next") || "/touches";
-    if (n.charAt(0) !== "/" || n.charAt(1) === "/") return "/touches";
+    if (n.charAt(0) !== "/" || n.charAt(1) === "/" || n.charAt(1) === "\\") return "/touches";
     return n;
   }
 

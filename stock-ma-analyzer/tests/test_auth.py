@@ -131,3 +131,19 @@ def test_auth_bad_json_400(client):
 def test_login_page_served(client):
     r = client.get("/login")
     assert r.status_code == 200 and "회원 전용" in r.text
+
+
+def test_login_redirect_blocks_open_redirect(client):
+    """로그인 상태에서 /login?next=... 가 외부 사이트로 튀지 않는다 (오픈 리다이렉트)."""
+    client.post("/api/auth/signup",
+                json={"email": "redir@example.com", "password": "password123"})
+    try:
+        for bad in ("//evil.com", "/\\evil.com", "https://evil.com", "javascript:alert(1)"):
+            r = client.get("/login", params={"next": bad}, follow_redirects=False)
+            assert r.status_code == 302
+            assert r.headers["location"] == "/touches", f"open redirect: {bad}"
+        # 사이트 내부 경로는 그대로 허용
+        r = client.get("/login", params={"next": "/ma"}, follow_redirects=False)
+        assert r.headers["location"] == "/ma"
+    finally:
+        client.post("/api/auth/logout")
