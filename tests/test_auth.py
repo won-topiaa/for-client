@@ -1,4 +1,6 @@
 """회원 인증(이메일 가입/로그인) + '오늘의 지지선 터치' 게이팅 테스트."""
+import os
+import secrets
 import time
 
 import pytest
@@ -6,6 +8,9 @@ from fastapi.testclient import TestClient
 
 from app.auth import AuthError, AuthStore, EmailTaken, InvalidCredentials
 from app.server import app
+
+# 운영과 같은 Postgres 경로 검증 — TEST_DATABASE_URL 이 있을 때만 (없으면 생략).
+_PG_URL = os.environ.get("TEST_DATABASE_URL")
 
 
 # ---------- AuthStore 단위 테스트 (임시 DB) ----------
@@ -45,10 +50,12 @@ def test_validation(store):
 
 
 def test_password_not_stored_plaintext(store):
+    from sqlalchemy import text
     store.signup("p@b.com", "supersecretpw")
-    row = store._conn.execute("SELECT pw_hash, pw_salt FROM users").fetchone()
+    with store._engine.connect() as conn:
+        row = conn.execute(text("SELECT pw_hash, pw_salt FROM users")).first()
     assert b"supersecretpw" not in bytes(row[0])
-    assert len(row[1]) == 16                      # 솔트 존재
+    assert len(bytes(row[1])) == 16               # 솔트 존재
 
 
 def test_session_expiry_and_logout(store, monkeypatch):
@@ -141,6 +148,26 @@ def test_auth_bad_json_400(client):
     r = client.post("/api/auth/login", content=b"not json",
                     headers={"Content-Type": "application/json"})
     assert r.status_code == 400
+
+
+@pytest.mark.skipif(not _PG_URL, reason="TEST_DATABASE_URL 미설정 — Postgres 경로 생략")
+def test_postgres_backend_full_flow():
+    """동일 코드가 실제 PostgreSQL(운영 경로)에서도 동작하는지 검증."""
+    store = AuthStore(url=_PG_URL)
+    try:
+        email = f"pg-{secrets.token_hex(6)}@test.com"
+        tok = store.signup(email, "password123")
+        assert store.user_for_token(tok)["email"] == email
+        with pytest.raises(EmailTaken):
+            store.signup(email, "password123")
+        with pytest.raises(InvalidCredentials):
+            store.login(email, "wrongpassword")
+        tok2 = store.login(email, "password123")
+        assert store.user_for_token(tok2)["email"] == email
+        store.logout(tok2)
+        assert store.user_for_token(tok2) is None
+    finally:
+        store.close()
 
 
 def test_login_page_served(client):
