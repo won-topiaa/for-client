@@ -19,8 +19,11 @@
   }
 
   let hasData = false;
+  let inFlight = false;
 
   async function refresh() {
+    if (inFlight) return;  // 이전 요청이 60초 넘게 걸려도 겹쳐 쏘지 않는다
+    inFlight = true;
     try {
       const r = await fetch("/api/indices");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -44,6 +47,8 @@
       // 처음부터 못 가져온 경우만 숨긴다 — 일시 오류에는 마지막 정상
       // 시세를 유지하는 편이 5분간 빈 줄보다 낫다 (티커는 장식)
       if (!hasData) wrap.style.display = "none";
+    } finally {
+      inFlight = false;
     }
   }
 
