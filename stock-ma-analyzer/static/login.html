@@ -105,6 +105,12 @@
                  autocomplete="current-password" placeholder="8자 이상" required minlength="8">
           <div class="hint" id="pwHint" style="display:none">비밀번호는 8자 이상으로 정해주세요.</div>
         </div>
+        <div class="consent" id="consentWrap" style="display:none;margin:2px 0 14px;font-size:12.5px;color:var(--muted);line-height:1.55;">
+          <label style="cursor:pointer;">
+            <input type="checkbox" id="consent" style="vertical-align:middle;margin:0 7px 2px 0;">
+            <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>에 동의합니다. 이메일과 비밀번호(암호화)만 수집해요.
+          </label>
+        </div>
         <button type="submit" class="primary" id="submitBtn">로그인</button>
       </form>
       <div class="toggle" id="toggleWrap">
@@ -113,6 +119,7 @@
       </div>
     </div>
     <a class="back" href="/">← 홈으로 돌아가기</a>
+    <a class="back" href="/privacy" style="margin-left:14px">개인정보처리방침</a>
   </div>
   <script src="/static/login.js"></script>
 </body>

@@ -175,6 +175,14 @@ def test_login_page_served(client):
     assert r.status_code == 200 and "회원 전용" in r.text
 
 
+def test_privacy_page_and_consent(client):
+    """개인정보처리방침 페이지가 뜨고, 가입 화면에 동의 체크박스 + 방침 링크가 있다."""
+    r = client.get("/privacy")
+    assert r.status_code == 200 and "개인정보처리방침" in r.text
+    lp = client.get("/login").text
+    assert 'id="consent"' in lp and 'href="/privacy"' in lp
+
+
 def test_login_redirect_blocks_open_redirect(client):
     """로그인 상태에서 /login?next=... 가 외부 사이트로 튀지 않는다 (오픈 리다이렉트)."""
     client.post("/api/auth/signup",

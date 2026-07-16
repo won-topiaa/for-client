@@ -565,3 +565,9 @@ async def login_page(request: Request):
 async def about_page():
     """원토피아 회사 소개."""
     return FileResponse(STATIC_DIR / "about.html")
+
+
+@app.get("/privacy")
+async def privacy_page():
+    """개인정보처리방침 (회원 이메일 수집 고지)."""
+    return FileResponse(STATIC_DIR / "privacy.html")

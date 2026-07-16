@@ -11,6 +11,8 @@
   var toggleText = document.getElementById("toggleText");
   var toggleBtn = document.getElementById("toggleBtn");
   var pwHint = document.getElementById("pwHint");
+  var consentWrap = document.getElementById("consentWrap");
+  var consent = document.getElementById("consent");
   if (!form) return;
 
   var mode = "login"; // "login" | "signup"
@@ -42,6 +44,7 @@
       toggleBtn.textContent = "로그인";
       pw.setAttribute("autocomplete", "new-password");
       pwHint.style.display = "";
+      if (consentWrap) consentWrap.style.display = "";
     } else {
       title.textContent = "로그인";
       btn.textContent = "로그인";
@@ -49,6 +52,7 @@
       toggleBtn.textContent = "가입하기";
       pw.setAttribute("autocomplete", "current-password");
       pwHint.style.display = "none";
+      if (consentWrap) consentWrap.style.display = "none";
     }
   }
 
@@ -64,6 +68,9 @@
     var password = pw.value;
     if (!em || em.indexOf("@") < 0) { showMsg("이메일을 확인해 주세요."); email.focus(); return; }
     if (password.length < 8) { showMsg("비밀번호는 8자 이상이어야 해요."); pw.focus(); return; }
+    if (mode === "signup" && consent && !consent.checked) {
+      showMsg("개인정보처리방침에 동의해 주세요."); return;
+    }
 
     btn.disabled = true;
     var original = btn.textContent;
