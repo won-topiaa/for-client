@@ -247,9 +247,11 @@ def test_fail_fast_abort_discards_late_straggler_partial(monkeypatch):
             return []
 
     async def universe_fn():
-        # 스트래글러가 먼저 슬롯을 잡되(느린 성공), 빠른 실패들이 abort 를 먼저 낸다
+        # 스트래글러가 먼저 슬롯을 잡되(느린 성공), 빠른 실패들이 abort 를 먼저 낸다.
+        # 실패 수는 FAIL_FAST_PROBE 이상이어야 abort 가 걸린다 (여유분 포함).
         return ([SymbolInfo("LATE", "late", "T")]
-                + [SymbolInfo(f"BAD{i}", "b", "T") for i in range(14)])
+                + [SymbolInfo(f"BAD{i}", "b", "T")
+                   for i in range(ps.FAIL_FAST_PROBE + 4)])
 
     scanner = ps.PatternScanner(CachingProvider(Outage()), universe_fn, index_symbol="KS11")
 
