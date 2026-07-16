@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import socket
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -231,6 +232,28 @@ async def health():
             },
         },
     }
+
+
+# 동시 접속자(현재 사이트를 보고 있는 방문자) 근사 집계 — 각 브라우저가
+# 주기적으로 하트비트를 보내면, 최근 _PRESENCE_TTL 초 안에 신호를 준 고유
+# 방문자 수를 센다. 서버 메모리에만 두므로(단일 워커) 재시작 시 0부터 다시
+# 세고, 저장하는 것은 임의의 클라이언트 ID뿐이라 개인정보가 아니다.
+_PRESENCE_TTL_SEC = 75.0
+_PRESENCE_MAX = 50000          # 폭주 방어: 이 이상은 새 방문자를 더 담지 않는다
+_presence: dict[str, float] = {}
+
+
+@app.get("/api/presence")
+async def presence(cid: str = Query("", max_length=64, pattern=r"^[A-Za-z0-9_-]*$")):
+    """동시 접속자 근사치. 방문자별 하트비트를 받아 활성 수를 돌려준다."""
+    now = time.monotonic()
+    # 오래된 방문자 정리 (반복마다 만료분 제거 — 딕셔너리가 활성 창 크기로 유지)
+    stale = [k for k, seen in _presence.items() if now - seen > _PRESENCE_TTL_SEC]
+    for k in stale:
+        _presence.pop(k, None)
+    if cid and (cid in _presence or len(_presence) < _PRESENCE_MAX):
+        _presence[cid] = now
+    return {"active": len(_presence)}
 
 
 @app.get("/api/search")
