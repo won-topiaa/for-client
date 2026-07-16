@@ -11,9 +11,33 @@
 - cup_handle                          : 컵 앤 핸들
 - stage                               : 와인스타인 4단계 (1 바닥다지기 /
                                         2 상승 / 3 천장다지기 / 4 하락)
+
+순위 점수 = '정석 부합도' (0~100)
+--------------------------------
+매칭된 패턴들의 표시 순서는 문헌 기반 정석 부합도 점수로 정한다. 탐지·탈락
+게이트(패턴인가/무효인가)는 이진 판정으로 먼저 돌고, 부합도는 '살아남은'
+패턴들만 순위 매긴다 — 부합도가 높다고 무효 패턴이 살아나거나, 낮다고
+유효 패턴이 목록에서 빠지는 일은 없다 (게이트와 채점의 엄격한 분리).
+
+채점 방법론 (다기준 퍼지 멤버십):
+- 각 품질 차원(거래량 추세·대칭성·돌파 거래량 등)의 측정값을 사다리꼴
+  멤버십 함수로 0~1 부분점수화 — 교과서 이상 밴드 안은 1.0, 문헌상 나쁜
+  경계에서 0 (Lo·Mamaysky·Wang 2000 의 커널 템플릿 매칭과 같은 발상의
+  단순화). 단조-좋음 지표(돌파 거래량 등)는 한쪽 램프만 쓴다.
+- 가중치는 각 저자(Bulkowski 2005 성과 통계·O'Neil·Weinstein·Edwards &
+  Magee)가 신뢰도와 가장 강하게 연결한 요인일수록 크게 준다.
+- 합산은 가중 산술평균(A)과 가중 기하평균(G)의 혼합 sqrt(A*G) — 패턴은
+  '전 요건 동시 충족' 게슈탈트라, 치명적 결함 하나가 산술평균에 묻히지
+  않게 기하 성분으로 끌어내린다 (다기준 의사결정의 일반화 평균).
+- 측정 불가 차원(거래량 데이터 없음 등)은 0 으로 벌점하지 않고 제외 후
+  가중치 재정규화 — 데이터 결측이 결함으로 둔갑하지 않게 한다.
+- 원측정값은 ATR·자기 패턴 크기·거래량 평균으로 정규화해 종목·변동성
+  체제가 달라도 비교 가능(scale-free)하고, 점수는 스캔 배치와 무관하게
+  결정적이다 (같은 차트는 언제나 같은 점수).
 """
 from __future__ import annotations
 
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
@@ -87,7 +111,186 @@ def _prep(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+# ---------- 정석 부합도(0~100) 채점 도구 ----------
+# 모듈 docstring 의 방법론 구현: 사다리꼴/램프 멤버십 + 가중 산술·기하 혼합.
+# 부분점수 None = '측정 불가'(데이터 결측) — 벌점 없이 제외하고 재정규화한다.
+
+def _trap(x: float, poor_lo: float, ideal_lo: float,
+          ideal_hi: float, poor_hi: float) -> float | None:
+    """사다리꼴 멤버십: 이상 밴드 [ideal_lo, ideal_hi] 안 1.0, poor 경계 밖 0,
+    사이는 선형. 값이 유한하지 않으면 None(측정 불가)."""
+    if not np.isfinite(x):
+        return None
+    if x <= poor_lo or x >= poor_hi:
+        return 0.0
+    if ideal_lo <= x <= ideal_hi:
+        return 1.0
+    if x < ideal_lo:
+        return float((x - poor_lo) / (ideal_lo - poor_lo))
+    return float((poor_hi - x) / (poor_hi - ideal_hi))
+
+
+def _up(x: float, poor: float, ideal: float) -> float | None:
+    """단조-상승 램프 (클수록 좋음: 돌파 거래량 배수 등). poor 이하 0, ideal 이상 1."""
+    if not np.isfinite(x):
+        return None
+    return float(np.clip((x - poor) / (ideal - poor), 0.0, 1.0))
+
+
+def _down(x: float, ideal: float, poor: float) -> float | None:
+    """단조-하락 램프 (작을수록 좋음: 비대칭도·거래량 비율 등). ideal 이하 1, poor 이상 0."""
+    if not np.isfinite(x):
+        return None
+    return float(np.clip((poor - x) / (poor - ideal), 0.0, 1.0))
+
+
+def _vol_mean(volume: np.ndarray, lo: int, hi: int) -> float:
+    """구간 평균 거래량 (NaN 무시). 구간이 비었거나 전부 NaN/0 이면 NaN —
+    호출부의 비율 계산이 NaN 이 되어 해당 차원이 자연히 '측정 불가'로 빠진다."""
+    seg = volume[max(0, lo):max(0, hi)]
+    if seg.size == 0:
+        return float("nan")
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        m = float(np.nanmean(seg))
+    return m if np.isfinite(m) and m > 0 else float("nan")
+
+
+def _conformity(dims: list[tuple[str, float, float | None]]) -> tuple[float, dict]:
+    """[(차원, 가중치, 부분점수 0~1 | None)] → (정석 부합도 0~100, 세부 내역).
+
+    None(측정 불가) 차원은 제외하고 가중치를 재정규화한다. 합산은 가중
+    산술평균(A)·기하평균(G)의 혼합 sqrt(A*G) — 결함 하나가 평균에 묻히지
+    않게 하되(기하 성분), 전반적 우수함도 반영한다(산술 성분)."""
+    usable = [(name, w, s) for name, w, s in dims if s is not None and w > 0]
+    if not usable:
+        return 0.0, {}
+    total_w = sum(w for _, w, _ in usable)
+    arith = sum(w * s for _, w, s in usable) / total_w
+    eps = 0.01  # ln(0) 방지 — 진짜 0 결함도 기하 성분을 완전히 죽이지는 않게
+    geo = math.exp(sum(w * math.log(max(s, eps)) for _, w, s in usable) / total_w)
+    base = math.sqrt(arith * geo)
+    detail = {name: round(s, 3) for name, _, s in usable}
+    # 측정 가능한 가중치 비중 — 낮으면(데이터 결측 다수) 점수 신뢰도가 낮다는 표시
+    detail["_coverage"] = round(total_w / sum(w for _, w, _ in dims), 2) if dims else 0.0
+    return round(100.0 * base, 1), detail
+
+
 # ---------- 헤드 앤 숄더 ----------
+
+def _hs_conformity(ctx: dict, sign: int, window: list, nk_slope: float,
+                   break_bar: int | None, recovered: float | None,
+                   neck_at, ref: float) -> tuple[float, dict]:
+    """헤드 앤 숄더 정석 부합도 — 문헌 기반 품질 차원을 채점한다.
+
+    천장형(sign=+1)과 바닥형(sign=-1)은 가중치가 다르다: 바닥형은 돌파
+    거래량이 필수(Edwards & Magee 의 천장/바닥 비대칭 — 바닥은 거래량
+    급증 없이 넥라인을 못 넘는다)라 그 비중이 가장 크고, 천장형은 세
+    봉우리 거래량 감소·사전 상승 추세의 비중이 크다 (Bulkowski 2005 의
+    성과 분해: 거래량 추세·돌파 거래량·넥라인 기울기·throwback)."""
+    close, high, low = ctx["close"], ctx["high"], ctx["low"]
+    volume, a, n = ctx["volume"], ctx["atr"], ctx["n"]
+    (i1, p1, _), (t1i, t1p, _), (hi, hp, _), (t2i, t2p, _), (i3, p3, _) = window
+    atr_h = max(float(a[hi]), 1e-9)
+
+    # [사전 추세] 반전 패턴은 반전할 추세가 있어야 한다 (Edwards & Magee).
+    # 천장형: 왼어깨까지 30% 이상 상승이 만점 / 바닥형: 20% 이상 하락이 만점.
+    lookback = max(63, 3 * (i3 - i1))
+    lb0 = max(0, i1 - lookback)
+    prior = None
+    if i1 - lb0 >= 30:
+        if sign > 0:
+            swing_low = float(np.min(low[lb0:i1]))
+            prior = _up((p1 - swing_low) / swing_low, 0.05, 0.30) \
+                if swing_low > 0 else None
+        else:
+            swing_high = float(np.max(high[lb0:i1]))
+            prior = _up((swing_high - p1) / swing_high, 0.03, 0.20) \
+                if swing_high > 0 else None
+
+    # [봉우리 거래량 감소] 왼어깨 > 머리 > 오른어깨 — 고전에서 가장 강조되는
+    # 거래량 신호 (Bulkowski: 오른어깨가 왼어깨보다 30% 이상 가벼우면 이상적,
+    # 오른어깨로 거래량이 '늘면' 0점).
+    k = int(np.clip(round(0.075 * (i3 - i1)), 2, 5))
+    vol_l = _vol_mean(volume, i1 - k, i1 + k + 1)
+    vol_r = _vol_mean(volume, i3 - k, i3 + k + 1)
+    vol_trend = (_up((vol_l - vol_r) / vol_l, 0.0, 0.30)
+                 if np.isfinite(vol_l) and np.isfinite(vol_r) else None)
+
+    # [돌파 거래량] 완성(넥라인 이탈)된 패턴만 측정 가능. 천장형은 1.5배면
+    # 만점(가벼워도 유효 — Bulkowski), 바닥형은 2배 만점에 바닥 특유의
+    # 하한(0.1)을 둔다 (저거래 돌파도 자동 실패는 아님 — Bulkowski).
+    bo_vol = None
+    if break_bar is not None and break_bar >= 20:
+        avg_v = _vol_mean(volume, break_bar - 50, break_bar)
+        brk_v = _vol_mean(volume, break_bar, break_bar + 2)
+        if np.isfinite(avg_v) and np.isfinite(brk_v):
+            ratio = brk_v / avg_v
+            if sign > 0:
+                bo_vol = _up(ratio, 0.8, 1.5)
+            else:
+                s = _up(ratio, 0.7, 2.0)
+                bo_vol = max(0.1, s) if s is not None else None
+
+    # [머리 탈출 랠리 거래량 — 바닥형 전용] 머리로의 하락(음봉) 대비 머리
+    # 탈출 랠리(양봉)의 거래량 증가 = 수요 등장의 신호 (Edwards & Magee).
+    rally_vol = None
+    if sign < 0 and hi - t1i >= 2 and t2i - hi >= 2:
+        seg_dn = volume[t1i + 1:hi + 1][close[t1i + 1:hi + 1] < close[t1i:hi]]
+        seg_up = volume[hi + 1:t2i + 1][close[hi + 1:t2i + 1] > close[hi:t2i]]
+        if seg_dn.size and seg_up.size:
+            dn_v = _vol_mean(seg_dn, 0, seg_dn.size)
+            up_v = _vol_mean(seg_up, 0, seg_up.size)
+            if np.isfinite(dn_v) and np.isfinite(up_v):
+                rally_vol = _up(up_v / dn_v, 0.8, 1.5)
+
+    # [어깨 가격 대칭] 탐지 게이트(5% 초과 탈락)의 생존 범위 안을 등급화 —
+    # 1.5% 이내면 교과서적 대칭, 게이트 경계(5%)에서 0.
+    sym = abs(p1 - p3) / ref
+    shoulder_sym = _down(sym, 0.015, 0.05)
+
+    # [머리 돌출] ATR 정규화 — 머리가 어깨보다 1.5 ATR 이상 높아야(낮아야)
+    # 만점, 0.3 ATR 이하면 삼중천장과 구분이 안 되는 모호한 머리 (Bulkowski).
+    extreme_shoulder = max(p1, p3) if sign > 0 else min(p1, p3)
+    head_prom = _up(sign * (hp - extreme_shoulder) / atr_h, 0.3, 1.5)
+
+    # [어깨 시간 대칭] 머리까지의 좌우 소요 봉수 비율 (Bulkowski 식별 지침;
+    # Lo·Mamaysky·Wang 2000 도 어깨 시간 대칭을 정의에 포함).
+    d_l, d_r = hi - i1, i3 - hi
+    time_sym = (_up(min(d_l, d_r) / max(d_l, d_r), 0.33, 0.75)
+                if min(d_l, d_r) > 0 else 0.0)
+
+    # [넥라인 기울기] 천장형은 수평~완만한 하향이 유리 (Bulkowski: 하향
+    # 넥라인이 더 큰 하락), 바닥형은 거울상(완만한 상향 유리). sign 을 곱해
+    # 한 밴드로 판정한다.
+    neck = _trap(sign * (nk_slope / atr_h), -0.25, -0.10, 0.02, 0.10)
+
+    # [되돌림 없음] 완성 후 가격이 넥라인 쪽으로 얼마나 회복했나 — 넥라인
+    # 0.5 ATR 밖에서 멈추면 만점, 넥라인에 닿으면 0 (Bulkowski: throwback
+    # 없는 패턴이 더 멀리 간다). recovered 는 넥라인 대비 비율이라 ATR 로 환산.
+    throwback = None
+    if break_bar is not None and recovered is not None:
+        neck_b = abs(float(neck_at(break_bar)))
+        atr_b = max(float(a[break_bar]), 1e-9)
+        throwback = _down(recovered * neck_b / atr_b, -0.5, 0.0)
+
+    if sign > 0:
+        dims = [
+            ("prior_trend", 0.85, prior), ("vol_trend", 0.90, vol_trend),
+            ("breakout_vol", 0.60, bo_vol), ("shoulder_sym", 0.70, shoulder_sym),
+            ("head_prom", 0.65, head_prom), ("time_sym", 0.45, time_sym),
+            ("neckline", 0.50, neck), ("no_throwback", 0.55, throwback),
+        ]
+    else:
+        dims = [
+            ("prior_trend", 0.75, prior), ("vol_trend", 0.60, vol_trend),
+            ("breakout_vol", 1.00, bo_vol), ("rally_vol", 0.60, rally_vol),
+            ("shoulder_sym", 0.55, shoulder_sym), ("head_prom", 0.70, head_prom),
+            ("time_sym", 0.40, time_sym), ("neckline", 0.45, neck),
+            ("no_throwback", 0.50, throwback),
+        ]
+    return _conformity(dims)
+
 
 def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
     key = "inv_head_shoulders" if inverse else "head_shoulders"
@@ -143,6 +346,7 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
                 break_bar = j
                 break
 
+        recovered: float | None = None
         if break_bar is None:
             # [미완성 = 넥라인 접근 중] 몸통 한복판(넥라인 +6% 초과)이면 아직
             # 이르다 — 넥라인 부근까지 온 형태만 실전 의미가 있음.
@@ -169,7 +373,9 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
                 continue
             state = f"넥라인 이탈 {since}봉 전"
 
-        score = (prom1 + prom3) * 2 + (0.05 - sym) * 10 + max(0.0, 0.06 - abs(dist_now))
+        # 정석 부합도 (0~100) — 게이트를 통과한 후보만 채점해 순위를 정한다
+        score, conf = _hs_conformity(ctx, sign, window, nk_slope,
+                                     break_bar, recovered, _neck_at, ref)
         head_txt = f"{hp:,.0f}"
         sym_score = max(0.0, 100 - sym / 0.05 * 100)  # 0(허용 한계)~100(완전 대칭)
         summary = (
@@ -177,10 +383,10 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             f"어깨 대칭 {sym_score:.0f}점 · 넥라인 {neck_now:,.0f} · {state}"
         )
         hit = PatternHit(
-            pattern=key, matched=True, score=round(float(score), 4),
+            pattern=key, matched=True, score=score,
             summary=summary,
             detail={"head": hp, "shoulders": [p1, p3], "neckline": neck_now,
-                    "state": state},
+                    "state": state, "conformity": conf},
             overlays=[
                 {"name": "넥라인", "points": [(t1i, t1p), (n - 1, neck_now)]},
                 {"name": "골격", "points": [(i1, p1), (t1i, t1p), (hi, hp),
@@ -244,11 +450,74 @@ def detect_triangle(ctx: dict) -> PatternHit:
     up_now, lo_now = su * x1 + bu, sl * x1 + bl
     if not (lo_now - atr_mean <= close[-1] <= up_now + atr_mean):
         return PatternHit(pattern="triangle", matched=False)
-    score = (0.80 - ratio) * 3 + (len(highs) + len(lows)) * 0.1
+
+    # ── 정석 부합도 채점 ──
+    volume = ctx["volume"]
+    x0i = int(x0)
+
+    # [추세선 터치 수] 선당 3회 이상이 교과서 최소+이상 (Bulkowski/Edwards &
+    # Magee: 각 선에 2회는 최소, 3회 이상이어야 진짜 수렴). 지그재그 피벗은
+    # 정의상 고저 교대라 교대성은 자동 충족 — 개수만 등급화한다.
+    touches = _up(float(min(len(highs), len(lows))), 1.0, 3.0)
+
+    # [수렴 기간 거래량 감소] 대칭 삼각형의 ~86%에서 관찰되는 하향 거래량
+    # (Bulkowski) — 마지막 1/3 평균이 처음 1/3 의 55% 이하면 만점, 늘었으면 0.
+    # 회귀 기울기가 양수면(감소 추세가 아님) 30% 감점.
+    vol_contract = None
+    span = n - x0i
+    if span >= 15:
+        third = span // 3
+        v_first = _vol_mean(volume, x0i, x0i + third)
+        v_last = _vol_mean(volume, n - third, n)
+        if np.isfinite(v_first) and np.isfinite(v_last):
+            vol_contract = _down(v_last / v_first, 0.55, 1.05)
+            if vol_contract is not None and vol_contract > 0:
+                seg = volume[x0i:n]
+                fin = np.isfinite(seg)
+                if fin.sum() >= 6 and float(np.polyfit(
+                        np.flatnonzero(fin), seg[fin], 1)[0]) >= 0:
+                    vol_contract *= 0.7
+
+    # [꼭짓점 진행도] 폭이 선형으로 좁아지므로 진행도 = 1 - 폭비율. 돌파는
+    # 평균적으로 꼭짓점까지 60~78% 지점에 몰린다 (Bulkowski ~73%) — 그
+    # 밴드가 만점, 게이트 경계(85% = 폭 15%)에서 0.
+    progress = _trap(1.0 - ratio, 0.35, 0.60, 0.78, 0.85)
+
+    # [추세선 밀착도] 피벗이 추세선에 얼마나 붙어 있나 (ATR 정규화 평균 잔차).
+    # 0.5 ATR 이내면 만점, 게이트 경계(1.6 ATR)에서 0.
+    fit = _down(((ru + rl) / 2) / max(atr_mean, 1e-9), 0.5, 1.6)
+
+    # [유형 정합] 대칭: 두 선의 기울기 크기가 비슷(0.70 이상이 만점) /
+    # 상승·하락: 수평선이 진짜 수평(가파른 선의 15% 이하면 만점).
+    if kind.startswith("대칭"):
+        shape = _up(min(abs(nu), abs(nl)) / max(abs(nu), abs(nl), 1e-9), 0.33, 0.70)
+    elif kind.startswith("상승"):
+        shape = _down(abs(nu) / max(abs(nl), 1e-9), 0.15, 1.0)
+    else:
+        shape = _down(abs(nl) / max(abs(nu), 1e-9), 0.15, 1.0)
+
+    # [최근 거래량 마름] 꼭짓점 부근의 침묵 — 돌파 직전 거래량 고갈이 고품질
+    # 돌파에 선행 (O'Neil·Edwards & Magee). 최근 5봉 / 패턴 전체 평균.
+    v_whole = _vol_mean(volume, x0i, n)
+    v_tail = _vol_mean(volume, n - 5, n)
+    dryup = (_down(v_tail / v_whole, 0.50, 1.10)
+             if np.isfinite(v_whole) and np.isfinite(v_tail) else None)
+
+    # [유형 신뢰도 사전값] Bulkowski 성과 통계: 상승 삼각형이 최상(상방 돌파
+    # ~63%·이탈 실패율 낮음), 대칭은 양방향, 하락이 최하.
+    prior = (1.0 if kind.startswith("상승")
+             else 0.85 if kind.startswith("대칭") else 0.78)
+
+    score, conf = _conformity([
+        ("touches", 0.90, touches), ("vol_contract", 0.90, vol_contract),
+        ("apex_progress", 0.85, progress), ("line_fit", 0.70, fit),
+        ("shape", 0.65, shape), ("vol_dryup", 0.55, dryup),
+        ("type_prior", 0.30, prior),
+    ])
     return PatternHit(
-        pattern="triangle", matched=True, score=round(float(score), 4),
+        pattern="triangle", matched=True, score=score,
         summary=f"{kind} · 폭 {ratio * 100:.0f}%까지 수렴 · 꼭짓점 접근 중",
-        detail={"ratio": ratio, "kind": kind},
+        detail={"ratio": ratio, "kind": kind, "conformity": conf},
         overlays=[
             {"name": "저항선", "points": [(int(x0), su * x0 + bu), (n - 1, up_now)]},
             {"name": "지지선", "points": [(int(x0), sl * x0 + bl), (n - 1, lo_now)]},
@@ -322,12 +591,82 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         # 넘게 이미 상승했으면 추격 구간 (O'Neil 의 매수점 규칙: 피벗 +5% 이내).
         if not (lp * 0.85 <= close[-1] <= lp * 1.05):
             continue
-        score = r2 * 2 + (0.5 - abs(bpos - 0.5)) + (0.15 - h_depth)
+        # ── 정석 부합도 채점 (오닐의 컵앤핸들 규칙 기반) ──
+        volume, low = ctx["volume"], ctx["low"]
+
+        # [사전 상승 추세] 지속 패턴의 전제 — 컵 이전 30% 이상 상승이 만점
+        # (오닐: 베이스 앞에 유의미한 상승이 있어야 한다), 10% 이하는 0.
+        prior = None
+        look = int(np.clip(length, 120, 250))
+        lb0 = max(0, li - look)
+        if li - lb0 >= 20:
+            pre_low = float(np.min(low[lb0:li]))
+            prior = _up((lp - pre_low) / pre_low, 0.10, 0.30) if pre_low > 0 else None
+
+        # [컵 깊이] 오닐 이상 밴드 12~33% 만점, 게이트 경계(50%)에서 0 —
+        # 너무 얕으면 흔들어 털기(shakeout)가 없고, 깊으면 실손상 (Bulkowski).
+        dep = _trap(depth, 0.06, 0.12, 0.33, 0.50)
+
+        # [둥근 바닥] 2차 적합도(게이트 0.70 위를 등급화, 0.88 이상 만점) 70% +
+        # 바닥이 컵 중앙(40~60%)에 있는지 30% (오닐: U자, V자 아님).
+        rd_r2 = _up(r2, 0.70, 0.88)
+        rd_pos = _trap(bpos, 0.25, 0.40, 0.60, 0.75)
+        roundness = (0.7 * rd_r2 + 0.3 * rd_pos
+                     if rd_r2 is not None and rd_pos is not None else None)
+
+        # [컵 기간] 오닐 7~35주(35~175봉)가 핵심 밴드 — 게이트(30~220) 안을 등급화.
+        duration = _trap(float(length), 30.0, 35.0, 175.0, 220.0)
+
+        # [핸들 위치·기울기] 오닐의 최우선 판별: 핸들은 컵 '상단 절반'에서
+        # 완만히 '하향'해야 한다 (하단 절반 핸들·상향 쐐기 핸들 = 불량 베이스).
+        h_frac = (h_low - bottom) / max(lp - bottom, 1e-9)
+        place = _up(h_frac, 0.35, 0.65)
+        drift = None
+        if handle.size >= 5:
+            slope_h = float(np.polyfit(np.arange(handle.size), handle, 1)[0])
+            drift_pct = slope_h * (handle.size - 1) / max(float(close[ri]), 1e-9)
+            drift = _trap(drift_pct, -0.20, -0.12, -0.005, 0.03)
+        hp_dim = (0.6 * place + 0.4 * drift if place is not None and drift is not None
+                  else place)
+
+        # [핸들 깊이] 5~15%가 이상적(게이트가 15%에서 자름), 5% 미만은 털기
+        # 부족으로 절반부터 시작하는 완만한 감점 (오닐: 핸들 되돌림 ~10-15%).
+        hd_dim = 1.0 if h_depth >= 0.05 else 0.5 + (max(h_depth, 0.0) / 0.05) * 0.5
+
+        # [핸들 거래량 마름] 핸들에서 거래량이 컵 평균의 60% 이하로 마르면
+        # 만점 — 매도세 소진의 신호 (오닐), 오히려 늘면(1.2배) 0.
+        h_vol = _vol_mean(volume, ri, n)
+        c_vol = _vol_mean(volume, li, ri)
+        hv_dim = (_down(h_vol / c_vol, 0.60, 1.20)
+                  if np.isfinite(h_vol) and np.isfinite(c_vol) else None)
+
+        # [돌파 거래량] 테두리(피벗) 상향 돌파가 이미 나왔으면 그 봉의 거래량
+        # 급증을 채점 (오닐: 평균의 40% 이상 증가 필수) — 아직 돌파 전이면
+        # 측정 불가로 제외 (돌파 전 접근 상태도 유효한 매수 준비 구간).
+        bo_dim = None
+        after = np.flatnonzero(close[ri:] > lp)
+        if after.size:
+            bj = ri + int(after[0])
+            if bj >= 20:
+                avg_v = _vol_mean(volume, bj - 50, bj)
+                with np.errstate(invalid="ignore"), warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    brk_v = float(np.nanmax(volume[bj:bj + 2]))
+                if np.isfinite(avg_v) and np.isfinite(brk_v) and brk_v > 0:
+                    bo_dim = _up(brk_v / avg_v, 1.0, 1.4)
+
+        score, conf = _conformity([
+            ("prior_trend", 0.85, prior), ("cup_depth", 0.80, dep),
+            ("roundness", 0.60, roundness), ("duration", 0.40, duration),
+            ("handle_place", 0.85, hp_dim), ("handle_depth", 0.70, hd_dim),
+            ("handle_vol", 0.65, hv_dim), ("breakout_vol", 0.90, bo_dim),
+        ])
         hit = PatternHit(
-            pattern="cup_handle", matched=True, score=round(float(score), 4),
+            pattern="cup_handle", matched=True, score=score,
             summary=(f"컵 깊이 {depth * 100:.0f}% · 둥근바닥 적합도 {r2 * 100:.0f}% · "
                      f"핸들 조정 {h_depth * 100:.1f}% · 테두리 {lp:,.0f}"),
-            detail={"rim": lp, "depth": depth, "r2": r2, "handle_depth": h_depth},
+            detail={"rim": lp, "depth": depth, "r2": r2, "handle_depth": h_depth,
+                    "conformity": conf},
             overlays=[{"name": "컵 테두리", "points": [(li, lp), (n - 1, lp)]}],
         )
         if best is None or hit.score > best.score:
@@ -458,25 +797,94 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
         return PatternHit(pattern=key, matched=False)
     b, base_high, vol_ratio, ext = best
 
-    # 조건 5(보너스): 6개월 상대강도 vs 지수
-    rs_txt, rs_bonus = "", 0.0
+    # 조건 5(보너스): 6개월 상대강도 vs 지수 — 맨스필드 RS 의 근사.
+    # 와인스타인: RS 가 0선 위(양수)이며 '상승 중'이어야 확증. 지수 대비
+    # 뒤처지는(RS<=0) 종목은 오닐·와인스타인 모두 거부 → 0점.
+    rs_txt = ""
+    rs_dim: float | None = None
     if index_close is not None and len(index_close) >= 126 and n >= 126:
         stock_r = close[-1] / close[-126] - 1
         idx_r = float(index_close[-1] / index_close[-126]) - 1
         rs = stock_r - idx_r
         rs_txt = f" · RS {'+' if rs > 0 else ''}{rs * 100:.0f}%p"
-        rs_bonus = min(0.5, max(0.0, rs * 2))
+        if rs <= 0:
+            rs_dim = 0.0
+        else:
+            pos_c = min(rs / 0.10, 1.0)   # 6개월 +10%p 초과성과면 만점
+            if len(index_close) >= 147 and n >= 147:
+                # 20일 전의 같은 6개월 RS 와 비교해 '상승 중' 여부를 등급화
+                rs_prev = ((close[-21] / close[-147] - 1)
+                           - (float(index_close[-21] / index_close[-147]) - 1))
+                rise_c = float(np.clip((rs - rs_prev) / 0.05, 0.0, 1.0))
+            else:
+                rise_c = 0.5  # 판단 근거 부족 — 중립
+            rs_dim = 0.5 * pos_c + 0.5 * rise_c
 
     days_ago = n - 1 - b
-    score = (min(1.0, vol_ratio / 2.0) + (0.25 - ext) * 2
-             + min(0.5, slope_now / 0.02) + rs_bonus)
+
+    # ── 정석 부합도 채점 (와인스타인·오닐 기준) ──
+    volume_arr, atr_arr = volume, ctx["atr"]
+
+    # [돌파 거래량] 와인스타인 '돌파에서 거래량은 극적으로 늘어야'(경험칙
+    # ~2배), 오닐 최소 +40~50%. 2배 이상 만점 — 게이트(1.3배)의 생존자는
+    # 최소 0.3 부터 시작한다.
+    bo_dim = _up(vol_ratio, 1.0, 2.0)
+
+    # [30주선 위치·기울기] 2단계의 정의 자체 — 종가가 30주선 0~8% 위(만점),
+    # +25% 이상 이격은 과열(0점) × 선의 상승 기울기(월 +2% 이상 만점). 둘의
+    # 곱: 어느 한쪽이 나쁘면 전체가 깎인다 (와인스타인의 결합 조건).
+    pos = float(close[-1] / ma[-1] - 1)
+    pos_c = _trap(pos, -1e-9, 0.0, 0.08, 0.25)
+    slope_c = _up(slope_now, 0.0, 0.02)
+    ma_dim = (pos_c * slope_c if pos_c is not None and slope_c is not None else None)
+
+    # [전환 신선도] 30주선이 상승으로 돌아선 지 25봉(~5주) 이내면 초기
+    # 2단계(만점), 75봉(~15주) 이상이면 중·후기 (와인스타인: 2단계 '초입'이
+    # 손익비 최적).
+    dm = np.diff(ma)
+    fin = np.isfinite(dm)
+    nonpos = np.flatnonzero(fin & (dm <= 0))
+    t_turn = float(len(dm) - 1 - nonpos[-1]) if nonpos.size else float(fin.sum())
+    fresh_dim = _down(t_turn, 25.0, 75.0)
+
+    # [피벗 근접] 오닐의 5% 룰 — 돌파선 위 0~5%가 매수 구간(만점), +15%
+    # 이상 추격은 0점 (게이트는 +25%까지 허용하나 순위는 뒤로 밀린다).
+    prox_dim = _trap(ext, -0.03, 0.0, 0.05, 0.15)
+
+    # [베이스 품질] (a) 타이트함: 베이스 구간 평균 ATR 이 가격의 4% 이하면
+    # 만점, 8% 이상(느슨·급등락 박스)이면 0 (오닐: 타이트한 마감이 강함).
+    # (b) 베이스 후반 거래량 마름 (오닐의 dry-up) — 마지막 구간이 전체
+    # 평균의 85% 이하면 만점.
+    b0, b1 = b - 130, b - 5
+    base_close = close[b0:b1]
+    base_atr = atr_arr[b0:b1]
+    tight = None
+    if base_close.size and np.isfinite(base_atr).any():
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            atr_pct = float(np.nanmean(base_atr)) / max(float(np.nanmean(base_close)), 1e-9)
+        tight = _down(atr_pct, 0.04, 0.08)
+    late_v = _vol_mean(volume_arr, b - 30, b1)
+    base_v = _vol_mean(volume_arr, b0, b1)
+    dry = (_down(late_v / base_v, 0.85, 1.00)
+           if np.isfinite(late_v) and np.isfinite(base_v) else None)
+    if tight is not None and dry is not None:
+        base_dim: float | None = 0.6 * tight + 0.4 * dry
+    else:
+        base_dim = tight if tight is not None else dry
+
+    score, conf = _conformity([
+        ("breakout_vol", 0.95, bo_dim), ("rel_strength", 0.85, rs_dim),
+        ("ma30", 0.85, ma_dim), ("freshness", 0.55, fresh_dim),
+        ("pivot_prox", 0.70, prox_dim), ("base_quality", 0.60, base_dim),
+    ])
     summary = (f"베이스 상단 {base_high:,.0f} 돌파 ({days_ago}일 전) · "
                f"돌파 거래량 {vol_ratio:.1f}배 · 30주선 상승 전환{rs_txt}")
     idx0 = max(0, n - 260)
     return PatternHit(
-        pattern=key, matched=True, score=round(float(score), 4), summary=summary,
+        pattern=key, matched=True, score=score, summary=summary,
         detail={"breakout": base_high, "vol_ratio": vol_ratio, "ext": ext,
-                "days_ago": days_ago},
+                "days_ago": days_ago, "conformity": conf},
         overlays=[
             {"name": "베이스 상단", "points": [(b - 130, base_high), (n - 1, base_high)]},
             {"name": "150일선(≈30주선)",

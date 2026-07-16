@@ -578,6 +578,137 @@ def test_universe_fn_kr_defends_dirty_listing():
     json.dumps([[s.symbol, s.name, s.market] for s in out], allow_nan=False)
 
 
+# ---------- 정석 부합도 (0~100) 채점 ----------
+
+def test_conformity_membership_shapes():
+    """사다리꼴/램프 멤버십: 이상 밴드 1.0, poor 경계 밖 0, 사이 선형, NaN→None."""
+    from app.patterns import _down, _trap, _up
+
+    # 사다리꼴: poor_lo=0, ideal=[2,4], poor_hi=6
+    assert _trap(3.0, 0, 2, 4, 6) == 1.0          # 이상 밴드 안
+    assert _trap(1.0, 0, 2, 4, 6) == 0.5          # 상승 램프 중간
+    assert _trap(5.0, 0, 2, 4, 6) == 0.5          # 하강 램프 중간
+    assert _trap(-1.0, 0, 2, 4, 6) == 0.0         # 경계 밖
+    assert _trap(7.0, 0, 2, 4, 6) == 0.0
+    assert _trap(float("nan"), 0, 2, 4, 6) is None  # 측정 불가
+    # 단조 램프
+    assert _up(2.0, 1.0, 2.0) == 1.0 and _up(1.5, 1.0, 2.0) == 0.5
+    assert _up(0.5, 1.0, 2.0) == 0.0 and _up(float("nan"), 1, 2) is None
+    assert _down(0.5, 0.5, 1.0) == 1.0 and _down(0.75, 0.5, 1.0) == 0.5
+    assert _down(1.2, 0.5, 1.0) == 0.0
+
+
+def test_conformity_aggregation_gates_single_flaw():
+    """합산 규칙: 치명적 결함 하나(0점 차원)는 산술평균보다 점수를 크게
+    끌어내려야 한다 (기하 성분 — 패턴은 전 요건 동시 충족 게슈탈트)."""
+    from app.patterns import _conformity
+
+    perfect, _ = _conformity([("a", 1.0, 1.0), ("b", 1.0, 1.0), ("c", 1.0, 1.0)])
+    assert perfect == 100.0
+    flawed, _ = _conformity([("a", 1.0, 1.0), ("b", 1.0, 1.0), ("c", 1.0, 0.0)])
+    arith_only = 100 * (2 / 3)
+    assert flawed < arith_only - 10, f"결함이 평균에 묻힘: {flawed} vs {arith_only}"
+    # 경계: 0~100 를 벗어나지 않는다
+    assert 0.0 <= flawed <= 100.0
+
+
+def test_conformity_renormalizes_missing_dims():
+    """측정 불가(None) 차원은 0 벌점이 아니라 제외 + 가중치 재정규화 —
+    거래량 데이터가 없는 종목이 결함 취급을 받으면 안 된다."""
+    from app.patterns import _conformity
+
+    with_missing, detail = _conformity(
+        [("geo", 1.0, 0.8), ("vol", 1.0, None), ("sym", 1.0, 0.8)])
+    no_missing, _ = _conformity([("geo", 1.0, 0.8), ("sym", 1.0, 0.8)])
+    assert with_missing == no_missing, "None 차원이 점수에 영향을 줌"
+    assert "vol" not in detail and detail["_coverage"] < 1.0
+    # 전부 측정 불가면 0점 (신뢰할 근거 없음)
+    empty, d = _conformity([("a", 1.0, None)])
+    assert empty == 0.0 and d == {}
+
+
+def test_pattern_scores_bounded_0_100():
+    """모든 탐지 결과의 score 는 정석 부합도 0~100 범위."""
+    from app.patterns import detect_stage2_early
+
+    hits = []
+    hits.append(detect_head_shoulders(_prep(_df(_hs_series(), noise_seed=1))))
+    hits.append(detect_head_shoulders(
+        _prep(_df(200 - _hs_series(), noise_seed=2)), inverse=True))
+    hits.append(detect_triangle(_prep(_df(_triangle_series(), noise_seed=3))))
+    hits.append(detect_cup_handle(_prep(_df(_cup_series(), noise_seed=4))))
+    closes, volume = _stage2_series()
+    hits.append(detect_stage2_early(_prep(_df(closes, volume=volume))))
+    for hit in hits:
+        assert hit.matched, hit
+        assert 0.0 <= hit.score <= 100.0, f"{hit.pattern}: {hit.score}"
+        assert "conformity" in hit.detail, "채점 세부 내역이 없음"
+        conf = hit.detail["conformity"]
+        assert 0.0 < conf.get("_coverage", 0) <= 1.0
+        for k, v in conf.items():
+            if k != "_coverage":
+                assert 0.0 <= v <= 1.0, f"{hit.pattern}.{k}={v}"
+
+
+def test_hs_textbook_volume_ranks_higher():
+    """거래량 정석(왼어깨>머리>오른어깨 감소)이 거꾸로(오른어깨로 증가)보다
+    높은 부합도를 받아야 한다 — Bulkowski 의 핵심 품질 신호."""
+    closes = _hs_series()
+    n = len(closes)
+    declining = np.linspace(3000, 600, n)   # 교과서: 오른쪽으로 갈수록 마름
+    rising = np.linspace(600, 3000, n)      # 경고: 오른어깨로 거래량 증가
+    hit_good = detect_head_shoulders(
+        _prep(_df(closes, noise_seed=1, volume=declining)))
+    hit_bad = detect_head_shoulders(
+        _prep(_df(closes, noise_seed=1, volume=rising)))
+    assert hit_good.matched and hit_bad.matched
+    assert hit_good.score > hit_bad.score, (
+        f"감소 거래량 {hit_good.score} <= 증가 거래량 {hit_bad.score}")
+    assert hit_good.detail["conformity"]["vol_trend"] > \
+        hit_bad.detail["conformity"]["vol_trend"]
+
+
+def test_triangle_volume_contraction_ranks_higher():
+    """수렴하며 거래량이 마르는 삼각형(교과서, ~86%)이 거래량이 늘어나는
+    삼각형(경고 신호)보다 높은 부합도를 받아야 한다."""
+    closes = _triangle_series()
+    n = len(closes)
+    drying = np.linspace(2500, 700, n)
+    swelling = np.linspace(700, 2500, n)
+    hit_good = detect_triangle(_prep(_df(closes, noise_seed=3, volume=drying)))
+    hit_bad = detect_triangle(_prep(_df(closes, noise_seed=3, volume=swelling)))
+    assert hit_good.matched and hit_bad.matched
+    assert hit_good.score > hit_bad.score
+
+
+def test_stage2_stronger_breakout_volume_scores_higher():
+    """돌파 거래량 3배(와인스타인 교과서 초과)가 1.4배(최소 통과)보다
+    높은 부합도 — 다른 조건이 같을 때 거래량 확증이 순위를 가른다."""
+    from app.patterns import detect_stage2_early
+
+    closes, strong_vol = _stage2_series(breakout_volume=3000.0)
+    _, weak_vol = _stage2_series(breakout_volume=1400.0)
+    hit_strong = detect_stage2_early(_prep(_df(closes, volume=strong_vol)))
+    hit_weak = detect_stage2_early(_prep(_df(closes, volume=weak_vol)))
+    assert hit_strong.matched and hit_weak.matched
+    assert hit_strong.score > hit_weak.score
+    assert hit_strong.detail["conformity"]["breakout_vol"] > \
+        hit_weak.detail["conformity"]["breakout_vol"]
+
+
+def test_cup_handle_volume_dryup_ranks_higher():
+    """핸들에서 거래량이 마르는 컵(오닐: 매도 소진)이 핸들에서 거래량이
+    급증하는 컵(분산 경고)보다 높은 부합도를 받아야 한다."""
+    closes = _cup_series()
+    n = len(closes)
+    dry = np.full(n, 1000.0); dry[-20:] = 400.0     # 핸들 거래량 마름
+    churn = np.full(n, 1000.0); churn[-20:] = 1600.0  # 핸들 거래량 급증
+    hit_dry = detect_cup_handle(_prep(_df(closes, noise_seed=4, volume=dry)))
+    hit_churn = detect_cup_handle(_prep(_df(closes, noise_seed=4, volume=churn)))
+    assert hit_dry.matched and hit_churn.matched
+    assert hit_dry.score > hit_churn.score
+
+
 # ---------- 패턴 이탈(무효화) 자동 탈락 기준 ----------
 
 def test_hs_dropped_after_deep_breakdown():
