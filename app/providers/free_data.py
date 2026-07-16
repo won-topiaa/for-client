@@ -260,9 +260,11 @@ class FreeDataProvider:
         # 네트워크 페치 전용 스레드풀 — wait_for 에 버려진 행 스레드가 기본
         # 실행기(작은 인스턴스에선 5칸)를 잠식해 분석 연산·상장목록까지 굶기는
         # 것을 막는다. 여기서 새면 다른 '페치'만 느려질 뿐이다. 동시 페치
-        # 상한(CONCURRENCY=10)보다 넉넉히 잡아 큐잉으로 병목되지 않게 한다.
+        # 상한(CONCURRENCY=14)보다 넉넉히 잡아, 드문 상장목록 페치가 겹쳐도
+        # 캔들 페치가 큐잉으로 병목되지 않게 한다 (스레드는 네트워크 대기 중
+        # GIL 을 놓으므로 I/O 바운드 페치엔 코어 수보다 많이 둬도 이득).
         self._fetch_pool = ThreadPoolExecutor(
-            max_workers=14, thread_name_prefix="candle-fetch")
+            max_workers=18, thread_name_prefix="candle-fetch")
 
     def _listing_fresh(self) -> bool:
         return (self._listing is not None

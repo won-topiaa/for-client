@@ -757,7 +757,7 @@ def test_scanner_fail_fast_on_total_outage():
 def test_scanner_fail_fast_discards_straggler_successes():
     """조기 중단이 결정된 뒤 동시 진행분 몇 개가 뒤늦게 성공해도, 유니버스의
     몇 %짜리 '완료' 결과를 공개하지 않고 오류로 처리한다 (레이스 회귀 방지)."""
-    from app.pattern_scan import PatternScanner
+    from app.pattern_scan import FAIL_FAST_PROBE, PatternScanner
     from app.providers.base import SymbolInfo, validate_candles
 
     closes, volume = _stage2_series()
@@ -775,9 +775,9 @@ def test_scanner_fail_fast_discards_straggler_successes():
             return []
 
     async def universe_fn():
-        # 실패 12개(즉시) + 성공 8개(느림): 실패가 모두 먼저 완료되어
+        # 실패 FAIL_FAST_PROBE개(즉시) + 성공 8개(느림): 실패가 모두 먼저 완료돼
         # abort 가 확정된 뒤 성공이 뒤늦게 도착하는 순서를 강제한다
-        return ([SymbolInfo(f"BAD{i}", "b", "T") for i in range(12)]
+        return ([SymbolInfo(f"BAD{i}", "b", "T") for i in range(FAIL_FAST_PROBE)]
                 + [SymbolInfo(f"GOOD{i}", "g", "T") for i in range(8)])
 
     scanner = PatternScanner(PartialOutage(), universe_fn)
