@@ -125,7 +125,8 @@ def test_indices_api(client):
 def test_about_page(client):
     r = client.get("/about")
     assert r.status_code == 200
-    assert "원토피아" in r.text and "양주원" in r.text
+    assert "원토피아" in r.text
+    assert "양주원" not in r.text  # 본명은 노출하지 않는다 (유래는 '이름 끝 글자 원'으로만)
     assert "mailto:yangjuwon240@gmail.com" in r.text
 
 
