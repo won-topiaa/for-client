@@ -194,6 +194,19 @@ def _rate_limited(key: str) -> bool:
     return count > ANALYZE_RATE_LIMIT_PER_MIN
 
 
+# 공용 배포 기본 보안 헤더 — 미들웨어와 조기응답(429/401) 양쪽에서 함께 쓴다.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'"
+    ),
+}
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     """공용 배포용 기본 보안 헤더 — esc() 뒤의 2차 방어선.
@@ -203,16 +216,8 @@ async def security_headers(request: Request, call_next):
     파비콘이 data: URI 라 img-src 에 data: 허용.
     """
     response = await call_next(request)
-    h = response.headers
-    h.setdefault("X-Content-Type-Options", "nosniff")
-    h.setdefault("X-Frame-Options", "DENY")
-    h.setdefault("Referrer-Policy", "no-referrer")
-    h.setdefault(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
-        "base-uri 'none'; frame-ancestors 'none'",
-    )
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
     return response
 
 
@@ -228,10 +233,12 @@ async def require_password(request: Request, call_next):
     if path in _RATE_LIMITED_PATHS:
         bucket = "auth" if path.startswith("/api/auth/") else "analyze"
         if _rate_limited(f"{bucket}:{_client_ip(request)}"):
+            # 조기 응답도 보안 헤더를 달아 내보낸다 (이 미들웨어가 바깥이라
+            # security_headers 가 실행되지 않으므로 직접 붙인다)
             return Response(
                 status_code=429,
                 content="요청이 너무 잦습니다 — 잠시 후 다시 시도해 주세요.",
-                headers={"Retry-After": "30"},
+                headers={"Retry-After": "30", **_SECURITY_HEADERS},
                 media_type="text/plain; charset=utf-8",
             )
     # /api/health 는 호스팅 플랫폼의 생존 확인용이라 인증 예외 (민감정보 없음)
@@ -243,7 +250,7 @@ async def require_password(request: Request, call_next):
         return Response(
             status_code=401,
             content="인증이 필요합니다.",
-            headers={"WWW-Authenticate": 'Basic realm="ma-radar"'},
+            headers={"WWW-Authenticate": 'Basic realm="ma-radar"', **_SECURITY_HEADERS},
         )
     return await call_next(request)
 

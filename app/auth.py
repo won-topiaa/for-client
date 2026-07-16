@@ -55,7 +55,10 @@ def _normalize_email(email: str) -> str:
 
 
 def _validate(email: str, password: str) -> None:
-    if not email or len(email) > _MAX_EMAIL_LEN or not _EMAIL_RE.match(email):
+    # 제어문자(NUL 등)는 [^@\s] 정규식을 통과하므로 명시적으로 거른다 — 혼동되는
+    # 유사-중복 계정(a\x00@b.c vs a@b.c) 생성을 막는다
+    if not email or len(email) > _MAX_EMAIL_LEN or not _EMAIL_RE.match(email) \
+            or any(ord(c) < 0x20 or ord(c) == 0x7f for c in email):
         raise AuthError("올바른 이메일 형식이 아니에요.")
     if not isinstance(password, str) or len(password) < _MIN_PW_LEN:
         raise AuthError(f"비밀번호는 {_MIN_PW_LEN}자 이상이어야 해요.")
@@ -128,6 +131,11 @@ class AuthStore:
 
     def login(self, email: str, password: str) -> str:
         email = _normalize_email(email)
+        # 정상 비밀번호는 가입 때 8~200자로 제한돼 있다 — 그 범위 밖은 어차피
+        # 일치할 수 없으니, 해시(PBKDF2)를 돌리기 전에 잘못된 자격증명으로 처리한다
+        # (거대한 입력으로 해시/파싱 비용을 유발하지 못하게).
+        if not isinstance(password, str) or not (_MIN_PW_LEN <= len(password) <= _MAX_PW_LEN):
+            raise InvalidCredentials("이메일 또는 비밀번호가 올바르지 않아요.")
         with self._lock:
             row = self._db_locked().execute(
                 "SELECT id, pw_hash, pw_salt FROM users WHERE email=?", (email,)
