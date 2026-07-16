@@ -44,12 +44,22 @@ CHART_BARS = 130           # 결과 카드 차트 봉 수
 TOP_N = 12                 # 표시 상위 개수
 MIN_BARS = 320             # 최소 데이터 (워밍업 안 되는 종목 스킵)
 
+# ── 터치 스크리너 품질 기준 (개별 이평선 분석보다 엄격하게 건다) ──
+# 이 화면의 핵심은 "오늘 닿은 그 선이 정말 믿을 만한가"다. 그래서 이평선
+# 레이더의 추천 기준(자격) 위에 추가 품질 바를 얹어, 지지 성공 확률이 높은
+# 종목만 남긴다. (개별 종목 분석 페이지에는 영향을 주지 않는다 — 여기서만 좁힌다)
+TOUCH_MIN_MA_PERIOD = 10       # 5일선 제외 — 단기선은 흔들림이 커 '지지선' 신뢰도가 낮다
+TOUCH_MIN_SUPPORT_BOUNCES = 3  # 과거 지지 성공(반등) 최소 3회 — 우연 아닌, 반복 검증된 선만
+TOUCH_MIN_SUCCESS = 0.60       # 가중 지지 성공률 하한 — 절반이 아니라 과반(60%) 넘게 지켜진 선만
+
 
 class TouchScanner(BaseScanner):
     def __init__(self, provider: Provider, universe_fn: UniverseFn,
                  candidates: list[int], min_touches: int = 5):
         super().__init__(provider, universe_fn)
-        self.candidates = candidates
+        # 단기선(기본 5일선)은 터치 스크리너 후보에서 뺀다 — 지지선으로서 신뢰도가
+        # 낮기 때문. 개별 분석에는 그대로 남고, 여기서만 좁힌다.
+        self.candidates = [p for p in candidates if p >= TOUCH_MIN_MA_PERIOD]
         self.params = EngineParams(min_touches=min_touches, confirm_horizon=10)
 
     async def _scan_inner(self) -> None:
@@ -174,8 +184,11 @@ class TouchScanner(BaseScanner):
 
         best: dict[str, Any] | None = None
         for s in report.recommended:
-            if not s.qualified or s.support_bounces < 2:
-                continue  # 지지 이력이 검증된 선만
+            # 검증된 지지선만 통과: 자격 + 지지 성공(반등) 3회 이상 + 가중 성공률 60% 이상
+            if not s.qualified or s.support_bounces < TOUCH_MIN_SUPPORT_BOUNCES:
+                continue
+            if s.weighted_success < TOUCH_MIN_SUCCESS:
+                continue
             ma_now = touched.get(s.period)
             if ma_now is None:
                 continue  # 오늘 안 닿은 선은 볼 필요 없음

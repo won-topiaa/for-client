@@ -60,10 +60,59 @@ def test_analyze_sync_detects_todays_touch():
     assert item is not None, "심어진 MA20 지지 + 오늘 터치가 탐지돼야 함"
     assert item["period"] == 20
     assert abs(item["distPct"]) < 2.0
-    assert item["supportBounces"] >= 2
+    assert item["supportBounces"] >= 3  # 터치 스크리너 품질 기준: 지지 성공 3회 이상
     assert len(item["candles"]) > 50 and len(item["maLine"]) > 50
     # 차트 데이터와 이평선 값의 시간 좌표가 일치
     assert item["candles"][-1]["time"] == item["maLine"][-1]["time"]
+
+
+def test_short_ma_excluded_from_candidates():
+    """5일선 등 단기선은 터치 스크리너 후보에서 빠진다 (신뢰도 기준)."""
+    from app.touch_scan import TOUCH_MIN_MA_PERIOD
+    sc = TouchScanner(_DummyProvider(), lambda: None,
+                      candidates=[5, 10, 20, 50, 60, 120, 200, 240])
+    assert 5 not in sc.candidates
+    assert all(p >= TOUCH_MIN_MA_PERIOD for p in sc.candidates)
+    assert sc.candidates == [10, 20, 50, 60, 120, 200, 240]
+
+
+def test_quality_floor_rejects_weak_lines(monkeypatch):
+    """오늘 그 선에 닿아 있어도, 품질 기준(자격·지지 3회·성공률 60%) 미달이면 제외.
+
+    실제 게이트(_analyze_sync)를 구동한다 — 백테스트 결과만 통제해 판정을 검증.
+    """
+    import app.touch_scan as mod
+
+    df = _touch_df()  # 오늘 MA20 에 닿아 있는 데이터 (터치 사전필터를 통과)
+
+    class Stat:
+        def __init__(self, qualified, support_bounces, weighted_success):
+            self.period = 20
+            self.qualified = qualified
+            self.support_bounces = support_bounces
+            self.touches = support_bounces
+            self.weighted_success = weighted_success
+            self.score = weighted_success
+
+    class Report:
+        def __init__(self, stat):
+            self.recommended = [stat]
+
+    sc = TouchScanner(_DummyProvider(), lambda: None, candidates=CANDIDATES)
+    sym = SymbolInfo("T1", "터치종목", "TEST")
+
+    # 각 기준을 하나씩 미달시키면 제외(None)
+    for weak in (Stat(True, 9, 0.55),    # 성공률 55% < 60%
+                 Stat(True, 2, 0.90),    # 지지 성공 2회 < 3회
+                 Stat(False, 9, 0.90)):  # 자격 미달
+        monkeypatch.setattr(mod, "analyze_timeframe", lambda *a, s=weak, **k: Report(s))
+        assert sc._analyze_sync(sym, df) is None
+
+    # 모두 충족하면 통과
+    monkeypatch.setattr(mod, "analyze_timeframe",
+                        lambda *a, **k: Report(Stat(True, 5, 0.65)))
+    item = sc._analyze_sync(sym, df)
+    assert item is not None and item["period"] == 20 and item["successRate"] >= 0.60
 
 
 def test_analyze_sync_ignores_far_from_line():
