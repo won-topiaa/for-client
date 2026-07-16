@@ -263,6 +263,8 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
     best: PatternHit | None = None
     rims = [(i, p) for i, p, k in ctx["pivots"] if k > 0 and i < n - 40]
     for li, lp in rims:
+        if lp <= 0:
+            continue  # 방어: 테두리 가격 0 이면 depth 계산이 0으로 나눠진다
         # 컵의 오른쪽 테두리: '바닥 이후' 왼쪽 테두리의 95% 이상 회복한 첫 지점.
         # 테두리 직후 20봉 뒤 첫 교차만 보면, 완만하게 내려가는 얕은 컵은
         # 하락이 끝나기도 전의 가짜 회복점(아직 95% 위)에 걸려 길이 미달로

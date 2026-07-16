@@ -258,6 +258,12 @@ class FreeDataProvider:
             except Exception:
                 self._listing_fail_ts = time.monotonic()
                 return self._listing  # 실패 시 기존(있으면) 유지, 없으면 None
+            if listing is None or listing.empty:
+                # 컬럼은 있으나 행이 0개인 응답(스크레이프 드리프트 등)을 12시간
+                # '정상'으로 캐시하면 검색·유니버스가 통째로 비어버린다 — 실패로 취급해
+                # 짧은 백오프 뒤 재시도한다 (기존 값이 있으면 유지)
+                self._listing_fail_ts = time.monotonic()
+                return self._listing
             self._listing = listing
             self._listing_ts = time.monotonic()
             self._market_by_symbol = dict(zip(listing["symbol"], listing["market"]))
@@ -437,6 +443,11 @@ class FreeDataProvider:
                     out.append((ticker, str(r[name]).strip(),
                                 str(r[sector]).strip() if sector else ""))
             except Exception:
+                self._us_fail_ts = time.monotonic()
+                return self._us_listing
+            if not out:
+                # 컬럼은 있으나 행 0개인 응답을 12시간 '정상'으로 캐시하면 미국
+                # 유니버스가 통째로 비어(폴백조차 못 타고) 버린다 — 실패로 취급
                 self._us_fail_ts = time.monotonic()
                 return self._us_listing
             self._us_listing = out

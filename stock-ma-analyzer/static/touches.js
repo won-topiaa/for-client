@@ -109,9 +109,9 @@
   }
 
   function statusText(body) {
+    const shown = (body.matches || []).length;
     return `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · 오늘 지지선 터치 ${body.totalMatches}개` +
-      (body.totalMatches > body.matches.length
-        ? ` (상위 ${body.matches.length}개 표시)` : "") +
+      (body.totalMatches > shown ? ` (상위 ${shown}개 표시)` : "") +
       (body.partial ? " · 남은 종목 계속 확인 중…"
         : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
   }
@@ -243,7 +243,8 @@
     el.status.textContent = statusText(body);
     // 진행 중(부분) 결과는 스크린리더에 알리지 않고, 최종 결과만 알린다
     if (!body.partial) announce(el.status.textContent);
-    if (!body.matches.length) {
+    const matches = body.matches || [];
+    if (!matches.length) {
       // 아직 스캔 중(부분)이면 '없음'을 성급히 단정하지 않는다
       el.matches.innerHTML = body.partial
         ? `<div class="empty">남은 종목을 확인하는 중입니다…<br>` +
@@ -252,7 +253,7 @@
           `<span style="font-size:12px">터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.</span></div>`;
       return;
     }
-    body.matches.forEach((m) => {
+    matches.forEach((m) => {
       const card = document.createElement("div");
       card.className = "m-card";
       const rate = (m.successRate * 100).toFixed(0);

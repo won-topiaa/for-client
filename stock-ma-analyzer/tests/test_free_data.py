@@ -116,6 +116,26 @@ def test_listing_failure_backoff(monkeypatch):
     assert results and results[0].symbol == "AAPL"
 
 
+def test_empty_listing_not_cached_as_fresh(monkeypatch):
+    """컬럼은 있으나 행이 0개인 상장목록 응답을 12시간 '정상'으로 캐시하지 않는다.
+
+    스크레이프 드리프트 등으로 빈 목록이 와도 검색·유니버스가 12시간 비지
+    않도록, 실패로 취급해 짧은 백오프 뒤 재시도하게 한다.
+    """
+    import app.providers.free_data as mod
+
+    def empty_listing():
+        return pd.DataFrame({"Code": [], "Name": [], "Market": []})
+
+    monkeypatch.setattr(mod, "_load_listing_sync", empty_listing)
+    p = FreeDataProvider()
+
+    result = _run(p._get_listing())
+    assert result is None or result.empty     # 빈 목록을 유효값으로 내주지 않음
+    assert not p._listing_fresh()             # 12시간 캐시로 굳지 않음
+    assert p._listing_fail_ts > 0             # 실패로 기록돼 백오프 활성화
+
+
 def _provider_with_listing():
     import time
     p = FreeDataProvider()

@@ -303,6 +303,13 @@
           esc(data ? data.error : "데이터 없음")}</div></div>`;
       return;
     }
+    if (!Array.isArray(data.recommended)) {
+      // 방어: 오류도 아닌데 recommended 가 없는 응답이 와도 탭 전환이 깨지지 않게
+      el.windowNote.textContent = "";
+      el.recoCards.innerHTML =
+        `<div class="reco-card"><div class="warn">${TF_LABEL[tf]} 분석 결과가 비어 있습니다</div></div>`;
+      return;
+    }
 
     // "동시 보기" 카드 — 클릭하면 추천 이평선 전체를 한 번에 표시
     if (data.recommended.length > 1) {
@@ -475,7 +482,7 @@
         `<td>${s.insufficientData ? "데이터 부족" : s.touches}</td>` +
         `<td>${s.supportBounces}</td><td>${s.resistanceBounces}</td>` +
         `<td>${s.breaks}</td><td>${s.undecided}</td>` +
-        `<td>${rate}</td><td>${s.score.toFixed(3)}</td>` +
+        `<td>${rate}</td><td>${Number(s.score).toFixed(3)}</td>` +
         `<td>${esc(s.lastTouch || "—")}</td>`;
       el.statsBody.appendChild(tr);
     });
