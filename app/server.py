@@ -14,9 +14,22 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
+from .auth import (
+    COOKIE_NAME,
+    SESSION_TTL_SEC,
+    AuthError,
+    AuthStore,
+    EmailTaken,
+    InvalidCredentials,
+)
 from .config import DEFAULT_LOOKBACK_YEARS, Settings, load_settings
 from .providers.base import Provider
 from .providers.cache import CachingProvider
@@ -86,6 +99,9 @@ async def lifespan(app: FastAPI):
 
     settings = load_settings()
     app.state.settings = settings
+    # 회원 인증 저장소 (SQLite). 시작 시 만료 세션 정리.
+    app.state.auth = AuthStore()
+    app.state.auth.purge_expired()
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
     provider = CachingProvider(build_provider(settings))
     app.state.provider = provider
@@ -119,6 +135,7 @@ async def lifespan(app: FastAPI):
                 pass
     if hasattr(app.state.provider, "aclose"):
         await app.state.provider.aclose()
+    app.state.auth.close()
 
 
 app = FastAPI(title="이평선 레이더 — 주요 지지/저항 이동평균선 분석기", lifespan=lifespan)
@@ -160,10 +177,11 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-def _rate_limited(ip: str) -> bool:
-    import time as _time
-    now = _time.time()
-    window, count = _rate_windows.get(ip, (now, 0))
+def _rate_limited(key: str) -> bool:
+    """key(보통 "버킷:IP") 기준 분당 호출 제한. 버킷을 나눠, 로그인 무차별
+    대입이 분석 호출 예산을 갉아먹거나 그 반대가 되지 않게 한다."""
+    now = time.time()
+    window, count = _rate_windows.get(key, (now, 0))
     if now - window >= 60.0:
         window, count = now, 0
     count += 1
@@ -172,7 +190,7 @@ def _rate_limited(ip: str) -> bool:
         # 우회 수단이 된다 — 오래된(=대부분 만료된) 창부터 절반만 비운다
         for k in sorted(_rate_windows, key=lambda k: _rate_windows[k][0])[:5_000]:
             _rate_windows.pop(k, None)
-    _rate_windows[ip] = (window, count)
+    _rate_windows[key] = (window, count)
     return count > ANALYZE_RATE_LIMIT_PER_MIN
 
 
@@ -198,15 +216,24 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+# 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
+_RATE_LIMITED_PATHS = frozenset(
+    {"/api/analyze", "/api/auth/login", "/api/auth/signup"}
+)
+
+
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    if request.url.path == "/api/analyze" and _rate_limited(_client_ip(request)):
-        return Response(
-            status_code=429,
-            content="요청이 너무 잦습니다 — 잠시 후 다시 시도해 주세요.",
-            headers={"Retry-After": "30"},
-            media_type="text/plain; charset=utf-8",
-        )
+    path = request.url.path
+    if path in _RATE_LIMITED_PATHS:
+        bucket = "auth" if path.startswith("/api/auth/") else "analyze"
+        if _rate_limited(f"{bucket}:{_client_ip(request)}"):
+            return Response(
+                status_code=429,
+                content="요청이 너무 잦습니다 — 잠시 후 다시 시도해 주세요.",
+                headers={"Retry-After": "30"},
+                media_type="text/plain; charset=utf-8",
+            )
     # /api/health 는 호스팅 플랫폼의 생존 확인용이라 인증 예외 (민감정보 없음)
     if (
         SITE_PASSWORD
@@ -254,6 +281,77 @@ async def presence(cid: str = Query("", max_length=64, pattern=r"^[A-Za-z0-9_-]*
     if cid and (cid in _presence or len(_presence) < _PRESENCE_MAX):
         _presence[cid] = now
     return {"active": len(_presence)}
+
+
+# ── 회원 인증 (이메일 가입/로그인) — '오늘의 지지선 터치' 게이팅용 ──
+def _cookie_secure(request: Request) -> bool:
+    # 프로덕션(https)에서만 Secure 쿠키를 건다. Render 는 X-Forwarded-Proto 로
+    # https 를 알려주고, 로컬 http 테스트에서는 Secure 를 빼 쿠키가 정상 왕복한다.
+    return (request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto", "").lower() == "https")
+
+
+async def _current_user(request: Request) -> dict | None:
+    """세션 쿠키로 로그인한 사용자 {'id','email'} 또는 None (DB 조회는 스레드로)."""
+    return await asyncio.to_thread(
+        request.app.state.auth.user_for_token, request.cookies.get(COOKIE_NAME))
+
+
+async def _auth_json(request: Request) -> tuple[str, str]:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — 잘못된 JSON 은 400 으로
+        raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
+    return str(body.get("email", "")), str(body.get("password", ""))
+
+
+def _session_response(email: str, token: str, request: Request) -> JSONResponse:
+    resp = JSONResponse({"email": email.strip().lower()})
+    resp.set_cookie(COOKIE_NAME, token, max_age=SESSION_TTL_SEC, httponly=True,
+                    samesite="lax", secure=_cookie_secure(request), path="/")
+    return resp
+
+
+@app.post("/api/auth/signup")
+async def auth_signup(request: Request):
+    email, password = await _auth_json(request)
+    try:
+        token = await asyncio.to_thread(request.app.state.auth.signup, email, password)
+    except EmailTaken as exc:
+        raise HTTPException(409, str(exc))
+    except AuthError as exc:
+        raise HTTPException(400, str(exc))
+    return _session_response(email, token, request)
+
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request):
+    email, password = await _auth_json(request)
+    try:
+        token = await asyncio.to_thread(request.app.state.auth.login, email, password)
+    except InvalidCredentials as exc:
+        raise HTTPException(401, str(exc))
+    except AuthError as exc:
+        raise HTTPException(400, str(exc))
+    return _session_response(email, token, request)
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request):
+    await asyncio.to_thread(request.app.state.auth.logout, request.cookies.get(COOKIE_NAME))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE_NAME, path="/")
+    return resp
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    user = await _current_user(request)
+    if not user:
+        raise HTTPException(401, "로그인이 필요합니다.")
+    return {"email": user["email"]}
 
 
 @app.get("/api/search")
@@ -382,8 +480,12 @@ async def indices():
 
 
 @app.get("/api/touches")
-async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
-    """오늘의 지지선 터치: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링)."""
+async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr|us)$")):
+    """오늘의 지지선 터치: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링).
+
+    회원 전용 — 로그인하지 않았으면 401 (프런트가 /login 으로 보낸다)."""
+    if not await _current_user(request):
+        raise HTTPException(401, "로그인이 필요합니다.")
     snap = await app.state.touch_scanners[market].snapshot()
     if snap["status"] != "done":
         return snap
@@ -424,8 +526,22 @@ async def patterns_page():
 
 
 @app.get("/touches")
-async def touches_page():
+async def touches_page(request: Request):
+    """회원 전용 — 로그인 안 했으면 로그인 페이지로 보낸다 (로그인 후 되돌아옴)."""
+    if not await _current_user(request):
+        return RedirectResponse(url="/login?next=%2Ftouches", status_code=302)
     return FileResponse(STATIC_DIR / "touches.html")
+
+
+@app.get("/login")
+async def login_page(request: Request):
+    """이메일 로그인/가입 페이지. 이미 로그인했으면 목적지(next)로 넘긴다."""
+    if await _current_user(request):
+        nxt = request.query_params.get("next", "/touches")
+        if not nxt.startswith("/"):   # 오픈 리다이렉트 방지 — 사이트 내부만 허용
+            nxt = "/touches"
+        return RedirectResponse(url=nxt, status_code=302)
+    return FileResponse(STATIC_DIR / "login.html")
 
 
 @app.get("/about")
