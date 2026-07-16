@@ -147,6 +147,10 @@
     try {
       const r = await fetch(`/api/touches?market=${market}`);
       if (seq !== reqSeq) return;
+      if (r.status === 401) {  // 세션 만료 등 — 로그인 페이지로
+        location.href = "/login?next=%2Ftouches";
+        return;
+      }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json();
       if (seq !== reqSeq) return;
@@ -307,6 +311,30 @@
     chart.timeScale().fitContent();
     charts.push(chart);
   }
+
+  // 로그인 상태 표시 + 로그아웃 (회원 전용 페이지)
+  (function initAuthBox() {
+    const box = document.getElementById("authBox");
+    const emailEl = document.getElementById("authEmail");
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (!box || !emailEl || !logoutBtn) return;
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && d.email) {
+          emailEl.textContent = d.email;
+          emailEl.title = d.email;
+          box.style.display = "inline-flex";
+        }
+      })
+      .catch(() => {});
+    logoutBtn.addEventListener("click", () => {
+      logoutBtn.disabled = true;
+      fetch("/api/auth/logout", { method: "POST" })
+        .then(() => { location.href = "/"; })
+        .catch(() => { location.href = "/"; });
+    });
+  })();
 
   load();
 })();

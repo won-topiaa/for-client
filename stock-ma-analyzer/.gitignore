@@ -6,6 +6,12 @@ __pycache__/
 .pytest_cache/
 data/*.csv
 
+# 회원 인증 SQLite DB(런타임 데이터) — 커밋 금지
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.db
+
 # 시크릿 파일은 어떤 형태든 커밋 금지
 *_secret.*
 *.secret

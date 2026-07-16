@@ -104,11 +104,17 @@ def test_legacy_symbol_deeplink_redirects_to_ma(client):
 
 
 def test_touches_page_and_api(client):
-    r = client.get("/touches")
-    assert r.status_code == 200 and 'id="scanStatus"' in r.text
-    api = client.get("/api/touches", params={"market": "kr"})
-    assert api.status_code == 200
-    assert api.json()["status"] in ("running", "done")
+    # 터치는 회원 전용 — 가입해 세션을 얻은 뒤 접근
+    client.post("/api/auth/signup",
+                json={"email": "touchview@example.com", "password": "password123"})
+    try:
+        r = client.get("/touches")
+        assert r.status_code == 200 and 'id="scanStatus"' in r.text
+        api = client.get("/api/touches", params={"market": "kr"})
+        assert api.status_code == 200
+        assert api.json()["status"] in ("running", "done")
+    finally:
+        client.post("/api/auth/logout")  # 세션 정리 (다른 테스트 영향 방지)
 
 
 def test_indices_api(client):
@@ -239,8 +245,14 @@ def test_loading_tips_served_and_wired(client):
     r = client.get("/static/tips.js")
     assert r.status_code == 200
     assert "LoadingTips" in r.text
-    for page in ("/patterns", "/touches"):
-        assert "/static/tips.js" in client.get(page).text
+    # /touches 는 회원 전용이라 로그인해야 실제 페이지가 나온다 (아니면 /login 리다이렉트)
+    client.post("/api/auth/signup",
+                json={"email": "tipsview@example.com", "password": "password123"})
+    try:
+        for page in ("/patterns", "/touches"):
+            assert "/static/tips.js" in client.get(page).text
+    finally:
+        client.post("/api/auth/logout")
 
 
 def test_loading_tips_fit_two_lines():
