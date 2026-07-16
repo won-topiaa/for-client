@@ -136,6 +136,21 @@ def test_empty_listing_not_cached_as_fresh(monkeypatch):
     assert p._listing_fail_ts > 0             # 실패로 기록돼 백오프 활성화
 
 
+def test_stooq_client_is_pooled_singleton():
+    """Stooq(미국) 조회는 공유 커넥션 풀(단일 httpx.Client)을 재사용한다 —
+    종목마다 새 커넥션을 열어 TCP+TLS 핸드셰이크를 반복하지 않기 위함."""
+    import app.providers.free_data as mod
+
+    mod.close_stooq_client()  # 깨끗한 상태에서 시작
+    c1 = mod._stooq_client()
+    c2 = mod._stooq_client()
+    assert c1 is c2, "매 요청마다 새 클라이언트를 만들면 커넥션 재사용이 안 된다"
+    mod.close_stooq_client()
+    mod.close_stooq_client()  # 두 번 호출해도 안전
+    assert mod._stooq_client() is not c1, "close 후에는 새로 만든다"
+    mod.close_stooq_client()
+
+
 def _provider_with_listing():
     import time
     p = FreeDataProvider()
