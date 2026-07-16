@@ -16,7 +16,9 @@ _PG_URL = os.environ.get("TEST_DATABASE_URL")
 # ---------- AuthStore 단위 테스트 (임시 DB) ----------
 @pytest.fixture()
 def store(tmp_path):
-    return AuthStore(tmp_path / "auth.db")
+    s = AuthStore(tmp_path / "auth.db")
+    yield s
+    s.close()  # 엔진/커넥션 정리 (테스트 간 핸들 누적 방지)
 
 
 def test_signup_then_login(store):
