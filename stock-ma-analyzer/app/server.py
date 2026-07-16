@@ -99,9 +99,13 @@ async def lifespan(app: FastAPI):
 
     settings = load_settings()
     app.state.settings = settings
-    # 회원 인증 저장소 (SQLite). 시작 시 만료 세션 정리.
+    # 회원 인증 저장소 (SQLite/Postgres). 시작 시 만료 세션 정리 —
+    # 부가 작업이므로 실패해도 부팅을 막지 않는다(스키마 생성은 이미 재시도됨).
     app.state.auth = AuthStore()
-    app.state.auth.purge_expired()
+    try:
+        app.state.auth.purge_expired()
+    except Exception:  # noqa: BLE001
+        logger.warning("시작 시 만료 세션 정리 실패 (계속 진행)", exc_info=True)
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
     provider = CachingProvider(build_provider(settings))
     app.state.provider = provider
@@ -161,10 +165,17 @@ def _password_ok(auth_header: str | None) -> bool:
         return False
 
 
-# /api/analyze 는 요청마다 업스트림 페치 + CPU 분석이 도는 증폭 지점이라
-# IP 당 분당 호출 수를 제한한다 (같은 종목 반복은 어차피 캐시가 흡수).
-ANALYZE_RATE_LIMIT_PER_MIN = 30
+# /api/analyze·/api/search 는 요청마다 업스트림 페치/CPU 스캔이 도는 증폭
+# 지점이라 IP 당 분당 호출 수를 제한한다 (같은 종목 반복은 어차피 캐시가 흡수).
+# 버킷별 상한: 로그인 무차별대입·분석은 30/분, 검색은 자동완성이라 좀 더 넉넉히.
+ANALYZE_RATE_LIMIT_PER_MIN = 30  # auth·analyze 버킷 공용
+SEARCH_RATE_LIMIT_PER_MIN = 60   # 검색(자동완성)은 사람 타이핑이라 넉넉히
 _rate_windows: dict[str, tuple[float, int]] = {}
+
+
+def _rate_limit_for(bucket: str) -> int:
+    """버킷별 분당 상한 (상수를 런타임에 읽어 테스트의 monkeypatch 도 반영)."""
+    return SEARCH_RATE_LIMIT_PER_MIN if bucket == "search" else ANALYZE_RATE_LIMIT_PER_MIN
 
 
 def _client_ip(request: Request) -> str:
@@ -177,7 +188,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-def _rate_limited(key: str) -> bool:
+def _rate_limited(key: str, limit: int = ANALYZE_RATE_LIMIT_PER_MIN) -> bool:
     """key(보통 "버킷:IP") 기준 분당 호출 제한. 버킷을 나눠, 로그인 무차별
     대입이 분석 호출 예산을 갉아먹거나 그 반대가 되지 않게 한다."""
     now = time.time()
@@ -191,7 +202,7 @@ def _rate_limited(key: str) -> bool:
         for k in sorted(_rate_windows, key=lambda k: _rate_windows[k][0])[:5_000]:
             _rate_windows.pop(k, None)
     _rate_windows[key] = (window, count)
-    return count > ANALYZE_RATE_LIMIT_PER_MIN
+    return count > limit
 
 
 # 공용 배포 기본 보안 헤더 — 미들웨어와 조기응답(429/401) 양쪽에서 함께 쓴다.
@@ -199,6 +210,9 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    # 이메일·비밀번호를 https 로 받는 사이트라 HSTS 로 http 다운그레이드를 막는다
+    # (Render 는 항상 https 종단이라 안전). 2년 + 서브도메인 포함.
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
@@ -223,16 +237,34 @@ async def security_headers(request: Request, call_next):
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 _RATE_LIMITED_PATHS = frozenset(
-    {"/api/analyze", "/api/auth/login", "/api/auth/signup"}
+    {"/api/analyze", "/api/search", "/api/auth/login", "/api/auth/signup"}
 )
+
+
+def _rate_bucket(path: str) -> str:
+    """경로 → 레이트리밋 버킷. 인증·검색·분석을 분리해 서로 예산을 안 갉게."""
+    if path.startswith("/api/auth/"):
+        return "auth"
+    if path == "/api/search":
+        return "search"
+    return "analyze"
 
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
     path = request.url.path
+    # 요청 본문 크기 상한 — JSON POST(가입/로그인)는 아주 작다. 거대한 본문을
+    # 메모리에 통째로 버퍼링(await request.json())하기 전에 막는다(메모리 DoS 방지).
+    if request.method == "POST":
+        clen = request.headers.get("content-length", "")
+        if clen.isdigit() and int(clen) > 16_384:
+            return Response(status_code=413, content="요청 본문이 너무 큽니다.",
+                            headers={**_SECURITY_HEADERS},
+                            media_type="text/plain; charset=utf-8")
     if path in _RATE_LIMITED_PATHS:
-        bucket = "auth" if path.startswith("/api/auth/") else "analyze"
-        if _rate_limited(f"{bucket}:{_client_ip(request)}"):
+        bucket = _rate_bucket(path)
+        if _rate_limited(f"{bucket}:{_client_ip(request)}",
+                         _rate_limit_for(bucket)):
             # 조기 응답도 보안 헤더를 달아 내보낸다 (이 미들웨어가 바깥이라
             # security_headers 가 실행되지 않으므로 직접 붙인다)
             return Response(
@@ -298,10 +330,39 @@ def _cookie_secure(request: Request) -> bool:
             or request.headers.get("x-forwarded-proto", "").lower() == "https")
 
 
+# 세션 조회 캐시 — '오늘의 지지선 터치' 페이지는 폴링(2~5초)이라, 캐시가 없으면
+# 매 폴에 세션 DB 를 때린다. 토큰→판정 결과를 아주 짧게(30초) 기억해 DB 부하를
+# 낮춘다. 로그아웃은 즉시 무효화하고, 만료 세션도 최대 30초만 늦게 반영된다
+# (2주짜리 세션에는 무의미). 무효 토큰(None)도 캐시해 만료된 탭의 폴링이 DB 를
+# 계속 두드리지 않게 한다.
+_SESSION_CACHE_TTL_SEC = 30.0
+_SESSION_CACHE_MAX = 10_000
+_session_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+def _session_cache_evict(token: str | None) -> None:
+    """로그아웃 시 즉시 무효화 — 캐시된 '로그인됨' 판정이 남지 않게."""
+    if token:
+        _session_cache.pop(token, None)
+
+
 async def _current_user(request: Request) -> dict | None:
-    """세션 쿠키로 로그인한 사용자 {'id','email'} 또는 None (DB 조회는 스레드로)."""
-    return await asyncio.to_thread(
-        request.app.state.auth.user_for_token, request.cookies.get(COOKIE_NAME))
+    """세션 쿠키로 로그인한 사용자 {'id','email'} 또는 None.
+
+    토큰→판정을 짧게 캐시해, 폴링 페이지가 매 요청 세션 DB 를 때리지 않게 한다
+    (미스일 때만 DB 조회를 스레드로 넘긴다)."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return None
+    now = time.monotonic()
+    hit = _session_cache.get(token)
+    if hit is not None and now - hit[0] < _SESSION_CACHE_TTL_SEC:
+        return hit[1]
+    user = await asyncio.to_thread(request.app.state.auth.user_for_token, token)
+    if len(_session_cache) > _SESSION_CACHE_MAX:
+        _session_cache.clear()  # 짧은 TTL 이라 곧 다시 채워진다 — 통째로 비워도 됨
+    _session_cache[token] = (now, user)
+    return user
 
 
 async def _auth_json(request: Request) -> tuple[str, str]:
@@ -347,7 +408,9 @@ async def auth_login(request: Request):
 
 @app.post("/api/auth/logout")
 async def auth_logout(request: Request):
-    await asyncio.to_thread(request.app.state.auth.logout, request.cookies.get(COOKIE_NAME))
+    token = request.cookies.get(COOKIE_NAME)
+    _session_cache_evict(token)  # 캐시된 '로그인됨' 판정을 먼저 지운다
+    await asyncio.to_thread(request.app.state.auth.logout, token)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
@@ -367,7 +430,8 @@ async def search(q: str = Query("", max_length=40)):
         results = await app.state.provider.search(q)
     except Exception as exc:
         logger.exception("검색 실패")
-        raise HTTPException(status_code=502, detail=f"검색 실패: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail="검색을 일시적으로 처리할 수 없어요.") from exc
     return {
         "provider": app.state.provider.name,
         "results": [
@@ -403,8 +467,11 @@ async def analyze(
     try:
         return await analyze_symbol(app.state.provider, settings, symbol, lookback)
     except Exception as exc:
+        # 원 예외 문자열을 클라이언트에 노출하지 않는다(내부정보 유출 방지) — 진단은 로그로
         logger.exception("분석 실패")
-        raise HTTPException(status_code=502, detail=f"분석 실패: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="분석을 일시적으로 처리할 수 없어요 — 잠시 후 다시 시도해 주세요.") from exc
 
 
 @app.get("/api/patterns")
@@ -445,6 +512,7 @@ INDEX_TICKER = [
 _INDICES_TTL_SEC = 120.0
 _indices_cache: dict[str, Any] = {"ts": -1e9, "data": None}
 _indices_last_good: dict[str, dict] = {}  # 실패한 지수는 직전 값을 유지(티커 안정)
+_indices_lock = asyncio.Lock()            # 단일 비행(single-flight): 동시에 하나만 갱신
 
 
 @app.get("/api/indices")
@@ -457,6 +525,18 @@ async def indices():
             and now - _indices_cache["ts"] < _INDICES_TTL_SEC):
         return _indices_cache["data"]
 
+    # 캐시가 비었/만료됐을 때 동시 요청이 몰리면 각자 4개 지수를 업스트림에서
+    # 받아(요청 폭증) 야후 429 를 부른다. 락으로 한 번만 갱신하고, 대기자는
+    # 그 결과를 재사용한다 (락 대기 중 갱신됐는지 다시 확인).
+    async with _indices_lock:
+        now = _time.monotonic()
+        if (_indices_cache["data"] is not None
+                and now - _indices_cache["ts"] < _INDICES_TTL_SEC):
+            return _indices_cache["data"]
+        return await _refresh_indices(now)
+
+
+async def _refresh_indices(now: float):
     # 30분 캔들 캐시를 우회해 원 공급자에서 최신 일봉을 직접 받는다 (장중 갱신 반영)
     inner = getattr(app.state.provider, "inner", app.state.provider)
 
@@ -542,12 +622,14 @@ async def touches_page(request: Request):
 
 def _safe_next(nxt: str) -> str:
     """오픈 리다이렉트 방지 — 사이트 내부 절대경로만 허용한다.
-    '/'로 시작해도 '//' 또는 '/\\' 로 시작하면 프로토콜-상대 URL 이라 외부(예:
-    //evil.com → http://evil.com)로 튀므로 막는다."""
-    if (not nxt or not nxt.startswith("/")
-            or nxt.startswith("//") or nxt.startswith("/\\")):
+    브라우저는 URL 에서 제어문자(탭·개행 등 <0x20)를 제거하므로, 먼저 그것들을
+    없앤 값으로 판정한다 (예: '/\\t/evil.com' → '//evil.com' 우회 차단). '/'로
+    시작해도 '//' 또는 '/\\' 로 시작하면 프로토콜-상대 URL 이라 외부로 튄다."""
+    cleaned = "".join(c for c in (nxt or "") if ord(c) >= 0x20)
+    if (not cleaned.startswith("/")
+            or cleaned.startswith("//") or cleaned.startswith("/\\")):
         return "/touches"
-    return nxt
+    return cleaned
 
 
 @app.get("/login")

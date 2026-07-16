@@ -170,9 +170,10 @@ async def analyze_symbol(
 
     try:
         daily = await provider.candles(symbol, "day", need_daily)
-    except Exception as exc:
+    except Exception:
         logger.exception("%s 일봉 데이터 취득 실패", symbol)
-        msg = str(exc)
+        # 내부 예외 문자열은 노출하지 않는다 (진단은 위 로그로)
+        msg = "시세를 가져오지 못했어요 — 잠시 후 다시 시도해 주세요."
         for tf in TIMEFRAMES:
             result["timeframes"][tf] = {"timeframe": tf, "error": msg}
         return result
@@ -184,9 +185,9 @@ async def analyze_symbol(
             result["timeframes"][tf] = await asyncio.to_thread(
                 _analyze_one_sync, daily, tf, plan[tf]
             )
-        except Exception as exc:
+        except Exception:
             logger.exception("%s %s봉 분석 실패", symbol, tf)
-            result["timeframes"][tf] = {"timeframe": tf, "error": str(exc)}
+            result["timeframes"][tf] = {"timeframe": tf, "error": "분석에 실패했어요."}
     return result
 
 

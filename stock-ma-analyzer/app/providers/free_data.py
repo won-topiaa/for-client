@@ -299,6 +299,9 @@ class FreeDataProvider:
                 # 짧은 백오프 뒤 재시도한다 (기존 값이 있으면 유지)
                 self._listing_fail_ts = time.monotonic()
                 return self._listing
+            # 검색은 이름 부분일치라 매 호출 소문자화하면 3천 행을 반복 낭비한다 —
+            # 목록을 받는 12시간에 한 번만 미리 소문자 컬럼을 만들어 둔다.
+            listing["name_lower"] = listing["name"].str.lower()
             self._listing = listing
             self._listing_ts = time.monotonic()
             self._market_by_symbol = dict(zip(listing["symbol"], listing["market"]))
@@ -318,8 +321,12 @@ class FreeDataProvider:
         listing = await self._get_listing()
         if listing is not None:
             ql = q.lower()
+            # name_lower 는 목록 로드 때 미리 만들어 둔 소문자 컬럼 (매 검색 재계산 회피).
+            # 방어적으로 없으면 즉석 계산으로 폴백한다.
+            name_lower = (listing["name_lower"] if "name_lower" in listing.columns
+                          else listing["name"].str.lower())
             mask = (
-                listing["name"].str.lower().str.contains(ql, regex=False, na=False)
+                name_lower.str.contains(ql, regex=False, na=False)
                 | listing["symbol"].str.contains(q, regex=False, na=False)
             )
             for _, row in listing[mask].head(20).iterrows():

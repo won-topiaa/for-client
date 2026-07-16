@@ -85,6 +85,23 @@ def test_quality_floor_rejects_weak_lines(monkeypatch):
 
     df = _touch_df()  # 오늘 MA20 에 닿아 있는 데이터 (터치 사전필터를 통과)
 
+    class _Ep:
+        """지지 성공률 계산용 최소 에피소드 (side/outcome/weight 만 본다)."""
+        def __init__(self, side, outcome, weight=1.0):
+            self.side = side
+            self.outcome = outcome
+            self.weight = weight
+
+    def _support_episodes(rate, n=20):
+        """가중 지지 성공률이 정확히 `rate`가 되도록 지지 에피소드를 만든다.
+        저항 에피소드도 섞어 '지지 전용' 계산이 그걸 무시하는지 검증한다."""
+        bounces = round(rate * n)
+        eps = [_Ep("support", "bounce") for _ in range(bounces)]
+        eps += [_Ep("support", "break") for _ in range(n - bounces)]
+        # 저항 반등을 잔뜩 섞어 넣어도 지지 성공률은 흔들리지 않아야 한다
+        eps += [_Ep("resistance", "bounce") for _ in range(n)]
+        return eps
+
     class Stat:
         def __init__(self, qualified, support_bounces, weighted_success):
             self.period = 20
@@ -93,6 +110,8 @@ def test_quality_floor_rejects_weak_lines(monkeypatch):
             self.touches = support_bounces
             self.weighted_success = weighted_success
             self.score = weighted_success
+            # 지지 전용 성공률이 weighted_success 와 같게 나오도록 에피소드를 심는다
+            self.episodes = _support_episodes(weighted_success)
 
     class Report:
         def __init__(self, stat):
