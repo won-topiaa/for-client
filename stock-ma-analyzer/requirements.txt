@@ -7,3 +7,7 @@ pandas==3.0.3
 numpy==2.4.6
 finance-datareader==0.9.202
 yfinance==1.5.1
+# 회원 인증 저장소 — SQLite(개발)와 PostgreSQL(운영, Neon 등) 공용.
+# psycopg[binary] 는 컴파일러 없이 설치되는 psycopg3 (SQLAlchemy postgresql+psycopg).
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
