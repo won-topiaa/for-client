@@ -27,14 +27,26 @@ def test_ttl_cache_evicts_expired_before_live():
     now = time.monotonic()
     for i in range(5):   # 만료된 항목 5개 (타임스탬프 조작)
         cache.set(f"old{i}", i)
-        ts, v = cache._data[f"old{i}"]
-        cache._data[f"old{i}"] = (ts - 200.0, v)
+        ts, v, cost = cache._data[f"old{i}"]   # (ts, value, cost)
+        cache._data[f"old{i}"] = (ts - 200.0, v, cost)
     for i in range(5):   # 살아 있는 항목 5개 -> 상한 도달
         cache.set(f"live{i}", i)
     cache.set("new", 99)  # 상한 초과 -> 만료분만 정리돼야 함
     assert all(cache.get(f"live{i}") is not None for i in range(5)), \
         "만료 항목 대신 살아 있는 캐시가 축출됨"
     assert cache.get("new") == 99
+
+
+def test_ttl_cache_bounds_total_cost():
+    """개수뿐 아니라 총 비용(예: 봉 수)으로도 축출해 메모리를 실제로 묶는다."""
+    cache = _TTLCache(ttl=100.0, max_entries=100, max_cost=1000, cost_fn=lambda v: v)
+    cache.set("a", 600)
+    cache.set("b", 600)          # 600+600 > 1000 → 오래된 a 축출
+    assert cache.get("a") is None and cache.get("b") == 600
+    assert cache._total_cost <= 1000
+    cache.set("c", 300)          # 600+300 = 900 ≤ 1000 → 둘 다 유지
+    assert cache.get("b") == 600 and cache.get("c") == 300
+    assert cache._total_cost <= 1000
 
 
 def test_scan_ttl_covers_watchdog():

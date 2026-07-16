@@ -191,6 +191,115 @@ def test_analyze_rate_limit(monkeypatch):
     assert 429 in codes[3:]
 
 
+def test_search_rate_limit(monkeypatch):
+    """/api/search 도 IP 당 분당 호출 제한 — 봇이 목록 스캔을 무한 유발하지 못하게."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "SEARCH_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        # 서로 다른 검색어라 캐시로 새지 않는다 (제한은 미들웨어라 캐시와 무관하지만)
+        codes = [c.get("/api/search", params={"q": f"가나다{i}"}).status_code
+                 for i in range(5)]
+    server_mod._rate_windows.clear()
+    assert codes[:3] == [200, 200, 200]
+    assert 429 in codes[3:]
+
+
+def test_search_and_analyze_have_separate_buckets(monkeypatch):
+    """검색과 분석은 버킷이 분리돼, 한쪽을 다 써도 다른 쪽 예산은 남는다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "SEARCH_RATE_LIMIT_PER_MIN", 2)
+    monkeypatch.setattr(server_mod, "ANALYZE_RATE_LIMIT_PER_MIN", 5)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        search_codes = [c.get("/api/search", params={"q": f"라마바{i}"}).status_code
+                        for i in range(4)]
+        # 검색 예산을 다 써도 분석은 여전히 통과해야 한다 (버킷 분리)
+        analyze_code = c.get("/api/analyze", params={"symbol": "005930"}).status_code
+    server_mod._rate_windows.clear()
+    assert 429 in search_codes            # 검색은 2회 초과로 막힘
+    assert analyze_code == 200            # 분석 예산은 멀쩡
+
+
+def test_session_cache_reduces_db_lookups_and_logout_evicts(monkeypatch):
+    """세션 조회 캐시: 폴링 반복이 매번 DB 를 때리지 않고, 로그아웃은 즉시 무효화."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    with TestClient(server_mod.app) as c:
+        real = c.app.state.auth.user_for_token
+        calls = {"n": 0}
+
+        def spy(token):
+            calls["n"] += 1
+            return real(token)
+
+        monkeypatch.setattr(c.app.state.auth, "user_for_token", spy)
+        server_mod._session_cache.clear()
+        c.post("/api/auth/signup",
+               json={"email": "cacheuser@example.com", "password": "password123"})
+        token = c.cookies.get(server_mod.COOKIE_NAME)
+        assert token
+        # 첫 폴은 DB 조회(미스), 두 번째는 캐시 히트라 조회하지 않는다
+        assert c.get("/api/touches", params={"market": "kr"}).status_code == 200
+        assert c.get("/api/touches", params={"market": "kr"}).status_code == 200
+        assert calls["n"] == 1, f"두 번째 폴이 캐시를 안 쓰고 DB 를 또 때림 ({calls['n']})"
+        assert token in server_mod._session_cache
+        # 로그아웃하면 캐시에서 즉시 제거되고 이후 접근은 401
+        c.post("/api/auth/logout")
+        assert token not in server_mod._session_cache
+        assert c.get("/api/touches", params={"market": "kr"}).status_code == 401
+    server_mod._session_cache.clear()
+
+
+def test_indices_single_flight(monkeypatch):
+    """지수 캐시가 비었을 때 동시 요청이 몰려도 업스트림 갱신은 한 번만 나간다."""
+    import asyncio
+
+    import pandas as pd
+
+    import app.server as server_mod
+
+    calls = {"n": 0}
+
+    class FakeInner:
+        name = "fake"
+
+        async def candles(self, sym, tf, n):
+            calls["n"] += 1
+            await asyncio.sleep(0.02)  # 두 요청의 갱신 구간이 겹칠 시간
+            return pd.DataFrame({
+                "date": pd.bdate_range("2020-01-01", periods=3),
+                "open": [1, 2, 3], "high": [1, 2, 3], "low": [1, 2, 3],
+                "close": [10, 11, 12], "volume": [1, 1, 1]})
+
+    class FakeProvider:
+        name = "fake"
+        inner = FakeInner()
+
+    saved_provider = server_mod.app.state.provider
+    saved_cache = dict(server_mod._indices_cache)
+    try:
+        server_mod.app.state.provider = FakeProvider()
+        server_mod._indices_cache["data"] = None
+        server_mod._indices_cache["ts"] = -1e9
+
+        async def go():
+            return await asyncio.gather(server_mod.indices(), server_mod.indices())
+
+        r1, r2 = asyncio.new_event_loop().run_until_complete(go())
+        # 지수 4개 × 1회 = 4. 단일 비행이 없으면 두 요청이 각자 받아 8이 된다.
+        assert calls["n"] == 4, f"동시 요청인데 업스트림을 {calls['n']}번 때림(4여야 함)"
+        assert r1 == r2 and len(r1["indices"]) == 4
+    finally:
+        server_mod.app.state.provider = saved_provider
+        server_mod._indices_cache.update(saved_cache)
+
+
 def test_client_ip_uses_last_forwarded_hop():
     """XFF 는 클라이언트가 앞쪽 항목을 위조할 수 있으므로, 신뢰할 수 있는
     마지막 홉(LB 가 덧붙인 실제 접속 IP)을 써야 제한 우회를 막는다."""

@@ -27,8 +27,13 @@ _SEARCH_TTL_SEC = 3600.0  # 검색(이름->코드)은 자주 안 바뀜
 _MAX_ENTRIES = 200        # 검색 캐시 상한
 # 캔들 캐시 상한은 스캐너 유니버스(국내 300 + 미국 ~470)가 전부 들어가고도
 # 남아야 한다 — 상한이 유니버스보다 작으면 순차 스캔이 자기 캐시를 계속
-# 밀어내 히트율이 0% 가 된다 (약 60~80MB, 무료 인스턴스에서 감당 가능).
+# 밀어내 히트율이 0% 가 된다.
 _CANDLE_MAX_ENTRIES = 1000
+# 개수만으로는 메모리가 안 묶인다: 스캔 페치는 종목당 1050봉(~50KB)이지만,
+# /api/analyze 기본값은 전체 히스토리(수천~8500봉, ~400KB)를 캐시한다. 그래서
+# '총 봉 수' 예산으로도 축출한다 — 300만 봉 ≈ 140MB 로 상한을 걸어, 512MB 무료
+# 인스턴스가 전체-히스토리 항목으로 가득 차 OOM 되는 것을 막는다.
+_CANDLE_MAX_BARS = 3_000_000
 
 # 실패 네거티브 캐시 (스캐너 전용 — use_fail_cache=True 일 때만 동작).
 # 방금 실패한 종목을 잠시 기억해, 수백 종목을 훑는 스캐너가 같은 hang(타임아웃
@@ -40,39 +45,66 @@ _CANDLE_MAX_ENTRIES = 1000
 #   않되, 업스트림 회복 후 너무 오래 목록에서 빠져 있지 않도록 10분으로 제한.
 _FAIL_TTL_FAST_SEC = 120.0
 _FAIL_TTL_SLOW_SEC = 600.0
-_SLOW_FAILURE_SEC = 30.0   # 이보다 오래 걸린 실패는 '행'으로 간주
+# 이보다 오래 걸린 실패는 '행(hang)'으로 간주. candles 페치가 25초(_CANDLES_
+# TIMEOUT_SEC)에 끊기므로, 그보다 낮게 잡아야 타임아웃/행이 '느린 실패'로 분류돼
+# 더 긴 네거티브 캐시 TTL 을 받는다 (30초였을 때는 25초 타임아웃이 먼저 나
+# 항상 '빠른 실패'로 잘못 분류됐다).
+_SLOW_FAILURE_SEC = 20.0
 _FAIL_MAX_ENTRIES = 2000
 
 
 class _TTLCache:
-    def __init__(self, ttl: float, max_entries: int = _MAX_ENTRIES):
+    """TTL 캐시. 개수 상한(max_entries)에 더해, 선택적으로 '총 비용' 상한
+    (max_cost, cost_fn)으로도 축출한다 — 항목 크기가 제각각(캔들 df)일 때
+    메모리를 실제로 묶기 위함. cost_fn 이 없으면 항목당 비용 1(=개수 기반)."""
+
+    def __init__(self, ttl: float, max_entries: int = _MAX_ENTRIES,
+                 max_cost: float | None = None,
+                 cost_fn: "Callable[[Any], float] | None" = None):
         self.ttl = ttl
         self.max_entries = max_entries
-        self._data: dict[Any, tuple[float, Any]] = {}
+        self.max_cost = max_cost
+        self._cost_fn = cost_fn
+        self._data: dict[Any, tuple[float, Any, float]] = {}  # key -> (ts, value, cost)
+        self._total_cost = 0.0
+
+    def _remove(self, key: Any) -> None:
+        item = self._data.pop(key, None)
+        if item is not None:
+            self._total_cost -= item[2]
 
     def get(self, key: Any) -> Any | None:
         item = self._data.get(key)
         if item is None:
             return None
-        ts, value = item
+        ts, value, _cost = item
         if time.monotonic() - ts > self.ttl:
-            self._data.pop(key, None)
+            self._remove(key)
             return None
         return value
 
+    def _over_limit(self, incoming_cost: float) -> bool:
+        if len(self._data) >= self.max_entries:
+            return True
+        return (self.max_cost is not None
+                and self._total_cost + incoming_cost > self.max_cost)
+
     def set(self, key: Any, value: Any) -> None:
-        if len(self._data) >= self.max_entries:
+        self._remove(key)  # 교체 시 이전 비용을 먼저 뺀다
+        cost = float(self._cost_fn(value)) if self._cost_fn else 1.0
+        now = time.monotonic()
+        if self._over_limit(cost):
             # 1) 만료된 항목부터 정리 — 살아 있는 캐시를 쫓아내지 않는다
-            now = time.monotonic()
-            expired = [k for k, (ts, _) in self._data.items() if now - ts > self.ttl]
-            for k in expired:
-                self._data.pop(k, None)
-        if len(self._data) >= self.max_entries:
-            # 2) 그래도 넘치면 가장 오래된 것부터
-            oldest = sorted(self._data.items(), key=lambda kv: kv[1][0])
-            for k, _ in oldest[: max(1, self.max_entries // 4)]:
-                self._data.pop(k, None)
-        self._data[key] = (time.monotonic(), value)
+            for k in [k for k, (ts, _v, _c) in self._data.items() if now - ts > self.ttl]:
+                self._remove(k)
+        # 2) 그래도 넘치면 가장 오래된 것부터 (개수·비용 둘 다 예산 아래로)
+        if self._over_limit(cost):
+            for k, _ in sorted(self._data.items(), key=lambda kv: kv[1][0]):
+                if not self._over_limit(cost):
+                    break
+                self._remove(k)
+        self._data[key] = (now, value, cost)
+        self._total_cost += cost
 
 
 class CachingProvider:
@@ -81,7 +113,10 @@ class CachingProvider:
     def __init__(self, inner: Provider):
         self.inner = inner
         self.name = inner.name
-        self._candles = _TTLCache(_CANDLE_TTL_SEC, _CANDLE_MAX_ENTRIES)
+        # 캔들 항목 = (fetched, exhausted, df) → 비용은 df 의 봉 수. 총 봉 수로도 축출.
+        self._candles = _TTLCache(_CANDLE_TTL_SEC, _CANDLE_MAX_ENTRIES,
+                                  max_cost=_CANDLE_MAX_BARS,
+                                  cost_fn=lambda v: len(v[2]))
         self._searches = _TTLCache(_SEARCH_TTL_SEC)
         self._locks: dict[Any, asyncio.Lock] = {}
         self._fails: dict[Any, tuple[float, str]] = {}  # key -> (만료시각, 사유)

@@ -17,12 +17,16 @@
 
   var mode = "login"; // "login" | "signup"
 
-  // 로그인 후 돌아갈 경로 — 사이트 내부(/로 시작)만 허용. //나 /\ 는 프로토콜-상대
-  // URL 로 외부(예: //evil.com, 브라우저가 \를 /로 정규화)로 튀므로 막는다.
+  // 로그인 후 돌아갈 경로 — 반드시 '같은 출처(origin)'로만. 문자열을 손으로
+  // 파싱하지 않고 URL 로 해석해 비교한다: 브라우저가 URL 에서 제거하는 탭·개행
+  // (예: /\t/evil.com → //evil.com) 같은 우회까지 한 번에 막힌다.
   function safeNext() {
-    var n = new URLSearchParams(location.search).get("next") || "/touches";
-    if (n.charAt(0) !== "/" || n.charAt(1) === "/" || n.charAt(1) === "\\") return "/touches";
-    return n;
+    var raw = new URLSearchParams(location.search).get("next") || "/touches";
+    try {
+      var u = new URL(raw, location.origin);
+      if (u.origin === location.origin) return u.pathname + u.search + u.hash;
+    } catch (e) { /* 잘못된 URL 이면 기본값으로 */ }
+    return "/touches";
   }
 
   function showMsg(text) {

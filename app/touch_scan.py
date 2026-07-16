@@ -53,6 +53,20 @@ TOUCH_MIN_SUPPORT_BOUNCES = 3  # 과거 지지 성공(반등) 최소 3회 — �
 TOUCH_MIN_SUCCESS = 0.60       # 가중 지지 성공률 하한 — 절반이 아니라 과반(60%) 넘게 지켜진 선만
 
 
+def _support_success_rate(stat) -> float:
+    """지지(support) 쪽 에피소드만으로 계산한 가중 성공률.
+
+    engine 의 weighted_success 는 지지·저항을 합친 양방향 반등률이라, '지지선'
+    판정에는 지지 전용 값을 써야 한다. 결정된(반등/이탈) 지지 에피소드의
+    가중 반등 비율을 돌려준다 (없으면 0)."""
+    decided = [e for e in stat.episodes
+               if e.side == "support" and e.outcome in ("bounce", "break")]
+    total_w = sum(e.weight for e in decided)
+    if total_w <= 0:
+        return 0.0
+    return sum(e.weight for e in decided if e.outcome == "bounce") / total_w
+
+
 class TouchScanner(BaseScanner):
     def __init__(self, provider: Provider, universe_fn: UniverseFn,
                  candidates: list[int], min_touches: int = 5):
@@ -184,10 +198,14 @@ class TouchScanner(BaseScanner):
 
         best: dict[str, Any] | None = None
         for s in report.recommended:
-            # 검증된 지지선만 통과: 자격 + 지지 성공(반등) 3회 이상 + 가중 성공률 60% 이상
+            # 검증된 지지선만 통과: 자격 + 지지 성공(반등) 3회 이상 + 지지 성공률 60% 이상.
+            # 성공률은 '지지 전용'으로 계산한다 — engine 의 weighted_success 는 저항
+            # 반등까지 섞인 양방향 값이라, 저항으로 버틴 선이 지지 기준을 통과하는
+            # 오탐을 막는다.
             if not s.qualified or s.support_bounces < TOUCH_MIN_SUPPORT_BOUNCES:
                 continue
-            if s.weighted_success < TOUCH_MIN_SUCCESS:
+            support_success = _support_success_rate(s)
+            if support_success < TOUCH_MIN_SUCCESS:
                 continue
             ma_now = touched.get(s.period)
             if ma_now is None:
@@ -196,7 +214,7 @@ class TouchScanner(BaseScanner):
             cand = {
                 "symbol": info.symbol, "name": info.name, "market": info.market,
                 "period": s.period,
-                "successRate": round(s.weighted_success, 4),
+                "successRate": round(support_success, 4),
                 "touches": s.touches,
                 "supportBounces": s.support_bounces,
                 "maScore": round(s.score, 4),
