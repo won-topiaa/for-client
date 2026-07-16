@@ -533,14 +533,24 @@ async def touches_page(request: Request):
     return FileResponse(STATIC_DIR / "touches.html")
 
 
+def _safe_next(nxt: str) -> str:
+    """오픈 리다이렉트 방지 — 사이트 내부 절대경로만 허용한다.
+    '/'로 시작해도 '//' 또는 '/\\' 로 시작하면 프로토콜-상대 URL 이라 외부(예:
+    //evil.com → http://evil.com)로 튀므로 막는다."""
+    if (not nxt or not nxt.startswith("/")
+            or nxt.startswith("//") or nxt.startswith("/\\")):
+        return "/touches"
+    return nxt
+
+
 @app.get("/login")
 async def login_page(request: Request):
     """이메일 로그인/가입 페이지. 이미 로그인했으면 목적지(next)로 넘긴다."""
     if await _current_user(request):
-        nxt = request.query_params.get("next", "/touches")
-        if not nxt.startswith("/"):   # 오픈 리다이렉트 방지 — 사이트 내부만 허용
-            nxt = "/touches"
-        return RedirectResponse(url=nxt, status_code=302)
+        return RedirectResponse(
+            url=_safe_next(request.query_params.get("next", "/touches")),
+            status_code=302,
+        )
     return FileResponse(STATIC_DIR / "login.html")
 
 
