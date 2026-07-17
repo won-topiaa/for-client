@@ -368,6 +368,39 @@ def test_signup_has_own_stricter_bucket(monkeypatch):
     assert login.status_code == 401   # 로그인은 별도 버킷이라 통과
 
 
+def test_theme_toggle_on_every_page(client):
+    """라이트/다크 딸깍 토글: 모든 페이지가 theme.js(head 동기 로드)와
+    토글 버튼, 수동 테마 변수 블록(:root[data-theme])을 갖춘다."""
+    assert "wt_theme" in client.get("/static/theme.js").text
+
+    def check(page):
+        html = client.get(page).text
+        assert 'id="themeToggle"' in html, page
+        assert "/static/theme.js" in html, page
+        assert ':root[data-theme="dark"]' in html, page
+        assert ':root[data-theme="light"]' in html, page
+
+    check("/login")  # 로그인 전에 확인 (로그인 뒤엔 /touches 로 리다이렉트됨)
+    # 회원 전용 /touches 는 로그인 후 확인
+    client.post("/api/auth/signup",
+                json={"email": "themetest@example.com", "password": "password123"})
+    try:
+        for page in ("/", "/ma", "/patterns", "/touches", "/about", "/privacy"):
+            check(page)
+    finally:
+        client.post("/api/auth/logout")
+
+
+def test_home_has_howto_with_reasons(client):
+    """홈의 '처음이신가요?' 이용방법: 3단계 + 각 단계의 '왜' 설명 + 주의문."""
+    html = client.get("/").text
+    assert "처음이신가요?" in html
+    assert html.count("왜 이렇게 하나요?") == 3      # 세 단계 모두 이유를 설명
+    for target in ('href="/ma"', 'href="/patterns"', 'href="/touches"'):
+        assert target in html
+    assert "과거 데이터 통계" in html               # 확인 도구라는 주의
+
+
 def test_client_ip_uses_last_forwarded_hop():
     """XFF 는 클라이언트가 앞쪽 항목을 위조할 수 있으므로, 신뢰할 수 있는
     마지막 홉(LB 가 덧붙인 실제 접속 IP)을 써야 제한 우회를 막는다."""
