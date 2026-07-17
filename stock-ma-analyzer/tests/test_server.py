@@ -300,6 +300,74 @@ def test_indices_single_flight(monkeypatch):
         server_mod._indices_cache.update(saved_cache)
 
 
+def test_post_without_content_length_rejected_411(client):
+    """Content-Length 없는 POST(chunked)는 무한 본문 버퍼링(OOM) 벡터 — 411.
+    httpx 는 제너레이터 본문을 chunked 로 보내므로 그 경로로 재현한다."""
+    r = client.post("/api/auth/login", content=iter([b'{"a":', b"1}"]),
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 411
+
+
+def test_auth_post_requires_json_content_type(client):
+    """로그인/가입은 JSON Content-Type 만 받는다 — HTML 폼으로 위장한
+    교차 사이트 CSRF 전송을 차단 (샌드박스: SameSite=Lax 의 2차 방어)."""
+    r = client.post("/api/auth/login", content=b"email=a@b.c&password=12345678",
+                    headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert r.status_code == 415
+    # 정상 JSON 은 통과해 인증 로직까지 간다 (401 = 자격증명 불일치)
+    r2 = client.post("/api/auth/login",
+                     json={"email": "nouser@example.com", "password": "password123"})
+    assert r2.status_code == 401
+
+
+def test_auth_post_rejects_cross_origin(client):
+    """Origin 헤더가 요청 호스트와 다르면 403 — 브라우저발 CSRF 차단.
+    같은 호스트 Origin 과 Origin 없음(비브라우저)은 통과한다."""
+    body = {"email": "nouser@example.com", "password": "password123"}
+    bad = client.post("/api/auth/login", json=body,
+                      headers={"Origin": "https://evil.example"})
+    assert bad.status_code == 403
+    ok = client.post("/api/auth/login", json=body,
+                     headers={"Origin": "http://testserver"})
+    assert ok.status_code == 401  # 출처 통과 → 자격증명 검사까지 도달
+
+
+def test_presence_rate_limited(monkeypatch):
+    """/api/presence 도 IP 당 상한 — cid 를 바꿔가며 CPU/메모리를 태우는
+    봇을 막는다 (정상 하트비트는 분당 1~2회라 영향 없음)."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "PRESENCE_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        codes = [c.get("/api/presence", params={"cid": f"bot{i}"}).status_code
+                 for i in range(5)]
+    server_mod._rate_windows.clear()
+    assert codes[:3] == [200, 200, 200]
+    assert 429 in codes[3:]
+
+
+def test_signup_has_own_stricter_bucket(monkeypatch):
+    """가입은 로그인과 분리된 더 좁은 버킷 — 가입 소진이 로그인을 막지 않고,
+    대량 이메일 프로빙/쓰레기 계정 생성은 빨리 429 에 막힌다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "SIGNUP_RATE_LIMIT_PER_MIN", 2)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        codes = [c.post("/api/auth/signup",
+                        json={"email": f"probe{i}@example.com", "password": "pw"}).status_code
+                 for i in range(4)]
+        # 가입 예산 소진 후에도 로그인 버킷은 멀쩡해야 한다
+        login = c.post("/api/auth/login",
+                       json={"email": "nouser@example.com", "password": "password123"})
+    server_mod._rate_windows.clear()
+    assert 429 in codes[2:]           # 3번째부터 가입 차단 (2/분 초과)
+    assert login.status_code == 401   # 로그인은 별도 버킷이라 통과
+
+
 def test_client_ip_uses_last_forwarded_hop():
     """XFF 는 클라이언트가 앞쪽 항목을 위조할 수 있으므로, 신뢰할 수 있는
     마지막 홉(LB 가 덧붙인 실제 접속 IP)을 써야 제한 우회를 막는다."""

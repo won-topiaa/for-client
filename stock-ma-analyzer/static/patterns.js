@@ -368,13 +368,18 @@
     matches.forEach((m) => {
       const card = document.createElement("div");
       card.className = "m-card";
+      // 정석 부합도 0~100 — 점수대별 칩 색(80+ 에메랄드 / 60+ 기본 / 미만 중립)과
+      // 카드 상단 미니 미터로 '얼마나 교과서적인가'를 한눈에 보여준다
+      const sc = Math.max(0, Math.min(100, Math.round(Number(m.score) || 0)));
+      const tier = sc >= 80 ? "t-high" : sc >= 60 ? "t-mid" : "t-low";
       card.innerHTML =
         `<div class="m-head">` +
         `<span><span class="m-name">${esc(m.name)}</span> ` +
         `<span class="m-code">${esc(m.symbol)}${m.market ? " · " + esc(m.market) : ""}</span></span>` +
-        `<span><span class="m-score">정석 부합도 ${Math.round(Number(m.score))}점</span> ` +
+        `<span><span class="m-score ${tier}" title="교과서 이상형과의 근접도 (0~100점)">정석 부합도 ${sc}점</span> ` +
         `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
         `</div>` +
+        `<div class="m-meter" role="img" aria-label="정석 부합도 ${sc}점 (100점 만점)"><span style="width:${sc}%"></span></div>` +
         `<div class="m-summary">${esc(m.summary)}</div>` +
         `<div class="m-chart"></div>`;
       el.matches.appendChild(card);

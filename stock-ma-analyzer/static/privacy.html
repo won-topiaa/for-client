@@ -51,6 +51,19 @@
   .back { display: inline-block; margin-top: 26px; color: var(--muted); font-size: 12.5px; text-decoration: none; }
   .back:hover { color: var(--accent); }
   .note { background: var(--panel2); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 15px; font-size: 12.5px; color: var(--muted); margin-top: 18px; }
+
+  /* ── 폴리시 v3: 시그니처 디테일 ── */
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px; border-radius: 8px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+  .card { position: relative; overflow: hidden; }
+  .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent 6%,
+      color-mix(in srgb, var(--accent) 55%, transparent) 50%, transparent 94%);
+  }
 </style>
 </head>
 <body>

@@ -142,7 +142,13 @@
   function moveActive(delta) {
     const nodes = el.suggest.children;
     if (!nodes.length) return;
-    activeIdx = (activeIdx + delta + nodes.length) % nodes.length;
+    // 선택 전(-1) 첫 이동: ↓는 첫 항목, ↑는 마지막 항목 (모듈러만 쓰면
+    // 첫 ↑가 끝에서 두 번째에 떨어진다)
+    if (activeIdx === -1) {
+      activeIdx = delta < 0 ? nodes.length - 1 : 0;
+    } else {
+      activeIdx = (activeIdx + delta + nodes.length) % nodes.length;
+    }
     Array.from(nodes).forEach((n, i) => {
       n.classList.toggle("active", i === activeIdx);
       n.setAttribute("aria-selected", i === activeIdx ? "true" : "false");

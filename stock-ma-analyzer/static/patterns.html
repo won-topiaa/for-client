@@ -385,6 +385,41 @@
   .pattern-desc, .intro, .method, .basis { box-shadow: var(--shadow-sm); }
   .m-card { transition: box-shadow .18s ease, transform .18s ease; }
   .m-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+  /* ── 폴리시 v3: 시그니처 디테일 (전 페이지 공통) ── */
+  .site-header::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent 4%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 30%,
+      color-mix(in srgb, var(--info) 42%, transparent) 70%, transparent 96%);
+    pointer-events: none;
+  }
+  a:focus-visible, button:focus-visible, .p-card:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px; border-radius: 8px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+  /* ── 폴리시 v3: 정석 부합도 칩(점수대별 색) + 카드 미니 미터 ──
+     80점 이상 = 에메랄드(정석에 매우 근접) · 60~79 = 기본 · 미만 = 중립 */
+  .m-score.t-high {
+    background: color-mix(in srgb, var(--accent) 13%, var(--panel));
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  .m-score.t-low {
+    background: var(--panel2); color: var(--muted);
+    border: 1px solid var(--hairline);
+  }
+  .m-meter {
+    height: 4px; border-radius: 999px; background: var(--panel2);
+    margin-top: 9px; overflow: hidden;
+  }
+  .m-meter > span {
+    display: block; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--info) 50%, var(--accent)), var(--accent));
+  }
 </style>
 </head>
 <body>

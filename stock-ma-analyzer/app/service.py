@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from .analysis import EngineParams, MAStat, TimeframeReport, analyze_timeframe, atr, sma
@@ -71,15 +72,18 @@ def _events_for_chart(s: MAStat, dates: pd.Series, window_start: int) -> list[di
 
 
 def _ma_series(
-    df: pd.DataFrame, dates: pd.Series, period: int, window_start: int
+    df: pd.DataFrame, dates_list: list[str], period: int, window_start: int
 ) -> list[dict]:
+    # 봉 단위 .iloc 루프 대신 열 단위로 한 번에 — 전체 히스토리(8천봉+)에서
+    # 요청당 수백 ms 를 아낀다 (동일 출력)
     values = sma(df["close"].to_numpy(dtype=float), period)
-    out = []
-    for i in range(window_start, len(df)):
-        v = values[i]
-        if v == v:  # not NaN
-            out.append({"time": dates.iloc[i], "value": round(float(v), 2)})
-    return out
+    tail = values[window_start:]
+    finite = np.isfinite(tail)
+    return [
+        {"time": t, "value": round(float(v), 2)}
+        for t, v, ok in zip(dates_list[window_start:], tail.tolist(), finite.tolist())
+        if ok
+    ]
 
 
 def serialize_report(
@@ -87,21 +91,23 @@ def serialize_report(
 ) -> dict[str, Any]:
     ws = report.window_start
     dates = df["date"].dt.strftime("%Y-%m-%d")
+    # 행 단위 .iloc 루프는 전체 히스토리(8천봉+) 직렬화에 ~0.6초(GIL 점유)를
+    # 쓴다 — 열 단위(zip)로 바꿔 ~90배 빠르게 (동일 출력). dates 는 절대
+    # 인덱스로 조회하는 _stat_to_dict/_events_for_chart 용으로 그대로 유지.
+    dates_list = dates.tolist()
+    opens = df["open"].to_numpy(float)[ws:].tolist()
+    highs = df["high"].to_numpy(float)[ws:].tolist()
+    lows = df["low"].to_numpy(float)[ws:].tolist()
+    closes = df["close"].to_numpy(float)[ws:].tolist()
     candles = [
-        {
-            "time": dates.iloc[i],
-            "open": float(df["open"].iloc[i]),
-            "high": float(df["high"].iloc[i]),
-            "low": float(df["low"].iloc[i]),
-            "close": float(df["close"].iloc[i]),
-        }
-        for i in range(ws, len(df))
+        {"time": t, "open": o, "high": h, "low": lo, "close": c}
+        for t, o, h, lo, c in zip(dates_list[ws:], opens, highs, lows, closes)
     ]
     recommended = []
     for s in report.recommended:
         recommended.append({
             **_stat_to_dict(s, dates),
-            "ma": _ma_series(df, dates, s.period, ws),
+            "ma": _ma_series(df, dates_list, s.period, ws),
             "events": _events_for_chart(s, dates, ws),
         })
     return {

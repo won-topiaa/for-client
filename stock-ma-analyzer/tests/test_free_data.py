@@ -65,6 +65,45 @@ def test_normalize_listing_krx():
     assert len(listing) == 3
 
 
+def test_normalize_listing_fills_nan_name_and_market():
+    """NaN 이름/시장명이 그대로 새면 /api/search 의 JSON 직렬화가 500 을 내고
+    캐시에 1시간 박힌다 (pandas 3: astype(str)이 NaN 을 보존) — 이름은 코드로,
+    시장명은 빈 문자열로 채워져야 한다."""
+    raw = pd.DataFrame({
+        "Code": ["005930", "35720"],
+        "Name": ["삼성전자", np.nan],
+        "Market": [np.nan, "KOSPI"],
+    })
+    listing = normalize_listing(raw)
+    assert not listing.isna().any().any(), listing
+    row = listing[listing["symbol"] == "035720"].iloc[0]
+    assert row["name"] == "035720"      # 이름 결측 → 코드로 대체
+    assert listing[listing["symbol"] == "005930"].iloc[0]["market"] == ""
+
+
+def test_yahoo_candidates_for_new_style_kr_codes(monkeypatch):
+    """2024.1 개편 신형 코드(00088K 등)도 야후 폴백에서 .KS/.KQ 후보를
+    받아야 한다 — isdigit 만 보면 접미사 없이 조회돼 폴백이 항상 실패했다."""
+    import sys
+    import types
+
+    tried: list[str] = []
+
+    class FakeTicker:
+        def __init__(self, tkr):
+            tried.append(tkr)
+
+        def history(self, **kw):
+            return pd.DataFrame()  # 전부 빈 응답 → 후보만 기록하고 실패
+
+    fake_yf = types.SimpleNamespace(Ticker=FakeTicker)
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
+    import app.providers.free_data as mod
+    with pytest.raises(ValueError):
+        mod._fetch_yahoo_sync("00088K", market="KOSPI")
+    assert tried == ["00088K.KS", "00088K.KQ"], tried
+
+
 def test_normalize_listing_drops_non_numeric():
     raw = pd.DataFrame({
         "Code": ["005930", "ABC", ""],

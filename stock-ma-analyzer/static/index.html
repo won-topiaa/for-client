@@ -283,6 +283,54 @@
   .pattern-desc, .intro, .method, .basis { box-shadow: var(--shadow-sm); }
   .m-card { transition: box-shadow .18s ease, transform .18s ease; }
   .m-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+  /* ── 폴리시 v3: 시그니처 디테일 (전 페이지 공통) ──
+     헤더 아래 브랜드 그라데이션 헤어라인 · 일관된 포커스 링 · 선택 색 */
+  .site-header::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent 4%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 30%,
+      color-mix(in srgb, var(--info) 42%, transparent) 70%, transparent 96%);
+    pointer-events: none;
+  }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px; border-radius: 8px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+  /* ── 폴리시 v3: 홈 전용 ──
+     강조어 그라데이션 · 히어로 도트 그리드 · 차트선 드로우인 · 스탯 호버 */
+  .hero h2 .em {
+    background: linear-gradient(94deg, var(--accent) 8%, #0d9488 55%, var(--info));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: -14px 0 0; z-index: -2; pointer-events: none;
+    background-image: radial-gradient(
+      color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1.4px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(62% 82% at 50% 18%, #000, transparent 76%);
+    mask-image: radial-gradient(62% 82% at 50% 18%, #000, transparent 76%);
+  }
+  .hero-bg path:first-child {
+    stroke-dasharray: 1700; stroke-dashoffset: 1700;
+    animation: draw-line 2s ease-out .2s forwards;
+  }
+  .hero-bg path + path { opacity: 0; animation: fade-fill 1s ease-out 1.4s forwards; }
+  @keyframes draw-line { to { stroke-dashoffset: 0; } }
+  @keyframes fade-fill { to { opacity: .045; } }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-bg path:first-child { animation: none; stroke-dashoffset: 0; }
+    .hero-bg path + path { animation: none; opacity: .045; }
+  }
+  .stat { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .stat:hover {
+    transform: translateY(-2px); box-shadow: var(--shadow-md);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--hairline));
+  }
+  .tool-card .go { background: linear-gradient(135deg, var(--accent), #0d9488 92%); }
+  .tool-card:hover .go { background: linear-gradient(135deg, var(--accent-hover), #0f766e 92%); }
 </style>
 </head>
 <body>

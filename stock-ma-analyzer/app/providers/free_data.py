@@ -110,11 +110,14 @@ def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
     market = _pick_col(raw, "market", "시장구분")
     if not code or not name:
         raise ValueError(f"상장목록 컬럼을 찾지 못함: {list(raw.columns)}")
+    # pandas 3 부터 astype(str) 이 NaN 을 보존한다 — NaN 이름/시장명이 그대로
+    # 새면 /api/search 응답의 JSON 직렬화가 500 을 내고 그 검색어가 캐시에
+    # 1시간 박힌다. 이름은 코드로, 시장명은 빈 문자열로 채운다.
     codes = raw[code].astype(str).str.strip()
     out = pd.DataFrame({
         "symbol": codes.str.zfill(6),
-        "name": raw[name].astype(str).str.strip(),
-        "market": (raw[market].astype(str).str.strip() if market else ""),
+        "name": raw[name].astype(str).str.strip().fillna(codes.str.zfill(6)),
+        "market": (raw[market].astype(str).str.strip().fillna("") if market else ""),
     })
     # 스크리너 유니버스 선정용 부가 컬럼 (있을 때만)
     amount = _pick_col(raw, "amount", "거래대금")
@@ -151,7 +154,10 @@ def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.
     import yfinance as yf
 
     candidates: list[str] = []
-    if symbol.isdigit():  # 국내 종목: 시장에 따라 접미사
+    # 국내 종목: 시장에 따라 접미사. 2024.1 개편 신형 코드(00088K 등)도 야후는
+    # 같은 .KS/.KQ 접미사 형식을 쓴다 — isdigit 만 보면 신형 코드가 접미사 없이
+    # 그대로 조회돼 야후 폴백이 항상 실패했다.
+    if symbol.isdigit() or _KR_NEW_CODE_RE.match(symbol):
         if market.upper().startswith("KOSDAQ"):
             candidates = [f"{symbol}.KQ", f"{symbol}.KS"]
         else:
