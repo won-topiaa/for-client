@@ -126,9 +126,11 @@
           <div class="hint" id="pwHint" style="display:none">비밀번호는 8자 이상으로 정해주세요.</div>
         </div>
         <div class="consent" id="consentWrap" style="display:none;margin:2px 0 14px;font-size:12.5px;color:var(--muted);line-height:1.55;">
-          <label style="cursor:pointer;">
-            <input type="checkbox" id="consent" style="vertical-align:middle;margin:0 7px 2px 0;">
-            <a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>에 동의합니다. 이메일과 비밀번호(암호화)만 수집해요.
+          <!-- 체크박스는 전역 input{width:100%} 를 width:auto 로 되돌려야 문구와
+               한 줄에 선다 (아니면 혼자 한 줄을 통째로 차지한다) -->
+          <label style="cursor:pointer;display:flex;align-items:flex-start;gap:8px;text-align:left;">
+            <input type="checkbox" id="consent" style="width:auto;flex:none;margin:3px 0 0;accent-color:var(--accent);">
+            <span><a href="/privacy" target="_blank" rel="noopener">개인정보처리방침</a>에 동의합니다. 이메일과 비밀번호(암호화)만 수집해요.</span>
           </label>
         </div>
         <button type="submit" class="primary" id="submitBtn">로그인</button>
