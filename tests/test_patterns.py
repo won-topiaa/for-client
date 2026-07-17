@@ -709,6 +709,87 @@ def test_cup_handle_volume_dryup_ranks_higher():
     assert hit_dry.score > hit_churn.score
 
 
+def test_hs_no_throwback_scores_full_for_clean_runaway():
+    """이탈 후 되돌림 없이 쭉 멀어진 정석 패턴은 no_throwback 만점(≈1.0) —
+    이탈봉 자체의 종가 마진에 점수가 고정되던 왜곡의 회귀 테스트."""
+    # 이탈(넥라인 ~100 아래) 뒤 5% 룰 안에서 계속 하락 (되돌림 없음) — 첫
+    # 이탈-후 봉부터 넥라인에서 0.5 ATR 이상 떨어져 있어야 만점 밴드에 든다
+    closes = np.concatenate([_hs_series(), _seg(98.6, 95.4, 6)])
+    hit = detect_head_shoulders(_prep(_df(closes)))
+    assert hit.matched and "이탈" in hit.detail["state"]
+    conf = hit.detail["conformity"]
+    assert conf.get("no_throwback", 0) >= 0.9, conf
+
+
+def test_hs_no_throwback_unmeasurable_on_break_day():
+    """이탈 당일(이탈 후 관찰 봉 없음)은 되돌림을 잴 수 없다 — 채점에서
+    제외(None)돼야 하며 0점 벌점으로 잡히면 안 된다."""
+    hit = detect_head_shoulders(_prep(_df(_hs_series())))  # 마지막 봉이 첫 이탈
+    assert hit.matched and "이탈 0봉 전" in hit.detail["state"]
+    assert "no_throwback" not in hit.detail["conformity"]
+
+
+def test_cup_confirmed_breakout_not_penalized():
+    """테두리 돌파가 '완료'된 교과서 컵(돌파 거래량 급증)이 돌파 전 후보보다
+    낮게 랭크되면 안 된다 — 돌파 급등봉이 핸들 창에 섞여 핸들 마름/하향
+    점수를 깎던 자기모순의 회귀 테스트."""
+    pre = _cup_series()                       # 돌파 전 (테두리 ~100 근접)
+    post = np.concatenate([pre, [100.8, 102.2, 103.5]])  # 테두리 돌파 (+5% 이내)
+    vol_pre = np.full(len(pre), 1000.0)
+    vol_post = np.full(len(post), 1000.0)
+    vol_post[-3:] = 3500.0                    # 돌파 거래량 3.5배 (오닐 교과서)
+    hit_pre = detect_cup_handle(_prep(_df(pre, volume=vol_pre)))
+    hit_post = detect_cup_handle(_prep(_df(post, volume=vol_post)))
+    assert hit_pre.matched and hit_post.matched
+    conf_pre, conf_post = hit_pre.detail["conformity"], hit_post.detail["conformity"]
+    # 핸들 품질(마름)은 돌파 '이전' 창으로만 재므로 두 변형이 같아야 한다
+    assert conf_post.get("handle_vol") == conf_pre.get("handle_vol"), (conf_pre, conf_post)
+    # 돌파 거래량 확증은 만점으로 반영
+    assert conf_post.get("breakout_vol") == 1.0
+    # 확증된 돌파가 미확증 후보보다 낮게 랭크되지 않는다
+    assert hit_post.score >= hit_pre.score, (hit_pre.score, hit_post.score)
+
+
+def test_partial_results_trigger_early_rescan():
+    """부분(partial) 결과는 TTL 내내 얼어붙지 않는다 — 쿨다운이 지나면
+    백그라운드 재스캔이 시작되고 기존 결과는 refreshing 으로 서빙된다."""
+    import app.pattern_scan as ps
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class FastProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("OK", "성공", "T")]
+
+    scanner = PatternScanner(FastProvider(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task                        # 완주 (partial=False → 신선)
+        snap1 = await scanner.snapshot()
+        assert snap1["status"] == "done" and not snap1.get("refreshing")
+        # 부분 결과 + 쿨다운 경과 상태를 시뮬레이션
+        scanner._results["partial"] = True
+        scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        snap2 = await scanner.snapshot()
+        # 기존 부분 결과를 그대로 내주되, 뒤에서 새 스캔이 이미 시작돼야 한다
+        assert snap2["status"] == "done" and snap2.get("refreshing") is True
+        assert scanner._task is not None and not scanner._task.done()
+        await scanner._task                        # 뒷정리 (재스캔 완주)
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
 # ---------- 패턴 이탈(무효화) 자동 탈락 기준 ----------
 
 def test_hs_dropped_after_deep_breakdown():

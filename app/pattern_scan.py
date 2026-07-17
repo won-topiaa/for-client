@@ -30,6 +30,10 @@ logger = logging.getLogger("ma-analyzer")
 
 RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
 LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
+# 부분(partial) 결과는 이 쿨다운만 지나면 바로 백그라운드 재스캔을 시작한다 —
+# TTL(5분) 내내 '일부만 스캔' 화면이 얼어붙지 않고, 따뜻한 캐시 위에서 다음
+# 스캔이 이어받아 점점 채워진다 (재시작 폭주는 쿨다운이 막는다).
+PARTIAL_RESCAN_COOLDOWN_SEC = 30.0
 ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
 SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 행(hang)으로 보고 중단
 # 소프트 시간예산: 이 시간을 넘기면 새 종목 조회를 멈추고 '지금까지 모은
@@ -174,8 +178,17 @@ class BaseScanner:
         self._partial = False            # 시간예산으로 일부만 훑고 끝났는지
 
     def _fresh(self) -> bool:
-        return (self._results is not None
-                and time.monotonic() - self._generated < self._ttl)
+        if self._results is None:
+            return False
+        age = time.monotonic() - self._generated
+        # 부분 결과(시간예산 조기 마감)는 짧은 쿨다운까지만 신선으로 취급 —
+        # 그 뒤엔 stale 로 판정돼 재스캔이 시작되고, 사용자는 기존 부분 결과를
+        # (refreshing 표시와 함께) 계속 보면서 목록이 점점 채워진다.
+        # 플래그는 확정된 self._results 에서 읽는다 (_partial 은 스캔 시작 시
+        # 리셋되는 진행 중 상태라 여기서 쓰면 안 됨).
+        if self._results.get("partial") and age >= PARTIAL_RESCAN_COOLDOWN_SEC:
+            return False
+        return age < self._ttl
 
     async def snapshot(self) -> dict[str, Any]:
         """상태 조회 + 필요 시 스캔 시작.
@@ -266,7 +279,10 @@ class PatternScanner(BaseScanner):
                 logger.info("지수(%s) 조회 실패 — RS 없이 스캔", self.index_symbol)
 
         sem = _shared_fetch_sem()
-        per_symbol: list[tuple[SymbolInfo, dict, pd.DataFrame]] = []
+        # 종목별 {패턴키: (점수, 직렬화된 매칭 dict)} — 직렬화까지 워커 스레드에서
+        # 끝내 두므로 publish 는 정렬·슬라이스만 한다 (이벤트 루프 블로킹 제거,
+        # 원본 DataFrame 을 들고 있지 않아 스캔 중 메모리도 가볍다)
+        per_symbol: list[dict[str, tuple[float, dict[str, Any]]]] = []
         abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
         budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
@@ -296,8 +312,9 @@ class PatternScanner(BaseScanner):
                                                      use_fail_cache=True)
                     if len(df) < 60:
                         raise ValueError("데이터 부족")
-                    hits = await asyncio.to_thread(run_all, df, index_close)
-                    per_symbol.append((info, hits, df.tail(CHART_BARS).reset_index(drop=True)))
+                    entry = await asyncio.to_thread(
+                        _detect_and_serialize, info, df, index_close)
+                    per_symbol.append(entry)
                 except NegativeCacheSkip:
                     # 방금 실패해 건너뛴 종목 — '업스트림 장애' 신호가 아니므로
                     # 조기중단 판정에서 제외하고, 뒤쪽 신선한 종목으로 진행한다
@@ -340,57 +357,78 @@ class PatternScanner(BaseScanner):
                     len(per_symbol), self._results["elapsedSec"], self._errors)
 
     def _build_results(self, per_symbol: list) -> dict[str, Any]:
+        """미리 직렬화된 종목별 매칭에서 패턴별 상위 TOP_N 만 골라낸다.
+
+        직렬화(비싼 부분)는 _detect_and_serialize 가 워커 스레드에서 이미
+        끝냈으므로, 여기는 정렬·슬라이스뿐이라 이벤트 루프에서 돌아도 싸다."""
         results: dict[str, Any] = {"patterns": {}}
         for key in PATTERN_KEYS:
-            matched = [(info, hits[key], df) for info, hits, df in per_symbol
-                       if hits.get(key) and hits[key].matched]
-            matched.sort(key=lambda t: t[1].score, reverse=True)
-            results["patterns"][key] = [
-                _serialize_match(info, hit, df) for info, hit, df in matched[:TOP_N]
-            ]
+            matched = sorted((entry[key] for entry in per_symbol if key in entry),
+                             key=lambda t: t[0], reverse=True)
+            results["patterns"][key] = [d for _score, d in matched[:TOP_N]]
         return results
 
 
+def _detect_and_serialize(info: SymbolInfo, df: pd.DataFrame,
+                          index_close) -> dict[str, tuple[float, dict[str, Any]]]:
+    """한 종목의 패턴 탐지 + 매칭분 직렬화 (워커 스레드 전용).
+
+    매 publish 때마다 이벤트 루프에서 전 매칭을 다시 직렬화하던 것을,
+    종목당 1회·스레드에서 끝내는 구조로 바꾼 것. 반환은 매칭된 패턴만 담은
+    {키: (점수, 직렬화 dict)} — 대부분의 종목은 빈 dict 라 메모리도 가볍다."""
+    hits = run_all(df, index_close)
+    chart = df.tail(CHART_BARS).reset_index(drop=True)
+    out: dict[str, tuple[float, dict[str, Any]]] = {}
+    for key in PATTERN_KEYS:
+        hit = hits.get(key)
+        if hit is not None and hit.matched:
+            out[key] = (float(hit.score), _serialize_match(info, hit, chart))
+    return out
+
+
 def _serialize_match(info: SymbolInfo, hit, df: pd.DataFrame) -> dict[str, Any]:
-    dates = df["date"].dt.strftime("%Y-%m-%d")
-    n = len(df)
+    # 행 단위 .iloc 루프는 200봉×매칭수에서 이벤트 루프를 수백 ms 잡아먹는다 —
+    # 열 단위로 한 번에 뽑아(zip) 직렬화한다 (동일 출력, ~50배 빠름)
+    dates = df["date"].dt.strftime("%Y-%m-%d").tolist()
+    opens = df["open"].to_numpy(float).tolist()
+    highs = df["high"].to_numpy(float).tolist()
+    lows = df["low"].to_numpy(float).tolist()
+    closes = df["close"].to_numpy(float).tolist()
     candles = [
-        {"time": dates.iloc[i], "open": float(df["open"].iloc[i]),
-         "high": float(df["high"].iloc[i]), "low": float(df["low"].iloc[i]),
-         "close": float(df["close"].iloc[i])}
-        for i in range(n)
+        {"time": t, "open": o, "high": h, "low": lo, "close": c}
+        for t, o, h, lo, c in zip(dates, opens, highs, lows, closes)
     ]
     return {
         "symbol": info.symbol, "name": info.name, "market": info.market,
         "score": hit.score, "summary": hit.summary,
         "candles": candles,
-        "overlays": _map_overlays(hit, df),
+        "overlays": _map_overlays(hit, dates),
     }
 
 
-def _map_overlays(hit, chart_df: pd.DataFrame) -> list[dict[str, Any]]:
+def _map_overlays(hit, dates: list[str]) -> list[dict[str, Any]]:
     """탐지 컨텍스트 인덱스 -> 차트 날짜 좌표.
 
     탐지 컨텍스트(tail(300))와 차트(tail(200))는 같은 '끝 봉'을 공유하므로
     chart_idx = idx - (ctx_len - n) 으로 변환된다. 차트 범위를 벗어난 점은
-    선분을 차트 왼쪽 경계에서 잘라 보간한다.
+    선분을 차트 왼쪽 경계에서 잘라 보간한다. dates 는 차트 봉의 날짜 문자열
+    리스트 (_serialize_match 가 이미 만들어 둔 것을 재사용).
     """
-    n = len(chart_df)
+    n = len(dates)
     ctx_len = int(hit.detail.get("_ctx_len", n))
     shift = ctx_len - n
-    dates = chart_df["date"].dt.strftime("%Y-%m-%d")
     out = []
     for ov in hit.overlays:
         raw = [(int(idx) - shift, float(val)) for idx, val in ov["points"]]
         pts = []
         for j, (ci, val) in enumerate(raw):
             if ci >= 0:
-                pts.append({"time": dates.iloc[min(ci, n - 1)], "value": round(val, 2)})
+                pts.append({"time": dates[min(ci, n - 1)], "value": round(val, 2)})
             elif j + 1 < len(raw) and raw[j + 1][0] > 0:
                 # 차트 밖 -> 안으로 이어지는 선분은 경계(0)에서 잘라 보간
                 ni, nv = raw[j + 1]
                 t = (0 - ci) / (ni - ci)
-                pts.append({"time": dates.iloc[0],
+                pts.append({"time": dates[0],
                             "value": round(val + (nv - val) * t, 2)})
         if len(pts) >= 2:
             out.append({"name": ov.get("name", ""), "points": pts})

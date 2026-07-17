@@ -269,7 +269,8 @@
         `<span><span class="ma-chip">MA ${esc(m.period)}</span> ` +
         `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
         `</div>` +
-        `<div class="m-summary">3년 가중 성공률 <b>${esc(rate)}%</b> · 지지 성공 ${esc(m.supportBounces)}회 (터치 ${esc(m.touches)}회) · ` +
+        `<div class="m-meter" role="img" aria-label="3년 지지 성공률 ${esc(rate)}%"><span style="width:${Math.max(0, Math.min(100, Number(rate) || 0))}%"></span></div>` +
+        `<div class="m-summary">3년 지지 성공률 <b>${esc(rate)}%</b> · 지지 성공 ${esc(m.supportBounces)}회 (터치 ${esc(m.touches)}회) · ` +
         `오늘 종가는 선 대비 <b>${esc(dist)}</b> (선 ${esc(m.maValue)})</div>` +
         `<div class="m-chart"></div>`;
       el.matches.appendChild(card);

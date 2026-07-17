@@ -179,7 +179,7 @@ def _conformity(dims: list[tuple[str, float, float | None]]) -> tuple[float, dic
 # ---------- 헤드 앤 숄더 ----------
 
 def _hs_conformity(ctx: dict, sign: int, window: list, nk_slope: float,
-                   break_bar: int | None, recovered: float | None,
+                   break_bar: int | None, recovered_tb: float | None,
                    neck_at, ref: float) -> tuple[float, dict]:
     """헤드 앤 숄더 정석 부합도 — 문헌 기반 품질 차원을 채점한다.
 
@@ -265,14 +265,15 @@ def _hs_conformity(ctx: dict, sign: int, window: list, nk_slope: float,
     # 한 밴드로 판정한다.
     neck = _trap(sign * (nk_slope / atr_h), -0.25, -0.10, 0.02, 0.10)
 
-    # [되돌림 없음] 완성 후 가격이 넥라인 쪽으로 얼마나 회복했나 — 넥라인
+    # [되돌림 없음] 완성 '이후' 가격이 넥라인 쪽으로 얼마나 회복했나 — 넥라인
     # 0.5 ATR 밖에서 멈추면 만점, 넥라인에 닿으면 0 (Bulkowski: throwback
-    # 없는 패턴이 더 멀리 간다). recovered 는 넥라인 대비 비율이라 ATR 로 환산.
+    # 없는 패턴이 더 멀리 간다). recovered_tb 는 이탈봉 이후만 본 값(넥라인
+    # 대비 비율 → ATR 환산). 이탈 당일엔 None = 측정 불가(제외·재정규화).
     throwback = None
-    if break_bar is not None and recovered is not None:
+    if break_bar is not None and recovered_tb is not None:
         neck_b = abs(float(neck_at(break_bar)))
         atr_b = max(float(a[break_bar]), 1e-9)
-        throwback = _down(recovered * neck_b / atr_b, -0.5, 0.0)
+        throwback = _down(recovered_tb * neck_b / atr_b, -0.5, 0.0)
 
     if sign > 0:
         dims = [
@@ -346,7 +347,7 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
                 break_bar = j
                 break
 
-        recovered: float | None = None
+        recovered_tb: float | None = None
         if break_bar is None:
             # [미완성 = 넥라인 접근 중] 몸통 한복판(넥라인 +6% 초과)이면 아직
             # 이르다 — 넥라인 부근까지 온 형태만 실전 의미가 있음.
@@ -372,10 +373,19 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             if dist_now < -0.05:
                 continue
             state = f"넥라인 이탈 {since}봉 전"
+            # 채점용 되돌림은 이탈봉 '이후'만 본다 — 게이트용 recovered 는
+            # 이탈봉 자체를 포함해, 되돌림 없이 쭉 멀어진 정석 패턴도 이탈봉의
+            # 종가 마진에 영원히 고정된 값(0점대 중반)을 받는 왜곡이 있었다.
+            # 이탈 당일(관찰 봉 없음)은 측정 불가 → None (채점 제외·재정규화).
+            if break_bar < n - 1:
+                recovered_tb = max(
+                    sign * (close[j] - _neck_at(j)) / max(abs(_neck_at(j)), 1e-9)
+                    for j in range(break_bar + 1, n)
+                )
 
         # 정석 부합도 (0~100) — 게이트를 통과한 후보만 채점해 순위를 정한다
         score, conf = _hs_conformity(ctx, sign, window, nk_slope,
-                                     break_bar, recovered, _neck_at, ref)
+                                     break_bar, recovered_tb, _neck_at, ref)
         head_txt = f"{hp:,.0f}"
         sym_score = max(0.0, 100 - sym / 0.05 * 100)  # 0(허용 한계)~100(완전 대칭)
         summary = (
@@ -617,14 +627,23 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         # [컵 기간] 오닐 7~35주(35~175봉)가 핵심 밴드 — 게이트(30~220) 안을 등급화.
         duration = _trap(float(length), 30.0, 35.0, 175.0, 220.0)
 
+        # 테두리 돌파봉을 먼저 찾는다 — 핸들 '품질' 차원(기울기·거래량 마름)은
+        # 돌파 '이전'까지만 봐야 한다. 게이트가 돌파 후 +5% 이내 상태를 일부러
+        # 남겨두므로, 돌파 급등봉이 핸들 창에 섞이면 돌파 거래량으로 가점하고
+        # 같은 봉으로 핸들 마름/하향을 감점하는 자기모순이 생긴다 (교과서적
+        # 돌파 완료가 돌파 전 후보보다 낮게 랭크되는 역전).
+        after = np.flatnonzero(close[ri:] > lp)
+        h_end = ri + int(after[0]) if after.size else n  # 핸들 창의 끝 = 돌파봉 직전
+
         # [핸들 위치·기울기] 오닐의 최우선 판별: 핸들은 컵 '상단 절반'에서
         # 완만히 '하향'해야 한다 (하단 절반 핸들·상향 쐐기 핸들 = 불량 베이스).
         h_frac = (h_low - bottom) / max(lp - bottom, 1e-9)
         place = _up(h_frac, 0.35, 0.65)
         drift = None
-        if handle.size >= 5:
-            slope_h = float(np.polyfit(np.arange(handle.size), handle, 1)[0])
-            drift_pct = slope_h * (handle.size - 1) / max(float(close[ri]), 1e-9)
+        handle_pre = close[ri:h_end]  # 돌파 이전의 핸들만 (돌파 랠리 제외)
+        if handle_pre.size >= 5:
+            slope_h = float(np.polyfit(np.arange(handle_pre.size), handle_pre, 1)[0])
+            drift_pct = slope_h * (handle_pre.size - 1) / max(float(close[ri]), 1e-9)
             drift = _trap(drift_pct, -0.20, -0.12, -0.005, 0.03)
         hp_dim = (0.6 * place + 0.4 * drift if place is not None and drift is not None
                   else place)
@@ -633,9 +652,10 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         # 부족으로 절반부터 시작하는 완만한 감점 (오닐: 핸들 되돌림 ~10-15%).
         hd_dim = 1.0 if h_depth >= 0.05 else 0.5 + (max(h_depth, 0.0) / 0.05) * 0.5
 
-        # [핸들 거래량 마름] 핸들에서 거래량이 컵 평균의 60% 이하로 마르면
-        # 만점 — 매도세 소진의 신호 (오닐), 오히려 늘면(1.2배) 0.
-        h_vol = _vol_mean(volume, ri, n)
+        # [핸들 거래량 마름] 돌파 전 핸들에서 거래량이 컵 평균의 60% 이하로
+        # 마르면 만점 — 매도세 소진의 신호 (오닐), 오히려 늘면(1.2배) 0.
+        # (창이 비면 _vol_mean 이 NaN → 측정 불가로 자연히 제외된다)
+        h_vol = _vol_mean(volume, ri, h_end)
         c_vol = _vol_mean(volume, li, ri)
         hv_dim = (_down(h_vol / c_vol, 0.60, 1.20)
                   if np.isfinite(h_vol) and np.isfinite(c_vol) else None)
@@ -644,9 +664,8 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
         # 급증을 채점 (오닐: 평균의 40% 이상 증가 필수) — 아직 돌파 전이면
         # 측정 불가로 제외 (돌파 전 접근 상태도 유효한 매수 준비 구간).
         bo_dim = None
-        after = np.flatnonzero(close[ri:] > lp)
         if after.size:
-            bj = ri + int(after[0])
+            bj = h_end
             if bj >= 20:
                 avg_v = _vol_mean(volume, bj - 50, bj)
                 with np.errstate(invalid="ignore"), warnings.catch_warnings():

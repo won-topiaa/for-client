@@ -143,8 +143,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="이평선 레이더 — 주요 지지/저항 이동평균선 분석기", lifespan=lifespan)
-# 전체 기간 분석 응답은 수백 KB 를 넘을 수 있어 압축 필수
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+# 전체 기간 분석 응답은 수백 KB 를 넘을 수 있어 압축 필수.
+# compresslevel 기본값(9)은 6 대비 CPU 를 ~3배 쓰면서 크기 이득은 몇 %뿐 —
+# 단일 워커 이벤트 루프에서 압축이 돌므로 6 이 폴링 응답에 알맞다.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 # 퍼블릭 배포용 간단 보호: SITE_PASSWORD 환경변수를 설정하면
 # 모든 요청에 HTTP Basic 인증(아이디 아무거나 + 이 비밀번호)을 요구한다.
@@ -168,14 +170,26 @@ def _password_ok(auth_header: str | None) -> bool:
 # /api/analyze·/api/search 는 요청마다 업스트림 페치/CPU 스캔이 도는 증폭
 # 지점이라 IP 당 분당 호출 수를 제한한다 (같은 종목 반복은 어차피 캐시가 흡수).
 # 버킷별 상한: 로그인 무차별대입·분석은 30/분, 검색은 자동완성이라 좀 더 넉넉히.
-ANALYZE_RATE_LIMIT_PER_MIN = 30  # auth·analyze 버킷 공용
-SEARCH_RATE_LIMIT_PER_MIN = 60   # 검색(자동완성)은 사람 타이핑이라 넉넉히
+# 가입은 대량 이메일 프로빙·쓰레기 계정 생성을 늦추기 위해 더 좁게 (정상
+# 사용자는 가입을 분당 몇 번씩 시도하지 않는다), presence 는 하트비트(45초
+# 간격 1회)라 널널한 상한으로 봇의 CPU 소모만 막는다.
+ANALYZE_RATE_LIMIT_PER_MIN = 30   # auth(로그인)·analyze 버킷 공용
+SEARCH_RATE_LIMIT_PER_MIN = 60    # 검색(자동완성)은 사람 타이핑이라 넉넉히
+SIGNUP_RATE_LIMIT_PER_MIN = 10    # 가입: 오탈자 재시도는 넉넉히, 대량 생성은 차단
+PRESENCE_RATE_LIMIT_PER_MIN = 60  # 하트비트 정상치(1~2/분)의 30배 여유
 _rate_windows: dict[str, tuple[float, int]] = {}
+
+_RATE_LIMITS = {
+    "search": lambda: SEARCH_RATE_LIMIT_PER_MIN,
+    "signup": lambda: SIGNUP_RATE_LIMIT_PER_MIN,
+    "presence": lambda: PRESENCE_RATE_LIMIT_PER_MIN,
+}
 
 
 def _rate_limit_for(bucket: str) -> int:
     """버킷별 분당 상한 (상수를 런타임에 읽어 테스트의 monkeypatch 도 반영)."""
-    return SEARCH_RATE_LIMIT_PER_MIN if bucket == "search" else ANALYZE_RATE_LIMIT_PER_MIN
+    fn = _RATE_LIMITS.get(bucket)
+    return fn() if fn else ANALYZE_RATE_LIMIT_PER_MIN
 
 
 def _client_ip(request: Request) -> str:
@@ -237,30 +251,71 @@ async def security_headers(request: Request, call_next):
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 _RATE_LIMITED_PATHS = frozenset(
-    {"/api/analyze", "/api/search", "/api/auth/login", "/api/auth/signup"}
+    {"/api/analyze", "/api/search", "/api/presence",
+     "/api/auth/login", "/api/auth/signup"}
 )
 
 
 def _rate_bucket(path: str) -> str:
-    """경로 → 레이트리밋 버킷. 인증·검색·분석을 분리해 서로 예산을 안 갉게."""
+    """경로 → 레이트리밋 버킷. 인증·가입·검색·분석·하트비트를 분리해
+    한쪽의 소진·남용이 다른 쪽 예산을 갉아먹지 않게 한다."""
+    if path == "/api/auth/signup":
+        return "signup"
     if path.startswith("/api/auth/"):
         return "auth"
     if path == "/api/search":
         return "search"
+    if path == "/api/presence":
+        return "presence"
     return "analyze"
+
+
+def _plain(status: int, msg: str, extra: dict | None = None) -> Response:
+    """미들웨어 조기 응답 공통 꼴 — 보안 헤더를 항상 싣는다."""
+    return Response(status_code=status, content=msg,
+                    headers={**(extra or {}), **_SECURITY_HEADERS},
+                    media_type="text/plain; charset=utf-8")
+
+
+def _same_origin(request: Request) -> bool:
+    """Origin 헤더가 있으면 요청 호스트와 일치해야 한다 (CSRF 방어).
+
+    브라우저는 모든 크로스사이트 POST 에 Origin 을 싣는다 — 불일치는 다른
+    사이트에서 쏜 요청. 헤더가 없으면(curl·구형 클라이언트·테스트) 통과."""
+    origin = request.headers.get("origin", "")
+    if not origin:
+        return True
+    host = request.headers.get("host", "")
+    try:
+        from urllib.parse import urlsplit
+        return bool(host) and urlsplit(origin).netloc == host
+    except ValueError:
+        return False
 
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
     path = request.url.path
-    # 요청 본문 크기 상한 — JSON POST(가입/로그인)는 아주 작다. 거대한 본문을
-    # 메모리에 통째로 버퍼링(await request.json())하기 전에 막는다(메모리 DoS 방지).
     if request.method == "POST":
+        # 요청 본문 크기 상한 — 이 앱의 POST(가입/로그인)는 작은 JSON 뿐이다.
+        # Content-Length 없는 전송(chunked)은 헤더 검사로 못 걸러 무한 본문을
+        # 버퍼링(await request.json())하게 되므로 411 로 거부한다 — 브라우저
+        # fetch(JSON)는 항상 Content-Length 를 실어 정상 사용자는 영향 없음.
         clen = request.headers.get("content-length", "")
-        if clen.isdigit() and int(clen) > 16_384:
-            return Response(status_code=413, content="요청 본문이 너무 큽니다.",
-                            headers={**_SECURITY_HEADERS},
-                            media_type="text/plain; charset=utf-8")
+        if not clen.isdigit():
+            return _plain(411, "Content-Length 헤더가 필요합니다.")
+        if int(clen) > 16_384:
+            return _plain(413, "요청 본문이 너무 큽니다.")
+        # CSRF 방어(2중): ① Origin 이 있으면 우리 호스트여야 하고 ② 본문을
+        # 파싱하는 인증 POST 는 JSON Content-Type 만 받는다 — HTML 폼(form
+        # urlencoded/multipart)으로는 교차 사이트에서 조용히 못 쏘고, JSON
+        # Content-Type 의 교차 출처 fetch 는 CORS 사전요청에서 막힌다.
+        if path.startswith("/api/auth/") and not _same_origin(request):
+            return _plain(403, "허용되지 않은 출처의 요청입니다.")
+        if path in ("/api/auth/login", "/api/auth/signup"):
+            ctype = request.headers.get("content-type", "")
+            if not ctype.lower().startswith("application/json"):
+                return _plain(415, "application/json 요청만 받아요.")
     if path in _RATE_LIMITED_PATHS:
         bucket = _rate_bucket(path)
         if _rate_limited(f"{bucket}:{_client_ip(request)}",
@@ -306,17 +361,24 @@ async def health():
 # 세고, 저장하는 것은 임의의 클라이언트 ID뿐이라 개인정보가 아니다.
 _PRESENCE_TTL_SEC = 75.0
 _PRESENCE_MAX = 50000          # 폭주 방어: 이 이상은 새 방문자를 더 담지 않는다
+_PRESENCE_SWEEP_SEC = 5.0      # 만료 정리 최소 간격 — 호출마다 전체 훑기 방지
 _presence: dict[str, float] = {}
+_presence_last_sweep = 0.0
 
 
 @app.get("/api/presence")
 async def presence(cid: str = Query("", max_length=64, pattern=r"^[A-Za-z0-9_-]*$")):
     """동시 접속자 근사치. 방문자별 하트비트를 받아 활성 수를 돌려준다."""
+    global _presence_last_sweep
     now = time.monotonic()
-    # 오래된 방문자 정리 (반복마다 만료분 제거 — 딕셔너리가 활성 창 크기로 유지)
-    stale = [k for k, seen in _presence.items() if now - seen > _PRESENCE_TTL_SEC]
-    for k in stale:
-        _presence.pop(k, None)
+    # 오래된 방문자 정리 — 호출마다 전체 dict 를 훑으면 방문자가 많을 때
+    # 요청당 O(n) CPU 가 되므로 몇 초에 한 번만 쓸어낸다 (개수는 근사치라
+    # 몇 초 묵은 항목이 섞여도 무해). 정상 비용은 O(1) 삽입뿐.
+    if now - _presence_last_sweep >= _PRESENCE_SWEEP_SEC:
+        _presence_last_sweep = now
+        stale = [k for k, seen in _presence.items() if now - seen > _PRESENCE_TTL_SEC]
+        for k in stale:
+            _presence.pop(k, None)
     if cid and (cid in _presence or len(_presence) < _PRESENCE_MAX):
         _presence[cid] = now
     return {"active": len(_presence)}
