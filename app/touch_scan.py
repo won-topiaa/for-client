@@ -90,7 +90,15 @@ class TouchScanner(BaseScanner):
         last_publish = 0.0  # 0 으로 시작해 '첫 검증이 끝나는 즉시' 한 번 공개
 
         def publish(partial: bool) -> None:
-            """지금까지 모은 matches 로 결과를 만들어 공개 (동기 — 레이스 없음)."""
+            """지금까지 모은 matches 로 결과를 만들어 공개 (동기 — 레이스 없음).
+
+            재스캔이 이전 커버리지에 도달하기 전에는 기존 결과를 대체하지
+            않는다 (pattern_scan 과 동일 규칙 — 목록 깜빡임 방지)."""
+            prev = self._results.get("scanned", 0) if self._results is not None else 0
+            if scanned < prev:
+                if not partial:
+                    self._generated = time.monotonic()  # 기존 결과 유지 + churn 방지
+                return
             self._partial = partial
             ranked = sorted(matches, key=lambda m: (-m["maScore"], abs(m["distPct"])))
             self._finish({"matches": ranked[:TOP_N], "totalMatches": len(matches)},

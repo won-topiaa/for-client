@@ -32,8 +32,11 @@ RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
 LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
 # 부분(partial) 결과는 이 쿨다운만 지나면 바로 백그라운드 재스캔을 시작한다 —
 # TTL(5분) 내내 '일부만 스캔' 화면이 얼어붙지 않고, 따뜻한 캐시 위에서 다음
-# 스캔이 이어받아 점점 채워진다 (재시작 폭주는 쿨다운이 막는다).
-PARTIAL_RESCAN_COOLDOWN_SEC = 30.0
+# 스캔이 이어받아 점점 채워진다. 쿨다운은 소프트 예산(150초)의 절반 미만으로
+# 잡지 않는다 — 업스트림이 계속 느릴 때 스캐너가 거의 쉬지 않고 도는(약한
+# CPU 를 독점하는) 것을 막기 위함. publish 의 커버리지 가드가 재스캔 중에도
+# 기존 결과를 유지하므로 사용자는 쿨다운을 체감하지 않는다.
+PARTIAL_RESCAN_COOLDOWN_SEC = 60.0
 ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
 SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 행(hang)으로 보고 중단
 # 소프트 시간예산: 이 시간을 넘기면 새 종목 조회를 멈추고 '지금까지 모은
@@ -289,7 +292,19 @@ class PatternScanner(BaseScanner):
         last_publish = 0.0  # 0 으로 시작해 '첫 결과가 나오는 즉시' 한 번 공개
 
         def publish(partial: bool) -> None:
-            """지금까지 모은 per_symbol 로 결과를 만들어 공개 (동기 — 레이스 없음)."""
+            """지금까지 모은 per_symbol 로 결과를 만들어 공개 (동기 — 레이스 없음).
+
+            재스캔이 '이전 커버리지'에 도달하기 전에는 기존 결과를 대체하지
+            않는다 — 부분 결과 재스캔의 첫 발행이 사용자가 보던 목록을 1~2개로
+            줄였다가 다시 채우는 깜빡임을 막는 진짜 stale-while-revalidate.
+            (따뜻한 캐시 덕에 이전 범위는 수 초 만에 따라잡는다)"""
+            prev = self._results.get("scanned", 0) if self._results is not None else 0
+            if len(per_symbol) < prev:
+                if not partial:
+                    # 최종 발행인데 이전보다 못 미침(업스트림 악화) — 기존 결과를
+                    # 유지하고 신선도만 갱신해 즉시 재스캔 루프(churn)를 막는다
+                    self._generated = time.monotonic()
+                return
             self._partial = partial
             self._finish(self._build_results(per_symbol), len(universe),
                          len(per_symbol), started)

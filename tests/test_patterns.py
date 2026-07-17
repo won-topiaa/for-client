@@ -790,6 +790,53 @@ def test_partial_results_trigger_early_rescan():
     asyncio.new_event_loop().run_until_complete(go())
 
 
+def test_rescan_never_shrinks_served_results():
+    """부분 재스캔이 이전 커버리지에 못 미치는 동안(초기·업스트림 악화)에는
+    기존 결과를 대체하지 않는다 — 보고 있던 목록이 1~2개로 '줄었다 다시
+    차는' 깜빡임 방지 (stale-while-revalidate 의 핵심 보장)."""
+    import app.pattern_scan as ps
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+    good_df = validate_candles(_df(closes, volume=volume))
+
+    class Switchable:
+        name = "fake"
+        degraded = False
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            if self.degraded and symbol != "S0":
+                raise RuntimeError("upstream down")  # 재스캔 때 2/3 실패
+            return good_df
+
+        async def search(self, q):
+            return []
+
+    provider = Switchable()
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"n{i}", "T") for i in range(3)]
+
+    scanner = PatternScanner(provider, universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task                       # 1차 스캔 완주: scanned=3
+        assert scanner._results["scanned"] == 3
+        # 부분 결과 + 쿨다운 경과를 시뮬레이션한 뒤, 업스트림이 악화된 재스캔
+        scanner._results["partial"] = True
+        scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        provider.degraded = True
+        await scanner.snapshot()                  # 재스캔 시작 (기존 결과 서빙)
+        await scanner._task                       # 재스캔은 1종목만 성공
+        snap = await scanner.snapshot()
+        # 커버리지가 후퇴한 재스캔은 결과를 대체하지 못한다 — 3종목 유지
+        assert snap["status"] == "done" and snap["scanned"] == 3, snap["scanned"]
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
 # ---------- 패턴 이탈(무효화) 자동 탈락 기준 ----------
 
 def test_hs_dropped_after_deep_breakdown():
