@@ -9,7 +9,9 @@
   // 모양이 종류를 구분: 화살표=이평선이 버팀, 원=뚫림.
   const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
   function chartTheme() {
-    const dark = darkMq.matches;
+    // 수동 전환(data-theme)이 있으면 그걸, 없으면 기기 설정을 따른다
+    const forced = document.documentElement.dataset.theme;
+    const dark = forced === "dark" || (forced !== "light" && darkMq.matches);
     return {
       text: dark ? "#a1a1aa" : "#71717a",
       grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
@@ -28,6 +30,8 @@
   function onThemeChange() { if (analysis) renderTimeframe(currentTf); }
   if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);
   else if (darkMq.addListener) darkMq.addListener(onThemeChange);
+  // 헤더 토글(딸깍 버튼)의 수동 전환도 같은 경로로 다시 그린다 (theme.js 가 쏨)
+  document.addEventListener("wt-themechange", onThemeChange);
 
   // 서버/업스트림에서 온 문자열을 innerHTML 에 넣기 전 이스케이프
   function esc(s) {
