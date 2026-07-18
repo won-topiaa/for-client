@@ -420,6 +420,13 @@
     transition: border-color .15s, box-shadow .15s;
   }
   .theme-toggle:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  /* 헤더 우측 그룹: 좁아지면 항목 '사이'에서만 줄바꿈 — 링크 글자가
+     '이평선 분/석'처럼 중간에서 꺾여 깨져 보이던 문제 방지 */
+  .nav-link, .top-nav a { white-space: nowrap; }
+  .header-inner > :last-child {
+    display: inline-flex; flex-wrap: wrap; justify-content: flex-end;
+    align-items: center; row-gap: 4px;
+  }
   @media (min-width: 761px) {
     /* 헤더를 3열 그리드로 — 가운데 칸을 실제로 예약해 어떤 폭·어떤 페이지에서도
        토글이 좌우 내용(접속자 배지·부제목 등)과 겹치지 않는다 */
@@ -444,14 +451,15 @@
       <h1>오늘의 지지선 터치</h1>
       <p class="sub">백테스트로 검증된 이평선에 오늘 가격이 닿아 있는 종목을 찾아드립니다</p>
       </div>
+      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
     </div>
     <button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button>
-    <span style="display:inline-flex; gap:14px;">
-      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
+    <span style="display:inline-flex; gap:10px;">
+      
       <a class="nav-link" href="/">🏠 홈</a>
       <a class="nav-link" href="/ma">📈 이평선 분석</a>
       <a class="nav-link" href="/patterns">🔍 패턴 스크리너</a>
-      <span id="authBox" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--muted);white-space:nowrap;"><span id="authEmail" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;"></span><button type="button" id="logoutBtn" class="nav-link" style="background:none;border:none;cursor:pointer;font-family:inherit;padding:0;">로그아웃</button></span>
+      <span id="authBox" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--muted);white-space:nowrap;"><span id="authEmail" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;"></span><button type="button" id="logoutBtn" class="nav-link" style="background:none;border:none;cursor:pointer;font-family:inherit;padding:0;">로그아웃</button></span>
     </span>
   </div>
   <div class="ticker-wrap" id="tickerWrap" style="display:none">
