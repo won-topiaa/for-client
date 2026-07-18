@@ -404,6 +404,18 @@ def test_privacy_link_in_every_footer(client):
         client.post("/api/auth/logout")
 
 
+def test_home_explains_ma_trading_method(client):
+    """홈의 '이동평균선 매매법' 소개: 정의 + 바쁜 사람에게 맞는 이유 3가지 +
+    한계 고지(횡보장 whipsaw) + 학술 출처가 함께 있어야 한다."""
+    html = client.get("/").text
+    assert "이동평균선 매매법이란?" in html
+    assert "추세 추종" in html
+    assert "하루 한 번이면 충분" in html
+    assert "whipsaw" in html                       # 한계도 정직하게 고지
+    assert "Brock·Lakonishok·LeBaron" in html      # 학술 근거
+    assert "어떤 선을 써야 하나?" in html            # 사이트 도구로의 연결
+
+
 def test_home_has_howto_with_reasons(client):
     """홈의 '처음이신가요?' 이용방법: 3단계 + 각 단계의 '왜' 설명 + 주의문."""
     html = client.get("/").text

@@ -137,6 +137,36 @@
     color: var(--muted); font-size: 12px; line-height: 1.7; word-break: keep-all;
   }
 
+  /* 이동평균선 매매법 소개 — 바쁜 직장인 관점의 짧은 설명 (howto 와 동일 톤) */
+  .ma-method {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
+    padding: 24px 26px 20px; margin: 0 0 26px;
+  }
+  .mm-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; }
+  @media (max-width: 980px) { .mm-grid { grid-template-columns: 1fr; gap: 14px; } }
+  .mm-what p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.75; word-break: keep-all; }
+  .mm-what p + p { margin-top: 10px; }
+  .mm-what b { color: var(--text); }
+  .mm-caution {
+    padding: 9px 11px; border-radius: 10px; background: var(--panel2);
+    border: 1px solid var(--border); font-size: 12px !important; line-height: 1.65 !important;
+  }
+  .mm-why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .mm-why li {
+    position: relative; padding: 10px 12px 10px 30px; border-radius: 12px;
+    background: var(--panel2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12.5px; line-height: 1.7; word-break: keep-all;
+  }
+  .mm-why li::before { content: "✓"; position: absolute; left: 12px; top: 10px; color: var(--accent); font-weight: 700; }
+  .mm-why b { color: var(--text); }
+  .mm-bridge {
+    margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12.5px; line-height: 1.7; word-break: keep-all;
+  }
+  .mm-bridge b { color: var(--text); }
+  .mm-bridge a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .mm-bridge a:hover { text-decoration: underline; }
+
   /* 도구 카드 */
   .tools {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
@@ -507,6 +537,36 @@
     <p class="howto-note">⚠️ 세 도구 모두 <b>과거 데이터 통계</b>입니다 — 매수 신호가 아니라
       '확인 도구'로 쓰세요. 그래서 모든 화면에 판단 기준과 문헌 출처를 함께 적어 둡니다.
       모든 투자 판단과 결과는 본인 책임입니다.</p>
+  </section>
+
+  <section class="ma-method" aria-label="이동평균선 매매법 소개">
+    <h3 class="howto-title">이동평균선 매매법이란? <span class="em">바쁜 사람에게 잘 맞는 이유</span></h3>
+    <div class="mm-grid">
+      <div class="mm-what">
+        <p><b>이동평균선(이평선)</b>은 최근 N일 종가의 평균을 이은 선입니다. 이평선 매매법은 이 선을
+          기준선으로 삼는 <b>추세 추종</b> 기법이에요 — 가격이 <b>선 위</b>에 있고 선이 우상향이면
+          "추세가 살아있다"고 보고 보유하고, 종가가 <b>선 아래로 확정 이탈</b>하면 "추세가 꺾였다"고
+          보고 정리합니다. 판단 기준이 차트에 그대로 그려져 있으니, 복잡한 재무 분석 없이도
+          규칙대로만 움직이면 됩니다.</p>
+        <p class="mm-caution">⚠️ 만능은 아닙니다 — 뚜렷한 추세가 없는 횡보장에서는 선을 자주
+          넘나들며 속임수 신호(whipsaw)가 잦아지고, 과거에 통한 선이 앞으로도 통한다는 보장은
+          없습니다. 그래서 이 사이트의 모든 화면은 근거 수치와 출처를 함께 보여드립니다.</p>
+      </div>
+      <ul class="mm-why">
+        <li><b>하루 한 번이면 충분</b> — 일봉·주봉 기준이라 장중 시세를 계속 볼 필요가 없습니다.
+          와인스타인은 30주선 기준으로 <i>일주일에 한 번</i> 점검하는 매매를 권했습니다.
+          퇴근 후 10분이면 됩니다.</li>
+        <li><b>감정이 낄 틈이 적다</b> — "선 위면 보유, 확정 이탈이면 정리"처럼 규칙이 명확해,
+          급등·급락에 휩쓸린 즉흥 판단을 줄여줍니다.</li>
+        <li><b>학술적으로 검토된 몇 안 되는 기법</b> — Brock·Lakonishok·LeBaron(1992,
+          <i>Journal of Finance</i>)이 이동평균 규칙의 예측력을 보고했고, 후속 연구(Park·Irwin
+          2007)는 거래비용·시기에 따른 한계도 지적했습니다. 장점과 한계가 모두 연구된 기법입니다.</li>
+      </ul>
+    </div>
+    <p class="mm-bridge">남는 문제는 하나 — <b>"어떤 선을 써야 하나?"</b> 20일선이 잘 맞는 종목도,
+      60일선·120일선이 맞는 종목도 있습니다. 그걸 종목마다 백테스트로 찾아주는 것이
+      <a href="/ma">이평선 레이더</a>이고, 검증된 지지선에 오늘 가격이 닿은 종목을 매일 골라주는 것이
+      <a href="/touches">오늘의 지지선 터치</a>입니다.</p>
   </section>
 
   <div class="tools">
