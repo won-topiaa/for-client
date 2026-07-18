@@ -134,6 +134,14 @@
     bar.style.width = pct + "%";
   }
 
+  // 응답이 중간에 멈추면(스톨) fetch/json 이 영원히 대기해 폴링 체인이
+  // 소리 없이 죽는다 — 타임아웃으로 거부시켜 catch 의 재시도 사다리로 보낸다.
+  const FETCH_TIMEOUT_MS = 15000;
+  function pollSignal() {
+    return (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+      ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined;
+  }
+
   async function load(isPoll) {
     const seq = ++reqSeq;
     clearTimeout(pollTimer);
@@ -147,7 +155,8 @@
       el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
     }
     try {
-      const r = await fetch(`/api/touches?market=${market}`);
+      const r = await fetch(`/api/touches?market=${market}`,
+                            { signal: pollSignal() });
       if (seq !== reqSeq) return;
       if (r.status === 401) {  // 세션 만료 등 — 로그인 페이지로
         location.href = "/login?next=%2Ftouches";

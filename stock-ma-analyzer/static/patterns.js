@@ -241,6 +241,14 @@
     bar.style.width = pct + "%";
   }
 
+  // 응답이 중간에 멈추면(스톨) fetch/json 이 영원히 대기해 폴링 체인이
+  // 소리 없이 죽는다 — 타임아웃으로 거부시켜 catch 의 재시도 사다리로 보낸다.
+  const FETCH_TIMEOUT_MS = 15000;
+  function pollSignal() {
+    return (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+      ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined;
+  }
+
   async function load(isPoll) {
     const seq = ++reqSeq;
     clearTimeout(pollTimer);
@@ -256,7 +264,8 @@
       el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
     }
     try {
-      const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}`);
+      const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}`,
+                            { signal: pollSignal() });
       if (seq !== reqSeq) return;
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json();
