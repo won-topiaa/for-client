@@ -26,11 +26,10 @@
         : { support: "#059669", resistance: "#dc2626", breakDown: "#dc2626", breakUp: "#059669" },
     };
   }
-  // OS 테마가 바뀌면 차트를 새 팔레트로 다시 그린다
+  // 테마가 바뀌면 차트를 새 팔레트로 다시 그린다. 신호는 theme.js 의
+  // wt-themechange 하나로 통일 — 자동 모드의 OS 변경도 theme.js 가 이 이벤트로
+  // 중계하므로, 여기서 OS(matchMedia)를 또 들으면 이중 재렌더(줌 리셋 2번)가 된다.
   function onThemeChange() { if (analysis) renderTimeframe(currentTf); }
-  if (darkMq.addEventListener) darkMq.addEventListener("change", onThemeChange);
-  else if (darkMq.addListener) darkMq.addListener(onThemeChange);
-  // 헤더 토글(딸깍 버튼)의 수동 전환도 같은 경로로 다시 그린다 (theme.js 가 쏨)
   document.addEventListener("wt-themechange", onThemeChange);
 
   // 서버/업스트림에서 온 문자열을 innerHTML 에 넣기 전 이스케이프

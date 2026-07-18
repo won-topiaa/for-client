@@ -126,9 +126,12 @@
   .step .why {
     margin: 8px 0 0; padding: 9px 11px; border-radius: 10px;
     background: var(--panel2); border: 1px solid var(--border);
-    color: var(--muted); font-size: 12px; line-height: 1.65; word-break: keep-all;
+    /* 작은 글씨(12px)라 muted 그대로는 라이트 모드에서 WCAG AA(4.5:1) 미달 —
+       본문색 쪽으로 섞어 양쪽 모드 모두 대비를 확보한다 */
+    color: color-mix(in srgb, var(--muted) 65%, var(--text));
+    font-size: 12px; line-height: 1.65; word-break: keep-all;
   }
-  .step .why b { color: var(--accent); }
+  .step .why b { color: color-mix(in srgb, var(--accent) 78%, var(--text)); }
   .howto-note {
     margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border);
     color: var(--muted); font-size: 12px; line-height: 1.7; word-break: keep-all;
@@ -527,7 +530,7 @@
 
     <a class="tool-card" href="/touches">
       <span class="icon">🚨</span>
-      <h3>오늘의 지지선 터치</h3>
+      <h3>오늘의 지지선 터치 <span style="font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;vertical-align:3px;background:var(--panel2);">회원 전용 · 무료</span></h3>
       <p class="desc">두 도구를 거꾸로 뒤집은 데일리 스크리너 — <b>백테스트로 검증된 지지 이평선에
         오늘 가격이 닿아 있는 종목</b>만 골라 매일 새로 보여드립니다.</p>
       <ul>
@@ -540,7 +543,7 @@
   </div>
 
   <div class="basis">
-    <b>근거 있는 기준</b> — 두 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
+    <b>근거 있는 기준</b> — 세 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
     Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil, Weinstein (1988) 등
     학술 연구·고전 문헌에 근거합니다. 정식 출처 목록은 <a href="/patterns">패턴 스크리너 페이지 하단</a>에 있습니다.
     이 사이트는 <a href="/about"><b>원토피아</b></a>에서 만들었습니다 — 협업 문의도 그곳에서 받습니다.

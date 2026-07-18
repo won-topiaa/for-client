@@ -391,6 +391,19 @@ def test_theme_toggle_on_every_page(client):
         client.post("/api/auth/logout")
 
 
+def test_privacy_link_in_every_footer(client):
+    """이메일을 수집하는 사이트 — 개인정보처리방침 링크가 모든 주요 페이지
+    푸터에서 도달 가능해야 한다 (개인정보보호법 고지 의무)."""
+    client.post("/api/auth/signup",
+                json={"email": "footercheck@example.com", "password": "password123"})
+    try:
+        for page in ("/", "/ma", "/patterns", "/touches", "/about"):
+            html = client.get(page).text
+            assert 'href="/privacy"' in html, f"{page} 푸터에 개인정보처리방침 링크 없음"
+    finally:
+        client.post("/api/auth/logout")
+
+
 def test_home_has_howto_with_reasons(client):
     """홈의 '처음이신가요?' 이용방법: 3단계 + 각 단계의 '왜' 설명 + 주의문."""
     html = client.get("/").text
