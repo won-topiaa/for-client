@@ -1,7 +1,7 @@
 # Render.com 배포 설정 (Blueprint)
 # 사용법: render.com -> New -> Blueprint -> 이 저장소/브랜치 선택
 #
-# 기본 공급자가 무료 시세(FinanceDataReader/Yahoo)라 API 키·IP 등록이 필요 없다.
+# 기본 공급자가 무료 시세(국내 FDR/네이버 · 미국 Stooq→Yahoo→FDR)라 API 키·IP 등록이 필요 없다.
 # SITE_PASSWORD 만 선택적으로 설정(비공개용). 비워두면 누구나 접속 가능(공개).
 #
 # 회원가입/로그인('오늘의 지지선 터치')을 실서비스로 쓰려면 DATABASE_URL 에

@@ -2,7 +2,9 @@
 
 키·IP 허용 목록이 필요 없어서 공개 배포에 적합하다.
 - 검색: FinanceDataReader 의 KRX 상장 목록(전 종목 이름/코드)으로 이름 검색.
-- 캔들: fdr.DataReader 로 일봉 전체 히스토리. 실패하면 yfinance 로 폴백.
+- 캔들(국내): fdr.DataReader(네이버/KRX) → 실패 시 yfinance 폴백.
+- 캔들(미국): Stooq CSV → yfinance → FDR 3중 폴백 (야후는 데이터센터 IP 에서
+  자주 막혀 Stooq 를 1순위로 둔다).
 - 주봉/월봉은 service 층에서 일봉을 리샘플링해 만든다(공급자는 일봉만 제공).
 
 FinanceDataReader/yfinance 는 비공식·무료 소스라 간헐적으로 느리거나 스키마가
