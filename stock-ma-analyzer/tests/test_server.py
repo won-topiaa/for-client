@@ -509,3 +509,69 @@ def test_loading_tips_fit_two_lines():
         assert len(text) <= 85, f"두 줄 규칙(85자) 초과 ({len(text)}자): {text}"
     # 시장 등락 요약 카드(동적 생성)도 존재해야 한다
     assert '"시장 등락"' in src
+
+
+def test_indices_failure_cooldown(client, monkeypatch):
+    """지수 갱신이 '전부 실패'한 직후에는 쿨다운 동안 재조회하지 않는다 —
+    업스트림 장애 때 락 대기열이 25초짜리 실패 조회를 직렬로 반복(호송)하며
+    무한히 자라는 것을 막는 회귀 테스트."""
+    import time as _t
+
+    import app.server as srv
+
+    calls = {"n": 0}
+
+    async def fake_refresh(now):
+        calls["n"] += 1
+        return {"indices": []}
+
+    monkeypatch.setattr(srv, "_refresh_indices", fake_refresh)
+    monkeypatch.setitem(srv._indices_cache, "data", None)
+    # 방금 전부 실패가 기록된 상태 → 재조회 없이 즉시 빈 목록
+    monkeypatch.setitem(srv._indices_cache, "fail_ts", _t.monotonic())
+    r = client.get("/api/indices")
+    assert r.status_code == 200 and r.json() == {"indices": []}
+    assert calls["n"] == 0, "쿨다운 중인데 업스트림 재조회가 실행됨"
+    # 쿨다운이 지나면 다시 '한 번만' 갱신을 시도한다
+    monkeypatch.setitem(srv._indices_cache, "fail_ts",
+                        _t.monotonic() - srv._INDICES_FAIL_COOLDOWN_SEC - 1)
+    r = client.get("/api/indices")
+    assert r.status_code == 200
+    assert calls["n"] == 1
+
+
+def test_requests_default_timeout_injected():
+    """FDR 내부의 timeout 없는 requests 호출에 기본 시간 상한이 주입되는지.
+
+    socket.setdefaulttimeout 은 requests 에 적용되지 않으므로(urllib3 는
+    timeout=None 을 무한 대기로 사용), 이 주입이 없으면 응답이 멈춘 소켓에
+    걸린 페치 스레드가 영원히 살아남아 전용 풀(18칸)을 영구 잠식한다."""
+    import requests
+
+    from app.providers import free_data  # noqa: F401 — 임포트 시 주입 설치
+
+    assert getattr(requests.sessions.Session.request, "_timeboxed", False)
+
+    seen = {}
+
+    class FakeAdapter(requests.adapters.BaseAdapter):
+        def send(self, request, stream=False, timeout=None, verify=True,
+                 cert=None, proxies=None):
+            seen["timeout"] = timeout
+            resp = requests.Response()
+            resp.status_code = 200
+            resp._content = b"{}"
+            resp.request = request
+            resp.url = request.url
+            return resp
+
+        def close(self):
+            pass
+
+    s = requests.Session()
+    s.mount("http://", FakeAdapter())
+    s.request("GET", "http://timeout-probe.invalid/")  # timeout 미지정 호출
+    assert seen["timeout"] == (7, 15), seen
+    # 호출자가 명시한 timeout 은 존중한다
+    s.request("GET", "http://timeout-probe.invalid/", timeout=3)
+    assert seen["timeout"] == 3

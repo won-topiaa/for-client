@@ -89,21 +89,25 @@ async def lifespan(app: FastAPI):
     from .providers.base import SymbolInfo
     from .touch_scan import TouchScanner
 
-    # 업스트림 라이브러리(FDR/yfinance 내부 requests)가 소켓 타임아웃 없이
-    # 요청을 여는 경우가 있어, 블랙홀 커넥션에 걸린 스레드가 몇 시간씩 살아남아
-    # 기본 스레드 실행기를 잠식할 수 있다. 전역 기본 타임아웃이 안전망이 된다
-    # (asyncio 소켓은 논블로킹이라 영향 없음, httpx 는 자체 타임아웃 사용).
-    # candles 조회 wait_for(25초)보다 짧게 잡아, hang 소켓이 wait_for 취소 직후
-    # 스스로 죽어 페치 스레드가 오래 남지 않게 한다.
+    # 표준 socket 모듈을 직접 쓰는 코드용 전역 기본 타임아웃. 주의: requests/
+    # urllib3 에는 적용되지 않는다(timeout=None 을 '무한 대기'로 그대로 쓴다) —
+    # FDR 내부의 timeout 없는 requests 호출은 free_data 의
+    # _install_requests_default_timeout() 이 별도로 유한하게 만든다.
     socket.setdefaulttimeout(20)
 
     settings = load_settings()
     app.state.settings = settings
-    # 회원 인증 저장소 (SQLite/Postgres). 시작 시 만료 세션 정리 —
-    # 부가 작업이므로 실패해도 부팅을 막지 않는다(스키마 생성은 이미 재시도됨).
-    app.state.auth = AuthStore()
+    # 회원 인증 저장소 (SQLite/Postgres). 초기화(=첫 DB 연결 + 스키마 생성)에
+    # 시간 상한을 둔다 — 상한 없이 걸리면 서버가 리슨 소켓도 못 연 채 좀비로
+    # 남는다. 초과 시 명확히 실패시켜 플랫폼이 재시작하게 한다.
+    # (connect_timeout=10 × 재시도 5회 + 백오프 ≈ 최악 80초 < 90초)
     try:
-        app.state.auth.purge_expired()
+        app.state.auth = await asyncio.wait_for(asyncio.to_thread(AuthStore), 90)
+    except asyncio.TimeoutError:
+        raise RuntimeError("인증 DB 초기화 90초 초과 — DATABASE_URL 대상 응답 없음")
+    # 시작 시 만료 세션 정리 — 부가 작업이므로 실패해도 부팅을 막지 않는다.
+    try:
+        await asyncio.wait_for(asyncio.to_thread(app.state.auth.purge_expired), 15)
     except Exception:  # noqa: BLE001
         logger.warning("시작 시 만료 세션 정리 실패 (계속 진행)", exc_info=True)
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
@@ -429,8 +433,12 @@ async def _current_user(request: Request) -> dict | None:
 
 async def _auth_json(request: Request) -> tuple[str, str]:
     try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001 — 잘못된 JSON 은 400 으로
+        # 시간 상한 필수: Content-Length 헤더만 보내고 본문을 안 보내는 클라이언트
+        # (slowloris)가 있으면 본문 읽기가 영원히 대기해, IP 하나가 미결 핸들러
+        # 태스크·소켓을 시간당 수천 개까지 쌓을 수 있다 (uvicorn 은 요청 '사이'
+        # keep-alive 타임아웃만 있고 본문 읽기 중 타임아웃은 없다).
+        body = await asyncio.wait_for(request.json(), timeout=10)
+    except Exception:  # noqa: BLE001 — 잘못된 JSON·시간 초과 모두 400 으로
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
     if not isinstance(body, dict):
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
@@ -572,7 +580,8 @@ INDEX_TICKER = [
 # 실제로 움직이는 것을 보여주기 위함(무료 소스의 일봉 마지막 값은 장중에 현재가로
 # 갱신된다). 2분 간격이면 저빈도라 야후 등 소스에 부담도 없다.
 _INDICES_TTL_SEC = 120.0
-_indices_cache: dict[str, Any] = {"ts": -1e9, "data": None}
+_INDICES_FAIL_COOLDOWN_SEC = 30.0  # 전부 실패 직후 이 시간 동안은 재조회하지 않는다
+_indices_cache: dict[str, Any] = {"ts": -1e9, "data": None, "fail_ts": -1e9}
 _indices_last_good: dict[str, dict] = {}  # 실패한 지수는 직전 값을 유지(티커 안정)
 _indices_lock = asyncio.Lock()            # 단일 비행(single-flight): 동시에 하나만 갱신
 
@@ -595,6 +604,12 @@ async def indices():
         if (_indices_cache["data"] is not None
                 and now - _indices_cache["ts"] < _INDICES_TTL_SEC):
             return _indices_cache["data"]
+        # 직전 갱신이 '전부 실패'였다면 잠시 재조회하지 않는다 — 업스트림 전면
+        # 장애 때 락 대기열의 요청들이 25초짜리 실패 조회를 1건씩 직렬로 반복하며
+        # (호송 현상) 대기열이 무한히 자라는 것을 막는다. 대기자들은 즉시 빈
+        # 목록을 받고, 쿨다운이 지나면 첫 요청 하나만 다시 시도한다.
+        if now - _indices_cache["fail_ts"] < _INDICES_FAIL_COOLDOWN_SEC:
+            return {"indices": []}
         return await _refresh_indices(now)
 
 
@@ -622,9 +637,13 @@ async def _refresh_indices(now: float):
 
     rows = await asyncio.gather(*(one(s, n) for s, n in INDEX_TICKER))
     data = {"indices": [r for r in rows if r]}
-    if data["indices"]:  # 전부 실패면 캐시하지 않아 다음 호출이 곧바로 재시도
+    if data["indices"]:  # 전부 실패면 캐시하지 않고 짧은 실패 쿨다운만 기록
         _indices_cache["data"] = data
         _indices_cache["ts"] = now
+    else:
+        # 실패 '종료' 시각 기준 — 인자 now(시작 시각)로 재면 25초 걸린 실패 뒤
+        # 쿨다운이 그만큼 일찍 풀린다
+        _indices_cache["fail_ts"] = time.monotonic()
     return data
 
 

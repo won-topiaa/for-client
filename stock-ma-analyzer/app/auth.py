@@ -160,10 +160,14 @@ class AuthStore:
             # 끈다 — Neon 등의 풀러(PgBouncer 트랜잭션 모드) 엔드포인트에서
             # 'prepared statement already exists' 오류를 유발할 수 있어서. 인증
             # 쿼리는 저빈도라 성능 영향은 사실상 없다.
+            # connect_timeout: libpq 는 기본이 '무한 대기'라, TCP 는 열리는데
+            # 응답이 없는 엔드포인트(잠든 풀러, 패킷 드랍)에 걸리면 첫 연결이
+            # 영원히 안 돌아와 서버가 부팅조차 못 한다 — 재시도 루프는 예외가
+            # '발생해야' 도는데, 안 돌아오는 연결은 예외도 못 낸다.
             self._engine = create_engine(
                 self.url, pool_pre_ping=True, pool_recycle=300,
                 pool_size=5, max_overflow=5, future=True,
-                connect_args={"prepare_threshold": None})
+                connect_args={"prepare_threshold": None, "connect_timeout": 10})
         self._create_schema()
 
     def _create_schema(self, attempts: int = 5) -> None:

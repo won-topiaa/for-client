@@ -26,7 +26,9 @@ from .analysis import EngineParams, analyze_timeframe, atr as atr_fn, sma
 from .pattern_scan import (
     FAIL_FAST_PROBE,
     FETCH_BARS,
+    PARTIAL_RESCAN_COOLDOWN_SEC,
     PUBLISH_INTERVAL_SEC,
+    RESULT_TTL_SEC,
     SCAN_SOFT_BUDGET_SEC,
     BaseScanner,
     UniverseFn,
@@ -89,17 +91,21 @@ class TouchScanner(BaseScanner):
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
         last_publish = 0.0  # 0 으로 시작해 '첫 검증이 끝나는 즉시' 한 번 공개
 
-        def publish(partial: bool) -> None:
+        def publish(partial: bool, final: bool = False) -> None:
             """지금까지 모은 matches 로 결과를 만들어 공개 (동기 — 레이스 없음).
 
             재스캔이 이전 커버리지에 도달하기 전에는 기존 결과를 대체하지
             않는다 (pattern_scan 과 동일 규칙 — 목록 깜빡임 방지)."""
             prev = self._results.get("scanned", 0) if self._results is not None else 0
             if scanned < prev:
-                if not partial:
-                    self._generated = time.monotonic()  # 기존 결과 유지 + churn 방지
+                if final:
+                    # 미달 완주 — 기존 결과 유지 + 재시도 휴지 지수 증가
+                    # (pattern_scan 과 동일한 churn 방지 규칙)
+                    self._retry_wait = min(self._retry_wait * 2, RESULT_TTL_SEC)
                 return
             self._partial = partial
+            if final:
+                self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC  # 정상 발행 — 백오프 해제
             ranked = sorted(matches, key=lambda m: (-m["maScore"], abs(m["distPct"])))
             self._finish({"matches": ranked[:TOP_N], "totalMatches": len(matches)},
                          len(universe), scanned, started)
@@ -159,7 +165,7 @@ class TouchScanner(BaseScanner):
         if universe and scanned == 0:
             raise RuntimeError(
                 "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
-        publish(partial=budget_hit.is_set())
+        publish(partial=budget_hit.is_set(), final=True)
         logger.info("터치 스캔 완료: %d종목 중 터치 %d / %.1fs",
                     scanned, len(matches), self._results["elapsedSec"])
 

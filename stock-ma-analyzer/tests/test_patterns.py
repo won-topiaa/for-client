@@ -450,6 +450,7 @@ def test_scanner_error_cooldown_and_recovery():
         assert s3["status"] == "error"
         assert scanner._task is task_after_fail, "쿨다운 중 스캔이 재시작됨"
         scanner._error_ts -= 120  # 쿨다운 경과 시뮬레이션
+        scanner._scan_ended -= 120  # 스캔 간 최소 휴지도 경과
         s4 = await scanner.snapshot()
         assert s4["status"] == "running", "쿨다운이 지나면 재시도해야 함"
         await scanner._task
@@ -485,6 +486,7 @@ def test_scanner_stale_while_revalidate():
         assert first["status"] == "done" and not first.get("refreshing")
 
         scanner._generated -= scanner._ttl + 1  # 강제 만료
+        scanner._scan_ended -= scanner._ttl + 1  # 스캔 간 최소 휴지도 경과
         stale = await scanner.snapshot()
         assert stale["status"] == "done", "만료됐다고 결과를 숨기면 안 됨"
         assert stale["refreshing"] is True
@@ -781,6 +783,7 @@ def test_partial_results_trigger_early_rescan():
         # 부분 결과 + 쿨다운 경과 상태를 시뮬레이션
         scanner._results["partial"] = True
         scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         snap2 = await scanner.snapshot()
         # 기존 부분 결과를 그대로 내주되, 뒤에서 새 스캔이 이미 시작돼야 한다
         assert snap2["status"] == "done" and snap2.get("refreshing") is True
@@ -827,12 +830,73 @@ def test_rescan_never_shrinks_served_results():
         # 부분 결과 + 쿨다운 경과를 시뮬레이션한 뒤, 업스트림이 악화된 재스캔
         scanner._results["partial"] = True
         scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         provider.degraded = True
         await scanner.snapshot()                  # 재스캔 시작 (기존 결과 서빙)
+        assert scanner._task is not None and not scanner._task.done(), \
+            "재스캔이 실제로 시작돼야 가드가 시험된다"
         await scanner._task                       # 재스캔은 1종목만 성공
         snap = await scanner.snapshot()
         # 커버리지가 후퇴한 재스캔은 결과를 대체하지 못한다 — 3종목 유지
         assert snap["status"] == "done" and snap["scanned"] == 3, snap["scanned"]
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_below_coverage_final_backs_off_then_recovers():
+    """'완주했지만 이전 커버리지 미달'인 재스캔은 아무것도 갱신하지 못하므로,
+    휴지 백오프가 없으면 즉시 다음 재스캔이 시작돼 쉼 없이 반복(churn)된다.
+    미달 완주가 재시도 휴지를 늘리고, 정상 발행이 되면 기본값으로 돌아와야 한다."""
+    import app.pattern_scan as ps
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+    good_df = validate_candles(_df(closes, volume=volume))
+
+    class Switchable:
+        name = "fake"
+        degraded = False
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            if self.degraded and symbol != "S0":
+                raise RuntimeError("upstream down")
+            return good_df
+
+        async def search(self, q):
+            return []
+
+    provider = Switchable()
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"n{i}", "T") for i in range(3)]
+
+    scanner = PatternScanner(provider, universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task                       # 1차 완주: scanned=3
+        # 만료 + 휴지 경과 → 악화된 재스캔 (1종목만 성공, 미달 완주)
+        scanner._results["partial"] = True
+        scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
+        provider.degraded = True
+        await scanner.snapshot()
+        await scanner._task
+        # 미달 완주 → 재시도 휴지가 늘어나야 한다 (churn 방지의 핵심)
+        assert scanner._retry_wait > ps.PARTIAL_RESCAN_COOLDOWN_SEC
+        # 그리고 휴지가 지나기 전에는 새 스캔이 시작되지 않아야 한다
+        task_before = scanner._task
+        snap = await scanner.snapshot()
+        assert snap["status"] == "done" and snap["scanned"] == 3
+        assert scanner._task is task_before, "휴지 중 재스캔이 시작됨 (churn)"
+        # 업스트림 회복 + 휴지 경과 → 정상 재스캔이 백오프를 해제한다
+        provider.degraded = False
+        scanner._scan_ended -= scanner._retry_wait + 1
+        await scanner.snapshot()
+        await scanner._task
+        assert scanner._results["scanned"] == 3
+        assert scanner._retry_wait == ps.PARTIAL_RESCAN_COOLDOWN_SEC
 
     asyncio.new_event_loop().run_until_complete(go())
 

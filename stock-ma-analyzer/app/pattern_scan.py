@@ -179,6 +179,14 @@ class BaseScanner:
         self._error_ts = 0.0
         self._scan_started = 0.0         # 워치독용: 현재 스캔 시작 시각
         self._partial = False            # 시간예산으로 일부만 훑고 끝났는지
+        # 스캔 종료(성공/실패/취소 불문) 시각과 다음 시작까지의 최소 간격.
+        # '완주했지만 이전 커버리지에 못 미쳐 아무것도 갱신 못 한' 스캔은
+        # 오류도 아니고 결과 갱신도 아니어서 어떤 쿨다운에도 안 걸린다 —
+        # 이 휴지(rest) 하한이 없으면 그런 스캔이 쉼 없이 반복(churn)되며
+        # 업스트림과 CPU 를 계속 두들긴다. 미달 완주가 거듭되면 publish 가
+        # 간격을 지수적으로 늘리고, 정상 발행이 되면 기본값으로 되돌린다.
+        self._scan_ended = 0.0
+        self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC
 
     def _fresh(self) -> bool:
         if self._results is None:
@@ -215,7 +223,10 @@ class BaseScanner:
             idle = True
         cooling = (self._error is not None
                    and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
-        if idle and not cooling:
+        # 직전 스캔이 끝난 지 _retry_wait 이 지나기 전에는 새 스캔을 시작하지
+        # 않는다 — 어떤 경로로 끝났든 스캔 사이 최소 휴지를 보장하는 하한선
+        resting = time.monotonic() - self._scan_ended < self._retry_wait
+        if idle and not cooling and not resting:
             self._done = 0
             self._total = 0   # 유니버스 선정 동안 이전 스캔의 total 이 비치지 않게
             self._errors = 0
@@ -239,6 +250,10 @@ class BaseScanner:
             self._error = str(exc) or exc.__class__.__name__
             self._error_ts = time.monotonic()
             logger.exception("%s 스캔 실패", type(self).__name__)
+        finally:
+            # CancelledError(워치독·셧다운) 포함 어떤 종료든 기록 — snapshot 의
+            # 휴지(resting) 판정이 이 시각을 기준으로 다음 시작을 늦춘다
+            self._scan_ended = time.monotonic()
 
     def _finish(self, results: dict[str, Any], universe_n: int,
                 scanned_n: int, started: float) -> float:
@@ -291,21 +306,25 @@ class PatternScanner(BaseScanner):
         attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
         last_publish = 0.0  # 0 으로 시작해 '첫 결과가 나오는 즉시' 한 번 공개
 
-        def publish(partial: bool) -> None:
+        def publish(partial: bool, final: bool = False) -> None:
             """지금까지 모은 per_symbol 로 결과를 만들어 공개 (동기 — 레이스 없음).
 
             재스캔이 '이전 커버리지'에 도달하기 전에는 기존 결과를 대체하지
             않는다 — 부분 결과 재스캔의 첫 발행이 사용자가 보던 목록을 1~2개로
             줄였다가 다시 채우는 깜빡임을 막는 진짜 stale-while-revalidate.
-            (따뜻한 캐시 덕에 이전 범위는 수 초 만에 따라잡는다)"""
+            (따뜻한 캐시 덕에 이전 범위는 보통 수 초 만에 따라잡는다)"""
             prev = self._results.get("scanned", 0) if self._results is not None else 0
             if len(per_symbol) < prev:
-                if not partial:
-                    # 최종 발행인데 이전보다 못 미침(업스트림 악화) — 기존 결과를
-                    # 유지하고 신선도만 갱신해 즉시 재스캔 루프(churn)를 막는다
-                    self._generated = time.monotonic()
+                if final:
+                    # 최종 발행인데 이전 커버리지에 못 미침(업스트림 악화) —
+                    # 기존 결과를 유지하고, 다음 스캔까지의 휴지를 지수적으로
+                    # 늘린다. 이게 없으면 '완주→미달→아무 갱신 없음→즉시
+                    # 재스캔'이 쉼 없이 반복되며 업스트림을 계속 두들긴다.
+                    self._retry_wait = min(self._retry_wait * 2, RESULT_TTL_SEC)
                 return
             self._partial = partial
+            if final:
+                self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC  # 정상 발행 — 백오프 해제
             self._finish(self._build_results(per_symbol), len(universe),
                          len(per_symbol), started)
 
@@ -367,7 +386,7 @@ class PatternScanner(BaseScanner):
             raise RuntimeError(
                 "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
         # 완주했든 시간예산으로 부분이든 최종 결과를 발행한다.
-        publish(partial=budget_hit.is_set())
+        publish(partial=budget_hit.is_set(), final=True)
         logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d",
                     len(per_symbol), self._results["elapsedSec"], self._errors)
 

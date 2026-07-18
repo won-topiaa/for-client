@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import re
 import threading
 import time
@@ -28,6 +29,42 @@ from .base import SymbolInfo, validate_candles
 # 종목코드(6자리 숫자)/미국 티커
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
 _LISTING_TTL_SEC = 12 * 3600  # 상장 목록은 거의 안 바뀜
+
+
+def _install_requests_default_timeout() -> None:
+    """timeout 없는 requests 호출(FDR 내부)에 기본 시간 상한을 주입한다.
+
+    socket.setdefaulttimeout() 은 requests/urllib3 에 적용되지 않는다 —
+    requests 는 timeout=None 을 명시적 Timeout(None) 으로 만들어 넘기고,
+    urllib3 는 None 을 '무한 대기'로 그대로 쓴다(기본값 대체는 sentinel 일
+    때만). 그래서 응답이 중간에 멈춘 소켓에 걸린 페치 스레드는 영원히 죽지
+    않고 전용 풀(18칸)을 하나씩 영구 잠식하며, 다 차면 모든 시세 조회가
+    프로세스 재시작 전까지 실패한다. FDR 은 대부분의 호출에 timeout 을 넘기지
+    않으므로 Session.request 단계에서 기본값을 채워 전부 유한하게 만든다.
+    (yfinance 는 curl_cffi + 자체 timeout, Stooq/Toss 는 httpx — 영향 없음)
+    """
+    try:
+        import requests
+
+        cls = requests.sessions.Session
+        if getattr(cls.request, "_timeboxed", False):
+            return  # 이미 설치됨 (재임포트/테스트 반복 대비)
+        orig = cls.request
+
+        @functools.wraps(orig)
+        def request(self, method, url, **kw):
+            if kw.get("timeout") is None:
+                kw["timeout"] = (7, 15)  # (연결, 읽기) 초 — 캔들 wait_for(25초) 미만
+            return orig(self, method, url, **kw)
+
+        request._timeboxed = True
+        cls.request = request
+    except Exception:  # noqa: BLE001 — 방어선 설치 실패가 부팅을 막으면 안 된다
+        logging.getLogger("ma-analyzer").warning(
+            "requests 기본 타임아웃 주입 실패", exc_info=True)
+
+
+_install_requests_default_timeout()
 
 # 국내 신형 종목코드 (2024.1 개편 — normalize_listing 의 유효성 규칙과 동일)
 _KR_NEW_CODE_RE = re.compile(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
@@ -246,7 +283,9 @@ _LISTING_TIMEOUT_SEC = 15.0   # 상장목록 다운로드 시간 상한
 _LISTING_RETRY_SEC = 60.0     # 실패 후 재시도 억제 (실패 폭주 방지)
 # 종목별 시세 조회 시간 상한 — 정상 조회는 1~3초라 넉넉하다. 짧게 잡을수록
 # hang 걸린 종목이 동시성 슬롯을 빨리 반납해, 수백 종목 스캔이 소프트 예산 안에
-# 더 많은 종목을 훑는다 (lifespan 의 socket 기본 타임아웃 20초가 더 깊은 방어선).
+# 더 많은 종목을 훑는다. 더 깊은 방어선은 _install_requests_default_timeout()
+# (연결 7초/읽기 15초) — 이 wait_for 가 포기한 뒤에도 스레드 자체가 유한 시간
+# 안에 끝나는 것을 보장해 페치 풀이 새지 않는다.
 _CANDLES_TIMEOUT_SEC = 25.0
 
 
@@ -507,6 +546,16 @@ class FreeDataProvider:
     async def aclose(self) -> None:
         # 대기 중인 페치는 버리고 즉시 종료 — 행 스레드가 셧다운을 붙잡지 않게
         self._fetch_pool.shutdown(wait=False, cancel_futures=True)
+        # concurrent.futures 는 atexit 훅에서 워커 스레드를 무조건 join 한다 —
+        # wait=False 를 줘도 소켓에 걸린 스레드가 하나라도 남아 있으면 SIGTERM
+        # 뒤 프로세스가 플랫폼의 SIGKILL 까지 붙잡혀 재배포가 지연된다. 전용
+        # 페치 풀 스레드를 join 대상에서 빼 즉시 종료를 보장한다.
+        try:
+            import concurrent.futures.thread as _cft
+            for t in list(getattr(self._fetch_pool, "_threads", ()) or ()):
+                _cft._threads_queues.pop(t, None)
+        except Exception:  # noqa: BLE001 — 파이썬 내부 구조 변경 대비(없어도 동작엔 무해)
+            pass
         close_stooq_client()  # 공유 커넥션 풀 정리
 
 
