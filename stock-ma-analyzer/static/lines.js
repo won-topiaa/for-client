@@ -75,9 +75,12 @@
   let renderedWhileRefreshing = false;
   let lastFp = null;
   let pollFails = 0;
+  let inFlight = false; // fetch 진행 중 표시 — 수동 재조회의 중복 발사 방지
   const charts = [];
 
   function clampPeriod(v) {
+    // Number("") === 0 이라 빈칸이 조용히 5일선으로 둔갑한다 — 명시적으로 거른다
+    if (String(v).trim() === "") return null;
     const n = Math.round(Number(v));
     if (!Number.isFinite(n)) return null;
     return Math.max(5, Math.min(250, n));
@@ -90,9 +93,13 @@
   }
 
   function applyPeriodAndLoad() {
-    const p = clampPeriod(el.periodInput.value);
+    // type=number 는 '12e' 같은 미완성 입력을 value="" 로 보고한다 — badInput
+    // 이면 clamp 를 건너뛰고 안내 문구를 보여준다
+    const bad = el.periodInput.validity && el.periodInput.validity.badInput;
+    const p = bad ? null : clampPeriod(el.periodInput.value);
     if (p === null) {
       el.status.textContent = "이평선 기간은 5~250 사이 숫자로 입력해 주세요.";
+      announce(el.status.textContent);
       return;
     }
     el.periodInput.value = p;
@@ -102,7 +109,9 @@
       load();
     } else {
       syncPresets();
-      if (!pollTimer) load(); // 같은 값 재조회(오류 후 수동 재시도 등)
+      // 같은 값 수동 재조회(오류·429 대기 중 재시도, 완료 후 새로고침) —
+      // 단 같은 요청이 이미 날아가 있는 중이면 중복 발사하지 않는다
+      if (!inFlight) load();
     }
   }
 
@@ -194,6 +203,7 @@
     const seq = ++reqSeq;
     clearTimeout(pollTimer);
     pollTimer = null;
+    inFlight = true;
     if (!isPoll) {
       clearLists();
       renderedWhileRefreshing = false;
@@ -274,6 +284,9 @@
       el.status.textContent = "스캔 실패: " + err.message;
       announce(el.status.textContent);
       pollTimer = setTimeout(() => { pollFails = 0; load(true); }, 30000);
+    } finally {
+      // 더 새 요청이 이미 떠 있으면(seq 추월) 그쪽 표시를 건드리지 않는다
+      if (seq === reqSeq) inFlight = false;
     }
   }
 

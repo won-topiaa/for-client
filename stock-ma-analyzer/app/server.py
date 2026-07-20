@@ -133,6 +133,11 @@ async def lifespan(app: FastAPI):
     # 시세 캐시는 위 스캐너들과 공유되므로 추가 비용은 CPU 계산뿐이다.
     app.state.universe_fns = universe_fns
     app.state.line_scanners = {}
+    # (시장, 기간)별 마지막 스캔 종료 시각·재시도 휴지 — 스캐너 인스턴스가
+    # 등록소에서 퇴출돼도 살아남는다. 없으면 '퇴출→재생성'이 쿨다운·백오프를
+    # 초기화해, 키를 바꿔가며 요청하는 것만으로 무한 스캔을 돌릴 수 있다.
+    # 키 공간이 유한(시장 2 × 기간 246)해 크기도 자연히 유계다.
+    app.state.line_cooldowns = {}
     yield
     # 진행 중인 백그라운드 스캔을 정리하고 종료 — 안 하면 "Task was destroyed
     # but it is pending!" 경고와 함께 행 스레드가 셧다운을 지연시킨다
@@ -186,12 +191,16 @@ ANALYZE_RATE_LIMIT_PER_MIN = 30   # auth(로그인)·analyze 버킷 공용
 SEARCH_RATE_LIMIT_PER_MIN = 60    # 검색(자동완성)은 사람 타이핑이라 넉넉히
 SIGNUP_RATE_LIMIT_PER_MIN = 10    # 가입: 오탈자 재시도는 넉넉히, 대량 생성은 차단
 PRESENCE_RATE_LIMIT_PER_MIN = 60  # 하트비트 정상치(1~2/분)의 30배 여유
+# 맞춤선 스크리너: 정상 폴링은 2초 간격(30/분), 두 탭이어도 60/분 — 그 2배.
+# (기간, 시장) 조합마다 새 스캔을 유발할 수 있는 증폭 지점이라 상한이 필수다.
+LINES_RATE_LIMIT_PER_MIN = 120
 _rate_windows: dict[str, tuple[float, int]] = {}
 
 _RATE_LIMITS = {
     "search": lambda: SEARCH_RATE_LIMIT_PER_MIN,
     "signup": lambda: SIGNUP_RATE_LIMIT_PER_MIN,
     "presence": lambda: PRESENCE_RATE_LIMIT_PER_MIN,
+    "lines": lambda: LINES_RATE_LIMIT_PER_MIN,
 }
 
 
@@ -260,7 +269,7 @@ async def security_headers(request: Request, call_next):
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 _RATE_LIMITED_PATHS = frozenset(
-    {"/api/analyze", "/api/search", "/api/presence",
+    {"/api/analyze", "/api/search", "/api/presence", "/api/lines",
      "/api/auth/login", "/api/auth/signup"}
 )
 
@@ -276,6 +285,8 @@ def _rate_bucket(path: str) -> str:
         return "search"
     if path == "/api/presence":
         return "presence"
+    if path == "/api/lines":
+        return "lines"
     return "analyze"
 
 
@@ -681,24 +692,51 @@ async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr
 _MAX_LINE_SCANNERS = 8
 
 
+def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
+    """등록소에서 슬롯 하나를 회수한다. 유휴(스캔 안 도는) 스캐너 중 가장
+    오래 안 쓴 것부터; 없으면 워치독 시한(900초)을 넘긴 행(hang) 스캐너를
+    취소하고 회수한다 — 워치독은 원래 그 키를 다시 폴링해야 발동하는데,
+    사용자가 떠난 키는 재폴링이 없어 슬롯이 영구 잠길 수 있기 때문에
+    '접수 시점'에도 같은 조건을 집행한다. 전부 정상 스캔 중이면 False."""
+    from .pattern_scan import SCAN_TIMEOUT_SEC
+
+    for k in list(reg):                   # 삽입 순 = LRU 순 (사용 시 재삽입하므로)
+        cand = reg[k]
+        if cand._task is None or cand._task.done():
+            cooldowns[k] = (cand._scan_ended, cand._retry_wait)
+            reg.pop(k, None)
+            return True
+    now = time.monotonic()
+    for k in list(reg):
+        cand = reg[k]
+        if now - cand._scan_started > SCAN_TIMEOUT_SEC:
+            cand._task.cancel()
+            cooldowns[k] = (now, cand._retry_wait)
+            reg.pop(k, None)
+            logger.warning("맞춤선 스캐너 %s 행(hang) 회수 (%.0f초 초과)",
+                           k, SCAN_TIMEOUT_SEC)
+            return True
+    return False
+
+
 def _line_scanner(market: str, period: int):
     """(시장, 기간) 스캐너를 등록소에서 꺼내거나 만든다. 가득 찼는데 전부
     스캔 중이면 None (호출자가 429 로 답한다)."""
     from .line_scan import LineScanner
+    from .pattern_scan import PARTIAL_RESCAN_COOLDOWN_SEC
 
     reg: dict = app.state.line_scanners
+    cooldowns: dict = app.state.line_cooldowns
     key = (market, period)
     sc = reg.pop(key, None)
     if sc is None:
-        if len(reg) >= _MAX_LINE_SCANNERS:
-            for k in list(reg):           # 삽입 순 = LRU 순 (아래에서 재삽입하므로)
-                cand = reg[k]
-                if cand._task is None or cand._task.done():
-                    reg.pop(k, None)
-                    break
-            else:
-                return None               # 전부 스캔 중 — 잠시 후 다시
+        if len(reg) >= _MAX_LINE_SCANNERS and not _evict_line_slot(reg, cooldowns):
+            return None                   # 전부 정상 스캔 중 — 잠시 후 다시
         sc = LineScanner(app.state.provider, app.state.universe_fns[market], period)
+        # 같은 키의 이전 인스턴스가 남긴 휴지·백오프를 승계한다 — 퇴출→재생성이
+        # 쿨다운을 초기화하면 스캔 churn 방지 장치 전체가 우회된다
+        sc._scan_ended, sc._retry_wait = cooldowns.get(
+            key, (0.0, PARTIAL_RESCAN_COOLDOWN_SEC))
     reg[key] = sc                          # 재삽입으로 '최근 사용'을 맨 뒤로
     return sc
 

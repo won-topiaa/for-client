@@ -6,11 +6,13 @@
 를 나눠 보여준다.
 
 ── '지지를 받고 있다' 판정 기준 (전부 만족해야 함) ──────────────────────
-1. 위치 문맥: 최근 20봉 종가의 70% 이상이 선 위 — 추세가 선 위에 '정박'
-   (와인스타인의 스테이지 분석: 선 위에서 진행 중인 추세만 지지를 논할 수 있다)
-2. 최근 시험: 최근 5봉 안에 저가가 허용 밴드까지 선에 닿음 — '받고 있다'는
-   현재진행형이므로, 옛날에 지지받았던 종목이 아니라 지금 시험 중인 종목만
-3. 확정 이탈 아님: 오늘 종가가 선 − 밴드 위 (이미 무너진 선은 지지가 아니다)
+1. 위치 문맥: 직전 20봉(당일 제외 — 당일은 시험 봉) 종가의 70% 이상이 선 위
+   — 추세가 선 위에 '정박' (와인스타인: 선 위에서 진행 중인 추세만 지지를 논한다)
+2. 최근 시험: 최근 5봉(당일 포함) 안에 저가가 허용 밴드까지 선에 닿음 —
+   '받고 있다'는 현재진행형이므로, 지금 시험 중인 종목만
+3. 확정 이탈 아님: 오늘 종가가 선 − 밴드 위이고, 최근 5봉 안에 엔진 기준의
+   확정 이탈(밴드+ATR 관통 종가, 또는 밴드 밖 종가 3봉 연속)이 없음 —
+   이미 무너진 선이 하루 반등으로 되살아 보이는 것을 막는다
 4. 선 기울기: 10봉 기울기 ≥ −0.2% — 하락 중인 선의 지지는 신뢰가 낮다
    (Weinstein 1988: 하락 이평선 위 매수 금지 원칙의 완화 적용)
 5. 과거 검증: 3년 백테스트에서 그 선의 지지쪽 결정(반등/이탈) 에피소드 ≥ 2회,
@@ -134,7 +136,9 @@ class LineScanner(BaseScanner):
             self._partial = partial
             if final:
                 self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC
-            key = lambda m: (-m["maScore"], abs(m["distPct"]))  # noqa: E731
+            # 심볼을 마지막 동점 기준으로 — 반올림 점수가 같은 종목이 TOP_N
+            # 경계에 걸릴 때 표시가 스캔 완료 순서에 따라 널뛰지 않게(결정성)
+            key = lambda m: (-m["maScore"], abs(m["distPct"]), m["symbol"])  # noqa: E731
             support = sorted((m for m in matches if m["side"] == "support"), key=key)
             resistance = sorted((m for m in matches if m["side"] == "resistance"), key=key)
             self._finish({
@@ -200,10 +204,26 @@ class LineScanner(BaseScanner):
 
     # ---- 종목 하나 판정 (워커 스레드에서 실행) ----
 
+    @staticmethod
+    def _consec(mask: np.ndarray, k: int) -> bool:
+        """mask 안에 True 가 k개 이상 연속으로 있는가."""
+        run = 0
+        for v in mask:
+            run = run + 1 if v else 0
+            if run >= k:
+                return True
+        return False
+
     def _classify_now(self, close: np.ndarray, high: np.ndarray, low: np.ndarray,
-                      ma: np.ndarray, band: np.ndarray) -> str | None:
-        """현재 상태 판정: 'support' / 'resistance' / None (기준 1~4)."""
-        ctx_c = close[-(CTX_BARS + 1):-1]
+                      ma: np.ndarray, band: np.ndarray,
+                      atr_arr: np.ndarray) -> str | None:
+        """현재 상태 판정: 'support' / 'resistance' / None (기준 1~4).
+
+        '확정 이탈(돌파) 아님'은 엔진의 break 정의와 같은 두 갈래로 본다 —
+        ⓐ 밴드+ATR 만큼 관통한 종가, ⓑ 밴드 밖 종가 3봉 연속. 마지막 봉
+        하나만 보면, 사흘 연속 무너진 뒤 하루 반등한 종목(엔진이 방금 '이탈
+        확정'으로 판정한 선)이 지지 리스트에 오르는 구멍이 생긴다."""
+        ctx_c = close[-(CTX_BARS + 1):-1]   # 직전 20봉 (당일 제외 — 당일은 시험 봉)
         ctx_m = ma[-(CTX_BARS + 1):-1]
         if len(ctx_c) < CTX_BARS or not (np.isfinite(ctx_c).all()
                                          and np.isfinite(ctx_m).all()):
@@ -216,16 +236,27 @@ class LineScanner(BaseScanner):
         slope = float(ma[-1] / ma[-(SLOPE_BARS + 1)] - 1)
 
         r = slice(-RECENT_TOUCH_BARS, None)
-        fin = np.isfinite(ma[r]) & np.isfinite(band[r])
+        fin = np.isfinite(ma[r]) & np.isfinite(band[r]) & np.isfinite(atr_arr[r])
         touched_from_above = bool(np.any(fin & (low[r] <= ma[r] + band[r])))
         touched_from_below = bool(np.any(fin & (high[r] >= ma[r] - band[r])))
 
+        # 최근 5봉 내 '확정 이탈/돌파' (엔진 break 정의의 거울) — 있으면 그
+        # 선은 이미 깨진 선이므로 지지(저항) 후보에서 제외한다
+        k = self.params.break_consec_closes
+        deep = np.maximum(self.params.break_atr_mult * atr_arr[r], band[r])
+        broke_down = (bool(np.any(fin & (close[r] < ma[r] - deep)))
+                      or self._consec(fin & (close[r] < ma[r] - band[r]), k))
+        broke_up = (bool(np.any(fin & (close[r] > ma[r] + deep)))
+                    or self._consec(fin & (close[r] > ma[r] + band[r]), k))
+
         if (above_frac >= CTX_FRAC and touched_from_above
-                and close[-1] >= ma[-1] - band[-1]      # 확정 이탈 아님
+                and not broke_down
+                and close[-1] >= ma[-1] - band[-1]      # 오늘도 밴드 안쪽
                 and slope >= -SLOPE_TOL):
             return "support"
         if ((1.0 - above_frac) >= CTX_FRAC and touched_from_below
-                and close[-1] <= ma[-1] + band[-1]      # 확정 돌파 아님
+                and not broke_up
+                and close[-1] <= ma[-1] + band[-1]      # 오늘도 밴드 안쪽
                 and slope <= SLOPE_TOL):
             return "resistance"
         return None
@@ -244,7 +275,7 @@ class LineScanner(BaseScanner):
         band = np.maximum(self.params.touch_atr_mult * a,
                           self.params.touch_pct_floor * close)
 
-        side = self._classify_now(close, high, low, ma, band)
+        side = self._classify_now(close, high, low, ma, band, a)
         if side is None:
             return None  # 대부분 종목이 여기서 걸러져 비싼 백테스트를 건너뛴다
 

@@ -236,7 +236,14 @@ class BaseScanner:
             idle = False
         if self._results is not None:
             return {"status": "done", "refreshing": not idle, **self._results}
-        if idle:  # 쿨다운 중 + 보여줄 과거 결과도 없음
+        if idle:
+            if self._error is None:
+                # 실패한 적 없는데 휴지(resting)로 시작만 미뤄진 상태 — 맞춤선
+                # 스캐너가 퇴출됐다 재생성돼 이전 쿨다운을 승계한 직후가 여기다.
+                # '실패(None)' 같은 거짓 오류 대신 준비 중으로 답해 프런트가
+                # 짧은 간격으로 폴링하다 휴지가 끝나면 자연히 스캔을 시작한다.
+                return {"status": "running", "done": 0, "total": 0, "errors": 0}
+            # 쿨다운 중 + 보여줄 과거 결과도 없음
             return {"status": "error",
                     "detail": f"스캔 실패 ({self._error}) — 잠시 후 자동으로 다시 시도합니다."}
         return {"status": "running", "done": self._done,

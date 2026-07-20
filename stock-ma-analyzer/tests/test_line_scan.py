@@ -128,3 +128,35 @@ def test_scan_end_to_end_splits_sides():
         assert snap["totalSupport"] == 2 and snap["totalResistance"] == 1
 
     asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_recent_confirmed_break_excluded():
+    """엔진 기준 '확정 이탈'(밴드 밖 종가 3봉 연속) 직후 하루 반등한 종목은
+    지지 리스트에 오르면 안 된다 — 마지막 봉만 보던 구멍의 회귀 테스트."""
+    base = _support_series()
+    broken = base.copy()
+    ref = broken[-5]
+    broken[-4] = ref * 0.97   # 3봉 연속 깊은 이탈 (문맥 20봉은 여전히 선 위)
+    broken[-3] = ref * 0.97
+    broken[-2] = ref * 0.97
+    broken[-1] = ref * 0.995  # 데드캣 반등 — 종가는 다시 밴드 안쪽
+    sc = _scanner({}, [])
+    assert sc._analyze_sync(SymbolInfo("DCB", "반등주", "T"),
+                            _make_df(broken)) is None
+
+
+def test_resting_scanner_reports_running_not_error():
+    """퇴출→재생성으로 쿨다운을 승계한 스캐너: 실패한 적이 없는데
+    '스캔 실패 (None)' 오류를 보이면 안 된다 — 준비 중(running)으로 답한다."""
+    import time as _t
+
+    scanner = _scanner({}, [])
+    scanner._scan_ended = _t.monotonic()   # 방금 스캔이 끝난 것처럼 승계
+    scanner._retry_wait = 60.0
+
+    async def go():
+        snap = await scanner.snapshot()
+        assert snap["status"] == "running", snap
+        assert scanner._task is None       # 휴지 중 — 스캔은 시작되지 않았다
+
+    asyncio.new_event_loop().run_until_complete(go())

@@ -601,3 +601,90 @@ def test_lines_page_and_api_are_member_only(client):
         assert "판정 기준" in html            # 기준을 화면에 공개
     finally:
         client.post("/api/auth/logout")
+
+
+def test_line_registry_cooldown_survives_eviction(client):
+    """맞춤선 스캐너 등록소: 퇴출→재생성이 쿨다운·백오프를 초기화하면
+    (시장, 기간)을 바꿔가며 요청하는 것만으로 무한 스캔을 돌릴 수 있다 —
+    이전 인스턴스의 휴지 상태를 새 인스턴스가 승계해야 한다."""
+    import app.server as srv
+
+    reg = srv.app.state.line_scanners
+    cooldowns = srv.app.state.line_cooldowns
+    saved_reg, saved_cd = dict(reg), dict(cooldowns)
+    reg.clear(); cooldowns.clear()
+    try:
+        sc = srv._line_scanner("kr", 33)
+        sc._scan_ended, sc._retry_wait = 123.0, 240.0  # 스캔을 마친 상태 시뮬레이션
+        for p in range(40, 48):                        # 8개 키로 등록소를 채워 퇴출 유발
+            srv._line_scanner("kr", p)
+        assert ("kr", 33) not in reg                   # 가장 오래된 키가 밀려남
+        sc2 = srv._line_scanner("kr", 33)              # 재생성
+        assert sc2 is not sc
+        assert sc2._scan_ended == 123.0 and sc2._retry_wait == 240.0
+    finally:
+        reg.clear(); reg.update(saved_reg)
+        cooldowns.clear(); cooldowns.update(saved_cd)
+
+
+def test_line_registry_reclaims_hung_scanner(client):
+    """행(hang)에 걸린 스캐너가 재폴링 없이는 워치독이 안 돌아 슬롯을 영구
+    점유하던 문제 — 접수 시점에 워치독 시한을 집행해 슬롯을 회수해야 한다."""
+    import time as _t
+
+    import app.server as srv
+
+    class FakeTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+    class FakeScanner:
+        def __init__(self, started_ago):
+            self._task = FakeTask()
+            self._scan_started = _t.monotonic() - started_ago
+            self._scan_ended = 0.0
+            self._retry_wait = 60.0
+
+    reg = srv.app.state.line_scanners
+    cooldowns = srv.app.state.line_cooldowns
+    saved_reg, saved_cd = dict(reg), dict(cooldowns)
+    reg.clear(); cooldowns.clear()
+    try:
+        # 전부 '정상 스캔 중'(시작 10초 전)이면 슬롯이 없어 None (429 경로)
+        for p in range(40, 48):
+            reg[("kr", p)] = FakeScanner(started_ago=10)
+        assert srv._line_scanner("kr", 99) is None
+
+        # 하나가 워치독 시한(900초)을 넘겼으면 취소·회수 후 새 스캐너 생성
+        hung = FakeScanner(started_ago=1000)
+        reg[("kr", 40)] = hung
+        sc = srv._line_scanner("kr", 99)
+        assert sc is not None and hung._task.cancelled
+        assert ("kr", 40) not in reg and ("kr", 99) in reg
+    finally:
+        reg.clear(); reg.update(saved_reg)
+        cooldowns.clear(); cooldowns.update(saved_cd)
+
+
+def test_lines_rate_limit(monkeypatch):
+    """/api/lines 도 IP 당 분당 상한 — (기간, 시장)을 바꿔가며 스캔을 유발하는
+    남용을 등록소 상한과 별개로 한 겹 더 막는다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "LINES_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        c.post("/api/auth/signup",
+               json={"email": "linesrate@example.com", "password": "password123"})
+        codes = [c.get("/api/lines?period=20").status_code for _ in range(5)]
+        c.post("/api/auth/logout")
+    server_mod._rate_windows.clear()
+    assert codes[:3] == [200, 200, 200]
+    assert 429 in codes[3:]
