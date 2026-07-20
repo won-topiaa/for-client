@@ -330,7 +330,7 @@
     listEl.innerHTML = "";
     titleEl.style.display = "flex";
     titleEl.querySelector(".t").textContent =
-      side === "support" ? `${period}일선 지지를 받는 중` : `${period}일선 저항에 막힌 중`;
+      side === "support" ? `${period}일선 지지를 받는 중` : `${period}일선 저항을 받는 중`;
     titleEl.querySelector(".cnt").textContent =
       total > items.length ? `${total}개 중 상위 ${items.length}개` : `${total}개`;
     if (!items.length) {
