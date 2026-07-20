@@ -167,12 +167,22 @@
   .mm-bridge a { color: var(--accent); text-decoration: none; font-weight: 600; }
   .mm-bridge a:hover { text-decoration: underline; }
 
-  /* 도구 카드 */
+  /* 도구 카드 — 4개라 2×2 가 읽기 편하다 */
   .tools {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px;
     margin: 0 auto;
   }
   @media (max-width: 980px) { .tools { grid-template-columns: 1fr; max-width: 560px; } }
+  /* 접힘 섹션(이용법 상세·매매법 소개) — 첫 화면을 가볍게 유지 */
+  details.fold > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::after {
+    content: "펼치기 ▾"; color: var(--accent); font-size: 12.5px; font-weight: 600;
+    margin-left: auto; flex: none;
+  }
+  details.fold[open] > summary::after { content: "접기 ▴"; }
   .tool-card {
     display: flex; flex-direction: column; gap: 12px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
@@ -469,7 +479,7 @@
       
       <a href="/ma">📈 이평선 분석</a>
       <a href="/patterns">🔍 패턴 스크리너</a>
-      <a href="/touches">🚨 오늘의 터치</a><a href="/about">🏢 소개</a>
+      <a href="/touches">🚨 오늘의 터치</a><a href="/lines">📐 내 이평선</a><a href="/about">🏢 소개</a>
     </nav>
   </div>
   <div class="ticker-wrap" id="tickerWrap" style="display:none">
@@ -487,86 +497,7 @@
     </svg>
     <div class="eyebrow"><span class="live">●</span>&nbsp; DATA-DRIVEN TECHNICAL ANALYSIS</div>
     <h2>감이 아니라 <span class="em">데이터</span>로 확인하세요</h2>
-    <p>과거 시세 전체를 백테스트해 근거 있는 기술적 분석을 보여드립니다.
-       모든 판단 기준은 학술 연구와 고전 문헌에 근거를 두고, 출처를 함께 표기합니다.</p>
-  </section>
-
-  <div class="stat-strip" aria-label="핵심 수치">
-    <div class="stat"><div class="k">770<span class="u">+</span></div><div class="l">스캔 유니버스 종목 (KR·US)</div></div>
-    <div class="stat"><div class="k">3<span class="u">년+</span></div><div class="l">종목당 백테스트 기간</div></div>
-    <div class="stat"><div class="k">7<span class="u">편</span></div><div class="l">기준이 근거한 학술·고전 문헌</div></div>
-    <div class="stat"><div class="k">30<span class="u">분</span></div><div class="l">스캔 자동 갱신 주기</div></div>
-  </div>
-
-  <section class="howto" aria-label="이용 방법">
-    <h3 class="howto-title">처음이신가요? <span class="em">3분이면 충분합니다</span></h3>
-    <ol class="steps">
-      <li class="step">
-        <span class="n">1</span>
-        <div>
-          <div class="t">궁금한 종목을 <a href="/ma">이평선 분석</a>에 검색하세요</div>
-          <p class="d">종목 이름만 치면 끝. 차트에 <b>실제로 지지·저항 역할을 해온 이동평균선</b>이
-            자동으로 그려지고, 과거에 그 선에서 튕겼는지/뚫렸는지가 마커로 표시됩니다.</p>
-          <p class="why"><b>왜 이렇게 하나요?</b> 남들이 많이 쓰는 20일선·60일선이 <i>내 종목</i>에도
-            통한다는 보장이 없기 때문입니다. 그래서 종목마다 과거 시세를 백테스트해
-            "이 종목에서 실제로 통했던 선"만 성공률과 함께 보여드립니다.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="n">2</span>
-        <div>
-          <div class="t">볼 종목이 없다면 <a href="/patterns">패턴 스크리너</a>를 여세요</div>
-          <p class="d">국내·미국 <b>770여 종목을 자동으로 훑어</b>, 지금 교과서 차트 패턴(2단계 돌파·삼각수렴·
-            헤드앤숄더·컵앤핸들)을 만들고 있는 종목만 골라 보여줍니다. 30분마다 자동 갱신.</p>
-          <p class="why"><b>왜 이렇게 하나요?</b> 사람이 매일 수백 개 차트를 넘겨볼 수는 없기 때문입니다.
-            판정 기준은 전부 고전·논문의 정의 그대로이고, 결과는 <b>정석 부합도(0~100점)</b> 순으로
-            정렬되니 위에서부터 보면 됩니다.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="n">3</span>
-        <div>
-          <div class="t">매일 아침엔 <a href="/touches">오늘의 지지선 터치</a> 한 번</div>
-          <p class="d">백테스트로 검증된 지지선에 <b>바로 오늘 가격이 닿아 있는 종목</b>만 골라 매일 새로
-            보여주는 목록입니다. 이메일 가입(10초)만 하면 무료로 볼 수 있어요.</p>
-          <p class="why"><b>왜 이렇게 하나요?</b> 좋은 지지선도 가격이 그 근처에 와야 의미가 있기 때문입니다.
-            "믿을 만한 선"과 "오늘 닿음"을 동시에 만족하는 종목만 추려, 매일 확인할 거리를 만들어 드립니다.</p>
-        </div>
-      </li>
-    </ol>
-    <p class="howto-note">⚠️ 세 도구 모두 <b>과거 데이터 통계</b>입니다 — 매수 신호가 아니라
-      '확인 도구'로 쓰세요. 그래서 모든 화면에 판단 기준과 문헌 출처를 함께 적어 둡니다.
-      모든 투자 판단과 결과는 본인 책임입니다.</p>
-  </section>
-
-  <section class="ma-method" aria-label="이동평균선 매매법 소개">
-    <h3 class="howto-title">이동평균선 매매법이란? <span class="em">바쁜 사람에게 잘 맞는 이유</span></h3>
-    <div class="mm-grid">
-      <div class="mm-what">
-        <p><b>이동평균선(이평선)</b>은 최근 N일 종가의 평균을 이은 선입니다. 이평선 매매법은 이 선을
-          기준선으로 삼는 <b>추세 추종</b> 기법이에요 — 가격이 <b>선 위</b>에 있고 선이 우상향이면
-          "추세가 살아있다"고 보고 보유하고, 종가가 <b>선 아래로 확정 이탈</b>하면 "추세가 꺾였다"고
-          보고 정리합니다. 판단 기준이 차트에 그대로 그려져 있으니, 복잡한 재무 분석 없이도
-          규칙대로만 움직이면 됩니다.</p>
-        <p class="mm-caution">⚠️ 만능은 아닙니다 — 뚜렷한 추세가 없는 횡보장에서는 선을 자주
-          넘나들며 속임수 신호(whipsaw)가 잦아지고, 과거에 통한 선이 앞으로도 통한다는 보장은
-          없습니다. 그래서 이 사이트의 모든 화면은 근거 수치와 출처를 함께 보여드립니다.</p>
-      </div>
-      <ul class="mm-why">
-        <li><b>하루 한 번이면 충분</b> — 일봉·주봉 기준이라 장중 시세를 계속 볼 필요가 없습니다.
-          와인스타인은 30주선 기준으로 <i>일주일에 한 번</i> 점검하는 매매를 권했습니다.
-          퇴근 후 10분이면 됩니다.</li>
-        <li><b>감정이 낄 틈이 적다</b> — "선 위면 보유, 확정 이탈이면 정리"처럼 규칙이 명확해,
-          급등·급락에 휩쓸린 즉흥 판단을 줄여줍니다.</li>
-        <li><b>학술적으로 검토된 몇 안 되는 기법</b> — Brock·Lakonishok·LeBaron(1992,
-          <i>Journal of Finance</i>)이 이동평균 규칙의 예측력을 보고했고, 후속 연구(Park·Irwin
-          2007)는 거래비용·시기에 따른 한계도 지적했습니다. 장점과 한계가 모두 연구된 기법입니다.</li>
-      </ul>
-    </div>
-    <p class="mm-bridge">남는 문제는 하나 — <b>"어떤 선을 써야 하나?"</b> 20일선이 잘 맞는 종목도,
-      60일선·120일선이 맞는 종목도 있습니다. 그걸 종목마다 백테스트로 찾아주는 것이
-      <a href="/ma">이평선 레이더</a>이고, 검증된 지지선에 오늘 가격이 닿은 종목을 매일 골라주는 것이
-      <a href="/touches">오늘의 지지선 터치</a>입니다.</p>
+    <p>모든 판단 기준을 백테스트와 학술 문헌에 근거해, 출처와 함께 보여드립니다.</p>
   </section>
 
   <div class="tools">
@@ -608,10 +539,97 @@
       </ul>
       <span class="go">오늘 터치 보기 →</span>
     </a>
+
+    <a class="tool-card" href="/lines">
+      <span class="icon">📐</span>
+      <h3>내 이평선 스크리너 <span style="font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;vertical-align:3px;background:var(--panel2);">회원 전용 · 무료</span></h3>
+      <p class="desc">원하는 이평선(예: 50일선)을 입력하면 <b>그 선의 지지를 받는 종목과
+        저항에 막힌 종목</b>을 나눠서 보여드립니다.</p>
+      <ul>
+        <li>기간 5~250일 자유 입력 (20·50·60·120·200 프리셋)</li>
+        <li>지지/저항 판정 기준 5가지를 화면에 전부 공개</li>
+        <li>3년 백테스트 성공률(Wilson 하한) 순 정렬</li>
+      </ul>
+      <span class="go">내 선으로 찾기 →</span>
+    </a>
   </div>
 
+  <div class="stat-strip" aria-label="핵심 수치">
+    <div class="stat"><div class="k">770<span class="u">+</span></div><div class="l">스캔 유니버스 종목 (KR·US)</div></div>
+    <div class="stat"><div class="k">3<span class="u">년+</span></div><div class="l">종목당 백테스트 기간</div></div>
+    <div class="stat"><div class="k">7<span class="u">편</span></div><div class="l">기준이 근거한 학술·고전 문헌</div></div>
+    <div class="stat"><div class="k">30<span class="u">분</span></div><div class="l">스캔 자동 갱신 주기</div></div>
+  </div>
+
+  <section class="howto" aria-label="이용 방법">
+    <h3 class="howto-title">처음이신가요? <span class="em">이렇게 쓰면 됩니다</span></h3>
+    <ol class="steps">
+      <li class="step">
+        <span class="n">1</span>
+        <div>
+          <div class="t">궁금한 종목은 <a href="/ma">이평선 분석</a>에 검색</div>
+          <p class="d">남들 다 보는 20일·60일선이 내 종목에는 안 맞을 수 있어요 — 그래서
+            <b>그 종목에서 실제로 통해온 선</b>을 백테스트로 찾아 성공률과 함께 보여드립니다.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="n">2</span>
+        <div>
+          <div class="t">볼 종목이 없다면 <a href="/patterns">패턴 스크리너</a></div>
+          <p class="d">국내·미국 770여 종목을 30분마다 자동으로 훑어, 교과서 차트 패턴을
+            만들고 있는 종목만 <b>정석 부합도 순</b>으로 골라드립니다.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="n">3</span>
+        <div>
+          <div class="t">매일 아침엔 <a href="/touches">오늘의 터치</a> · <a href="/lines">내 이평선</a> 한 번</div>
+          <p class="d">검증된 지지선에 <b>오늘 가격이 닿은 종목</b>과, 내가 고른 N일선에서
+            <b>지지/저항 중인 종목</b>을 매일 새로 추려드립니다 (이메일 가입 10초, 무료).</p>
+        </div>
+      </li>
+    </ol>
+    <p class="howto-note">⚠️ 모두 <b>과거 데이터 통계</b>입니다 — 매수 신호가 아니라 '확인 도구'로
+      쓰세요. 모든 화면에 판단 기준과 출처를 적어 두며, 투자 판단과 결과는 본인 책임입니다.</p>
+  </section>
+
+  <section class="ma-method" aria-label="이동평균선 매매법 소개">
+    <details class="fold">
+    <summary><h3 class="howto-title" style="margin:0">이동평균선 매매법이란? <span class="em">바쁜 사람에게 잘 맞는 이유</span></h3></summary>
+    <div style="margin-top:14px">
+    <div class="mm-grid">
+      <div class="mm-what">
+        <p><b>이동평균선(이평선)</b>은 최근 N일 종가의 평균을 이은 선입니다. 이평선 매매법은 이 선을
+          기준선으로 삼는 <b>추세 추종</b> 기법이에요 — 가격이 <b>선 위</b>에 있고 선이 우상향이면
+          "추세가 살아있다"고 보고 보유하고, 종가가 <b>선 아래로 확정 이탈</b>하면 "추세가 꺾였다"고
+          보고 정리합니다. 판단 기준이 차트에 그대로 그려져 있으니, 복잡한 재무 분석 없이도
+          규칙대로만 움직이면 됩니다.</p>
+        <p class="mm-caution">⚠️ 만능은 아닙니다 — 뚜렷한 추세가 없는 횡보장에서는 선을 자주
+          넘나들며 속임수 신호(whipsaw)가 잦아지고, 과거에 통한 선이 앞으로도 통한다는 보장은
+          없습니다. 그래서 이 사이트의 모든 화면은 근거 수치와 출처를 함께 보여드립니다.</p>
+      </div>
+      <ul class="mm-why">
+        <li><b>하루 한 번이면 충분</b> — 일봉·주봉 기준이라 장중 시세를 계속 볼 필요가 없습니다.
+          와인스타인은 30주선 기준으로 <i>일주일에 한 번</i> 점검하는 매매를 권했습니다.
+          퇴근 후 10분이면 됩니다.</li>
+        <li><b>감정이 낄 틈이 적다</b> — "선 위면 보유, 확정 이탈이면 정리"처럼 규칙이 명확해,
+          급등·급락에 휩쓸린 즉흥 판단을 줄여줍니다.</li>
+        <li><b>학술적으로 검토된 몇 안 되는 기법</b> — Brock·Lakonishok·LeBaron(1992,
+          <i>Journal of Finance</i>)이 이동평균 규칙의 예측력을 보고했고, 후속 연구(Park·Irwin
+          2007)는 거래비용·시기에 따른 한계도 지적했습니다. 장점과 한계가 모두 연구된 기법입니다.</li>
+      </ul>
+    </div>
+    <p class="mm-bridge">남는 문제는 하나 — <b>"어떤 선을 써야 하나?"</b> 20일선이 잘 맞는 종목도,
+      60일선·120일선이 맞는 종목도 있습니다. 그걸 종목마다 백테스트로 찾아주는 것이
+      <a href="/ma">이평선 레이더</a>이고, 검증된 지지선에 오늘 가격이 닿은 종목을 매일 골라주는 것이
+      <a href="/touches">오늘의 지지선 터치</a>입니다.</p>
+    </div>
+    </details>
+  </section>
+
+
   <div class="basis">
-    <b>근거 있는 기준</b> — 세 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
+    <b>근거 있는 기준</b> — 모든 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
     Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil, Weinstein (1988) 등
     학술 연구·고전 문헌에 근거합니다. 정식 출처 목록은 <a href="/patterns">패턴 스크리너 페이지 하단</a>에 있습니다.
     이 사이트는 <a href="/about"><b>원토피아</b></a>에서 만들었습니다 — 협업 문의도 그곳에서 받습니다.
@@ -619,7 +637,7 @@
 
   <footer>
     <nav class="f-nav" aria-label="사이트 링크">
-      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a><a href="/about">🏢 원토피아 소개</a><a href="/privacy">🔒 개인정보처리방침</a>
+      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a><a href="/lines">📐 내 이평선</a><a href="/about">🏢 원토피아 소개</a><a href="/privacy">🔒 개인정보처리방침</a>
     </nav>
     <p class="strong" style="margin:0">참고용 데이터 시각화입니다.</p>
     <p style="margin:2px 0 0">본 사이트는 과거 데이터 통계이며 매수 추천·투자 권유가 아닙니다. 모든 투자 결정과 결과는 본인 책임입니다.</p>

@@ -129,11 +129,16 @@ async def lifespan(app: FastAPI):
                         min_touches=settings.min_touches["day"])
         for m in ("kr", "us")
     }
+    # 맞춤 이평선 스크리너: (시장, 기간)별 스캐너를 요청 시 lazily 생성.
+    # 시세 캐시는 위 스캐너들과 공유되므로 추가 비용은 CPU 계산뿐이다.
+    app.state.universe_fns = universe_fns
+    app.state.line_scanners = {}
     yield
     # 진행 중인 백그라운드 스캔을 정리하고 종료 — 안 하면 "Task was destroyed
     # but it is pending!" 경고와 함께 행 스레드가 셧다운을 지연시킨다
     for scanner in (list(app.state.scanners.values())
-                    + list(app.state.touch_scanners.values())):
+                    + list(app.state.touch_scanners.values())
+                    + list(app.state.line_scanners.values())):
         task = scanner._task
         if task is not None and not task.done():
             task.cancel()
@@ -671,6 +676,65 @@ async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr
     }
 
 
+# 동시에 살아 있는 맞춤선 스캐너 상한 — (시장, 기간) 조합이 무한히 늘며
+# 메모리·페치 예산을 잠식하지 않게 가장 오래 안 쓴 유휴 스캐너부터 비운다.
+_MAX_LINE_SCANNERS = 8
+
+
+def _line_scanner(market: str, period: int):
+    """(시장, 기간) 스캐너를 등록소에서 꺼내거나 만든다. 가득 찼는데 전부
+    스캔 중이면 None (호출자가 429 로 답한다)."""
+    from .line_scan import LineScanner
+
+    reg: dict = app.state.line_scanners
+    key = (market, period)
+    sc = reg.pop(key, None)
+    if sc is None:
+        if len(reg) >= _MAX_LINE_SCANNERS:
+            for k in list(reg):           # 삽입 순 = LRU 순 (아래에서 재삽입하므로)
+                cand = reg[k]
+                if cand._task is None or cand._task.done():
+                    reg.pop(k, None)
+                    break
+            else:
+                return None               # 전부 스캔 중 — 잠시 후 다시
+        sc = LineScanner(app.state.provider, app.state.universe_fns[market], period)
+    reg[key] = sc                          # 재삽입으로 '최근 사용'을 맨 뒤로
+    return sc
+
+
+@app.get("/api/lines")
+async def lines_api(request: Request,
+                    market: str = Query("kr", pattern=r"^(kr|us)$"),
+                    period: int = Query(20, ge=5, le=250)):
+    """맞춤 이평선 스크리너: N일선의 지지/저항 종목 리스트 (프런트가 폴링).
+
+    회원 전용 — 로그인하지 않았으면 401 (프런트가 /login 으로 보낸다)."""
+    if not await _current_user(request):
+        raise HTTPException(401, "로그인이 필요합니다.")
+    sc = _line_scanner(market, period)
+    if sc is None:
+        raise HTTPException(429, "지금 다른 이평선 스캔이 많아요 — 잠시 후 다시 시도해 주세요.")
+    snap = await sc.snapshot()
+    if snap["status"] != "done":
+        return snap
+    return {
+        "status": "done",
+        "market": market,
+        "period": snap.get("period", period),
+        "scanned": snap.get("scanned"),
+        "universe": snap.get("universe"),
+        "elapsedSec": snap.get("elapsedSec"),
+        "refreshing": bool(snap.get("refreshing")),
+        "partial": bool(snap.get("partial")),
+        "generatedAt": snap.get("generatedAt"),
+        "support": snap.get("support") or [],
+        "resistance": snap.get("resistance") or [],
+        "totalSupport": snap.get("totalSupport", 0),
+        "totalResistance": snap.get("totalResistance", 0),
+    }
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -699,6 +763,14 @@ async def touches_page(request: Request):
     if not await _current_user(request):
         return RedirectResponse(url="/login?next=%2Ftouches", status_code=302)
     return FileResponse(STATIC_DIR / "touches.html")
+
+
+@app.get("/lines")
+async def lines_page(request: Request):
+    """맞춤 이평선 스크리너 — 회원 전용 (터치 스크리너와 동일 규칙)."""
+    if not await _current_user(request):
+        return RedirectResponse(url="/login?next=%2Flines", status_code=302)
+    return FileResponse(STATIC_DIR / "lines.html")
 
 
 def _safe_next(nxt: str) -> str:

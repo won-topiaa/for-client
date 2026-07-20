@@ -385,7 +385,7 @@ def test_theme_toggle_on_every_page(client):
     client.post("/api/auth/signup",
                 json={"email": "themetest@example.com", "password": "password123"})
     try:
-        for page in ("/", "/ma", "/patterns", "/touches", "/about", "/privacy"):
+        for page in ("/", "/ma", "/patterns", "/touches", "/lines", "/about", "/privacy"):
             check(page)
     finally:
         client.post("/api/auth/logout")
@@ -397,7 +397,7 @@ def test_privacy_link_in_every_footer(client):
     client.post("/api/auth/signup",
                 json={"email": "footercheck@example.com", "password": "password123"})
     try:
-        for page in ("/", "/ma", "/patterns", "/touches", "/about"):
+        for page in ("/", "/ma", "/patterns", "/touches", "/lines", "/about"):
             html = client.get(page).text
             assert 'href="/privacy"' in html, f"{page} 푸터에 개인정보처리방침 링크 없음"
     finally:
@@ -416,13 +416,18 @@ def test_home_explains_ma_trading_method(client):
     assert "어떤 선을 써야 하나?" in html            # 사이트 도구로의 연결
 
 
-def test_home_has_howto_with_reasons(client):
-    """홈의 '처음이신가요?' 이용방법: 3단계 + 각 단계의 '왜' 설명 + 주의문."""
+def test_home_tools_first_and_condensed(client):
+    """홈 재구성: 도구 카드 4개가 소개 글보다 먼저 나오고, 긴 설명(매매법)은
+    접힘(details)으로 — 첫 화면이 난잡하지 않게. 주의문은 유지."""
     html = client.get("/").text
     assert "처음이신가요?" in html
-    assert html.count("왜 이렇게 하나요?") == 3      # 세 단계 모두 이유를 설명
-    for target in ('href="/ma"', 'href="/patterns"', 'href="/touches"'):
+    for target in ('href="/ma"', 'href="/patterns"', 'href="/touches"',
+                   'href="/lines"'):
         assert target in html
+    # 도구 카드가 이용법·매매법 소개보다 위에 배치된다
+    assert html.index('class="tools"') < html.index('class="howto"')
+    assert html.index('class="tools"') < html.index('class="ma-method"')
+    assert "<details" in html                      # 긴 글은 접혀 있다
     assert "과거 데이터 통계" in html               # 확인 도구라는 주의
 
 
@@ -575,3 +580,24 @@ def test_requests_default_timeout_injected():
     # 호출자가 명시한 timeout 은 존중한다
     s.request("GET", "http://timeout-probe.invalid/", timeout=3)
     assert seen["timeout"] == 3
+
+
+def test_lines_page_and_api_are_member_only(client):
+    """맞춤 이평선 스크리너: 페이지는 로그인으로 리다이렉트, API 는 401."""
+    r = client.get("/lines", follow_redirects=False)
+    assert r.status_code == 302 and "/login" in r.headers["location"]
+    assert client.get("/api/lines").status_code == 401
+    # 기간 검증: 5~250 밖이면 422 (로그인 여부와 무관하게 스캐너에 닿지 않음)
+    client.post("/api/auth/signup",
+                json={"email": "linescheck@example.com", "password": "password123"})
+    try:
+        assert client.get("/api/lines?period=4").status_code == 422
+        assert client.get("/api/lines?period=251").status_code == 422
+        assert client.get("/api/lines?market=jp&period=20").status_code == 422
+        # 페이지는 로그인 후 정상 서빙 + 두 리스트 골격 존재
+        html = client.get("/lines").text
+        assert 'id="supportList"' in html and 'id="resistList"' in html
+        assert 'id="periodInput"' in html
+        assert "판정 기준" in html            # 기준을 화면에 공개
+    finally:
+        client.post("/api/auth/logout")

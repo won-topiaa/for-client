@@ -3,26 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>차트 패턴 스크리너 — 주식 레이더</title>
-<meta name="description" content="와인스타인 2단계·삼각수렴·헤드앤숄더·컵앤핸들 — 교과서 패턴을 전 종목에서 자동 탐지하고 이탈 시 자동 탈락시킵니다.">
+<title>내 이평선 스크리너 — 주식 레이더</title>
+<meta name="description" content="원하는 이평선(예: 50일선)을 입력하면 그 선의 지지를 받는 종목과 저항에 막힌 종목을 나눠 보여드립니다.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://ma-radar.onrender.com/patterns">
-<meta property="og:title" content="차트 패턴 스크리너 — 주식 레이더">
-<meta property="og:description" content="와인스타인 2단계·삼각수렴·헤드앤숄더·컵앤핸들 — 교과서 패턴을 전 종목에서 자동 탐지하고 이탈 시 자동 탈락시킵니다.">
+<meta property="og:url" content="https://ma-radar.onrender.com/lines">
+<meta property="og:title" content="내 이평선 스크리너 — 주식 레이더">
+<meta property="og:description" content="원하는 이평선을 입력하면 지지받는 종목/저항에 막힌 종목을 나눠 보여드립니다.">
 <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
 <style>
-  /* earnings-volatility 사이트와 같은 디자인 언어:
-     zinc 중립 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 빨강=하락 · 인디고=정보 */
+  /* 주식 레이더 공통 디자인: zinc 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 인디고=정보 */
   :root {
     --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
-    --border: #e4e4e7; --divide: #f4f4f5;
+    --border: #e4e4e7;
     --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
     --accent: #059669; --accent-hover: #047857;
-    --up: #059669; --down: #dc2626;
-    --info: #4f46e5; --info-bg: #eef2ff; --info-border: #c7d2fe;
-    --info-chip-bg: #e0e7ff; --info-chip-text: #4338ca;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626; --info-bg: #eef2ff; --info-border: #c7d2fe;
+    --acc-chip-bg: #d1fae5; --acc-chip-text: #047857;
     --chip-active-bg: #18181b; --chip-active-text: #ffffff;
     --header-bg: rgba(255, 255, 255, .8);
     --bot-up-1: #34d399; --bot-up-2: #059669; --bot-up-limb: #6ee7b7;
@@ -31,12 +30,12 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
-      --border: #27272a; --divide: #27272a;
+      --border: #27272a;
       --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
       --accent: #059669; --accent-hover: #10b981;
-      --up: #34d399; --down: #f87171;
-      --info: #818cf8; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
-      --info-chip-bg: rgba(67, 56, 202, .5); --info-chip-text: #c7d2fe;
+      --info: #818cf8;
+    --up: #34d399; --down: #f87171; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
+      --acc-chip-bg: rgba(6, 95, 70, .5); --acc-chip-text: #6ee7b7;
       --chip-active-bg: #f4f4f5; --chip-active-text: #18181b;
       --header-bg: rgba(24, 24, 27, .8);
     }
@@ -48,8 +47,6 @@
       "Noto Sans KR", sans-serif;
     font-size: 14px; line-height: 1.5;
   }
-
-  /* 상단 고정 헤더 (반투명 블러) */
   .site-header {
     position: sticky; top: 0; z-index: 20;
     background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -69,7 +66,6 @@
     display: flex; flex-direction: column; gap: 18px;
   }
 
-  /* 시장 토글 — 알약형 칩, 선택 시 반전 */
   .market-toggle { display: flex; gap: 8px; }
   .market-toggle button {
     background: var(--panel); color: var(--muted); border: 1px solid var(--border);
@@ -82,26 +78,13 @@
     border-color: var(--chip-active-bg); font-weight: 600;
   }
 
-  /* 패턴 카드 */
-  .pattern-cards { display: flex; gap: 12px; flex-wrap: wrap; }
-  .p-card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
-    padding: 13px 16px; min-width: 150px; cursor: pointer; user-select: none;
-    transition: border-color .15s, box-shadow .15s;
-  }
-  .p-card:hover { border-color: var(--faint); }
-  .p-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .p-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .p-card .t { font-weight: 600; letter-spacing: -.01em; }
-  .p-card .d { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
-
-  /* 패턴 설명 — 인디고 정보 박스 (참고 사이트의 힌트 바 스타일) */
-  .pattern-desc {
+  /* 방법 설명 — 인디고 정보 박스 */
+  .method {
     background: var(--info-bg); border: 1px solid var(--info-border); border-radius: 16px;
     padding: 14px 18px; font-size: 13px; line-height: 1.7;
   }
-  .pattern-desc b { color: var(--info); }
-  .pattern-desc .src { color: var(--muted); font-size: 11.5px; display: block; margin-top: 6px; }
+  .method b { color: var(--info); }
+  .method .src { color: var(--muted); font-size: 11.5px; display: block; margin-top: 6px; }
 
   .status { margin: 4px 0 8px; color: var(--muted); }
   .bar {
@@ -110,7 +93,7 @@
   }
   .bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .4s; }
 
-  /* ---- 스캔 중 캔들봇 댄스 (양봉이=에메랄드 · 음봉이=빨강) ---- */
+  /* ---- 스캔 중 캔들봇 댄스 ---- */
   .scan-party {
     display: none; align-items: flex-end; gap: 34px; justify-content: center;
     padding: 26px 0 6px; user-select: none;
@@ -221,7 +204,7 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* 매칭 결과 카드 */
+  /* 결과 카드 */
   .matches { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 14px; }
   @media (max-width: 540px) { .matches { grid-template-columns: 1fr; } }
   .m-card {
@@ -234,11 +217,12 @@
     color: var(--muted); font-size: 12px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  .m-score {
+  .ma-chip {
     display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
-    font-weight: 600; background: var(--info-chip-bg); color: var(--info-chip-text);
+    font-weight: 700; background: var(--acc-chip-bg); color: var(--acc-chip-text);
   }
   .m-summary { color: var(--muted); font-size: 12.5px; margin: 5px 0 12px; }
+  .m-summary b { color: var(--text); }
   .m-chart { height: 220px; }
   .m-link { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500; }
   .m-link:hover { text-decoration: underline; }
@@ -248,14 +232,6 @@
   }
 
   .note { color: var(--muted); font-size: 12px; line-height: 1.7; }
-  .refs { color: var(--muted); font-size: 11.5px; line-height: 1.7; }
-  .refs-title { color: var(--text); font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
-  .refs ol { margin: 0; padding-left: 18px; }
-  .refs li { margin: 2px 0; }
-  .refs em { font-style: italic; }
-  .refs a { color: var(--accent); text-decoration: none; }
-  .refs a:hover { text-decoration: underline; }
-  .refs .use { color: var(--faint); }
   footer {
     margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--border);
     color: var(--muted); font-size: 12px; line-height: 1.7;
@@ -282,6 +258,43 @@
   .f-nav a { color: var(--muted); text-decoration: none; }
   .f-nav a:hover { color: var(--accent); }
 
+
+  /* ---- 기간 입력 컨트롤 (이 페이지 고유) ---- */
+  .line-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .line-controls .period-box {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 6px 4px 14px;
+  }
+  .line-controls label { color: var(--muted); font-size: 13px; }
+  .line-controls input {
+    width: 64px; border: none; background: transparent; color: var(--text);
+    font-size: 14px; font-weight: 600; text-align: center; outline: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .line-controls .go-btn {
+    background: var(--chip-active-bg); color: var(--chip-active-text);
+    border: 1px solid var(--chip-active-bg); border-radius: 999px;
+    padding: 6px 16px; cursor: pointer; font-size: 13.5px; font-weight: 600;
+  }
+  .line-controls .preset {
+    background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 13px; cursor: pointer; font-size: 12.5px;
+    transition: border-color .15s, color .15s;
+  }
+  .line-controls .preset:hover { border-color: var(--faint); color: var(--text); }
+  .line-controls .preset.active {
+    border-color: var(--accent); color: var(--accent); font-weight: 600;
+  }
+  /* 지지/저항 섹션 제목 */
+  .side-title {
+    display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0;
+    font-size: 15.5px; font-weight: 600; letter-spacing: -.01em;
+  }
+  .side-title .cnt { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+  .side-title.sup { color: var(--up); }
+  .side-title.res { color: var(--down); }
+
   /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
   @media (max-width: 640px) {
     .header-inner { padding: 10px 16px; gap: 6px 10px; }
@@ -303,10 +316,7 @@
     /* 국내/미국 토글: 폭을 반씩 나눠 큼직하게 */
     .market-toggle { width: 100%; }
     .market-toggle button { flex: 1; padding: 11px 0; font-size: 14px; }
-    /* 패턴 카드: 화면 폭을 꽉 채워 세로로 쌓기 */
-    .pattern-cards { gap: 10px; }
-    .p-card { min-width: 100%; }
-    .pattern-desc { padding: 13px 15px; font-size: 12.5px; }
+    .method { padding: 13px 15px; font-size: 12.5px; }
     .f-nav { gap: 10px 18px; }
     .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
   }
@@ -394,23 +404,13 @@
       color-mix(in srgb, var(--info) 42%, transparent) 70%, transparent 96%);
     pointer-events: none;
   }
-  a:focus-visible, button:focus-visible, .p-card:focus-visible {
+  a:focus-visible, button:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
     outline-offset: 2px;
   }
   ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 
-  /* ── 폴리시 v3: 정석 부합도 칩(점수대별 색) + 카드 미니 미터 ──
-     80점 이상 = 에메랄드(정석에 매우 근접) · 60~79 = 기본 · 미만 = 중립 */
-  .m-score.t-high {
-    background: color-mix(in srgb, var(--accent) 13%, var(--panel));
-    color: var(--accent);
-    border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  }
-  .m-score.t-low {
-    background: var(--panel2); color: var(--muted);
-    border: 1px solid var(--hairline);
-  }
+  /* ── 폴리시 v3: 지지 성공률 미니 미터 (매칭 카드) ── */
   .m-meter {
     height: 4px; border-radius: 999px; background: var(--panel2);
     margin-top: 9px; overflow: hidden;
@@ -425,12 +425,12 @@
      우선한다 (위의 자동 변수와 동일한 값 — 강제 적용 사본) ── */
   :root[data-theme="light"] {
     --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
-    --border: #e4e4e7; --divide: #f4f4f5;
+    --border: #e4e4e7;
     --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
     --accent: #059669; --accent-hover: #047857;
-    --up: #059669; --down: #dc2626;
-    --info: #4f46e5; --info-bg: #eef2ff; --info-border: #c7d2fe;
-    --info-chip-bg: #e0e7ff; --info-chip-text: #4338ca;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626; --info-bg: #eef2ff; --info-border: #c7d2fe;
+    --acc-chip-bg: #d1fae5; --acc-chip-text: #047857;
     --chip-active-bg: #18181b; --chip-active-text: #ffffff;
     --header-bg: rgba(255, 255, 255, .8);
     --bot-up-1: #34d399; --bot-up-2: #059669; --bot-up-limb: #6ee7b7;
@@ -438,12 +438,12 @@
   }
   :root[data-theme="dark"] {
       --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
-      --border: #27272a; --divide: #27272a;
+      --border: #27272a;
       --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
       --accent: #059669; --accent-hover: #10b981;
-      --up: #34d399; --down: #f87171;
-      --info: #818cf8; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
-      --info-chip-bg: rgba(67, 56, 202, .5); --info-chip-text: #c7d2fe;
+      --info: #818cf8;
+    --up: #34d399; --down: #f87171; --info-bg: rgba(49, 46, 129, .35); --info-border: #3730a3;
+      --acc-chip-bg: rgba(6, 95, 70, .5); --acc-chip-text: #6ee7b7;
       --chip-active-bg: #f4f4f5; --chip-active-text: #18181b;
       --header-bg: rgba(24, 24, 27, .8);
   }
@@ -485,14 +485,19 @@
     <div class="brand-box">
       <a class="brand" href="/" aria-label="주식 레이더"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></a>
       <div>
-      <h1>차트 패턴 스크리너</h1>
-      <p class="sub">교과서 패턴의 기하학적 정의로 전 종목을 스캔해, 지금 그 모양을 만드는 종목을 찾습니다</p>
+      <h1>내 이평선 스크리너</h1>
+      <p class="sub">원하는 이평선을 입력하면 지지받는 종목과 저항에 막힌 종목을 나눠 드립니다</p>
       </div>
       <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
     </div>
     <button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button>
     <span style="display:inline-flex; gap:10px;">
-      <a class="nav-link" href="/">🏠 홈</a><a class="nav-link" href="/ma">📈 이평선 분석</a><a class="nav-link" href="/touches">🚨 오늘의 터치</a></span>
+      
+      <a class="nav-link" href="/">🏠 홈</a>
+      <a class="nav-link" href="/ma">📈 이평선 분석</a>
+      <a class="nav-link" href="/patterns">🔍 패턴 스크리너</a>
+      <span id="authBox" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--muted);white-space:nowrap;"><span id="authEmail" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;"></span><button type="button" id="logoutBtn" class="nav-link" style="background:none;border:none;cursor:pointer;font-family:inherit;padding:0;">로그아웃</button></span>
+    </span>
   </div>
   <div class="ticker-wrap" id="tickerWrap" style="display:none">
     <div class="ticker" id="tickerBar" aria-label="주요 지수 시세"></div>
@@ -505,30 +510,33 @@
     <button data-market="us" aria-pressed="false">🇺🇸 미국</button>
   </div>
 
-  <div class="pattern-cards" id="patternCards">
-    <div class="p-card active" data-pattern="stage2" role="button" tabindex="0" aria-pressed="true">
-      <div class="t">🚀 와인스타인 초기 2단계</div>
-      <div class="d">바닥 돌파 직후 — 이론상 최적 매수 구간</div>
-    </div>
-    <div class="p-card" data-pattern="triangle" role="button" tabindex="0" aria-pressed="false">
-      <div class="t">📐 삼각수렴</div>
-      <div class="d">고점·저점이 좁아지며 수렴 (대칭/상승/하락)</div>
-    </div>
-    <div class="p-card" data-pattern="head_shoulders" role="button" tabindex="0" aria-pressed="false">
-      <div class="t">⛰ 헤드 앤 숄더</div>
-      <div class="d">천장형 반전 — 어깨·머리·어깨 + 넥라인</div>
-    </div>
-    <div class="p-card" data-pattern="inv_head_shoulders" role="button" tabindex="0" aria-pressed="false">
-      <div class="t">🏔 역헤드 앤 숄더</div>
-      <div class="d">바닥형 반전 — 뒤집힌 어깨·머리·어깨</div>
-    </div>
-    <div class="p-card" data-pattern="cup_handle" role="button" tabindex="0" aria-pressed="false">
-      <div class="t">☕ 컵 앤 핸들</div>
-      <div class="d">둥근 바닥(컵) + 얕은 조정(핸들)</div>
-    </div>
+  <div class="line-controls" id="lineControls">
+    <span class="period-box">
+      <label for="periodInput">이평선</label>
+      <input id="periodInput" type="number" min="5" max="250" step="1" value="20"
+             inputmode="numeric" aria-label="이동평균선 기간 (5~250일)">
+      <label>일선</label>
+    </span>
+    <button type="button" class="go-btn" id="goBtn">조회</button>
+    <button type="button" class="preset" data-period="20">20일</button>
+    <button type="button" class="preset" data-period="50">50일</button>
+    <button type="button" class="preset" data-period="60">60일</button>
+    <button type="button" class="preset" data-period="120">120일</button>
+    <button type="button" class="preset" data-period="200">200일</button>
   </div>
 
-  <div class="pattern-desc" id="patternDesc"></div>
+  <div class="method">
+    <b>판정 기준 (퀀트 규칙 — 전부 만족해야 목록에 오릅니다)</b><br>
+    <b>지지를 받는 중</b> = ① 최근 20봉 종가의 70% 이상이 선 위(추세가 선 위에 정박)
+    ② 최근 5봉 안에 저가가 허용 밴드(max(0.5×ATR14, 종가의 0.15%) — 사이트 공통)까지 선에 닿음
+    ③ 종가가 선 아래로 확정 이탈하지 않음 ④ 선의 10봉 기울기 ≥ −0.2%(하락 중인 선의 지지는 제외 — Weinstein)
+    ⑤ 3년 백테스트에서 그 선의 지지쪽 결정 사례 2회 이상 · 가중 지지 성공률 50% 이상.<br>
+    <b>저항에 막힌 중</b>은 위 기준의 완전한 거울상(선 아래 정박 + 고가 터치 + 확정 돌파 아님 + 기울기 ≤ +0.2% + 저항 성공률 50%+).
+    정렬은 신뢰 점수(성공률 Wilson 하한 × log(1+가중 성공 횟수)) 순 — 각 리스트 상위 6개.<br>
+    <b>주의:</b> "그 선이 지금 시험받고 있다"는 관찰이지 방향 보장이 아닙니다 — 지지가 뚫리면 하락 가속,
+    저항이 뚫리면 상승 가속 신호로 뒤집힐 수 있습니다.
+    <span class="src">방법 출처: 이평선 레이더 백테스트 엔진 (Wilson 하한 점수화) · Weinstein (1988) 스테이지 분석 · Brock·Lakonishok·LeBaron (1992) 계열 이동평균 연구</span>
+  </div>
 
   <div class="scan-party" id="scanParty" aria-hidden="true">
     <div class="bot up">
@@ -557,44 +565,21 @@
     스캔하는 동안 시장 한입 지식을 보여드립니다…
   </div>
   <div class="party-note" id="partyNote" style="display:none">
-    시세를 실시간으로 전 종목 훑기 때문에 처음 결과가 뜨기까지
-    몇 초에서 길면 2~3분 걸릴 수 있어요. 찾는 대로 순서대로 채워집니다.
+    종목마다 3년치를 백테스트하고 시세를 실시간으로 훑기 때문에, 처음
+    결과가 뜨기까지 몇 초에서 길면 2~3분 걸릴 수 있어요. 찾는 대로 순서대로 채워집니다.
   </div>
 
   <div class="status" id="scanStatus"></div>
   <div class="sr-only" id="srStatus" role="status"></div>
-  <div class="matches" id="matches"></div>
+  <h3 class="side-title sup" id="supTitle" style="display:none">🟢 <span class="t"></span> <span class="cnt"></span></h3>
+  <div class="matches" id="supportList"></div>
+  <h3 class="side-title res" id="resTitle" style="display:none">🔴 <span class="t"></span> <span class="cnt"></span></h3>
+  <div class="matches" id="resistList"></div>
 
   <div class="note">
-    스캔 대상 — 🇰🇷 국내: 거래대금 상위 300개 종목 (시가총액 상위 30개 초대형주 제외 · 관련 연구상 초대형주에서 기술적 분석 효과가 가장 약하기 때문) ·
-    🇺🇸 미국: S&amp;P500 구성종목 중 메가캡 제외 · 스캔 시점의 최신 상장목록 기준으로 자동 갱신 · 결과 30분 캐시.<br>
-    패턴 탐지는 규칙 기반 자동 분석이며 미완성/실패 가능성이 있는 형태도 포함됩니다.<br>
-    패턴을 <b>이탈·무효화한 종목은 자동 탈락</b>합니다 — 각 패턴 설명의 "자동 탈락" 기준(연구 문헌 기반)에
-    걸리면 다음 스캔(최대 30분)에서 목록에서 빠집니다.
-  </div>
-
-  <div class="refs">
-    <div class="refs-title">📚 참고 문헌 — 스크리너의 매칭·탈락 기준이 근거한 자료</div>
-    <ol>
-      <li>Lo, A. W., Mamaysky, H., &amp; Wang, J. (2000). Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation. <em>The Journal of Finance</em>, 55(4), 1705–1765.
-        <a href="https://doi.org/10.1111/0022-1082.00265" target="_blank" rel="noopener">doi:10.1111/0022-1082.00265</a>
-        <span class="use">— 기하학적 패턴 탐지 방법론 · 패턴 정보력은 완성 직후에 집중 (헤드앤숄더 탈락 기준)</span></li>
-      <li>Han, Y., Yang, K., &amp; Zhou, G. (2013). A New Anomaly: The Cross-Sectional Profitability of Technical Analysis. <em>Journal of Financial and Quantitative Analysis</em>, 48(5), 1433–1461.
-        <a href="https://doi.org/10.1017/S0022109013000586" target="_blank" rel="noopener">doi:10.1017/S0022109013000586</a>
-        <span class="use">— 기술적 분석 효과는 초대형주에서 가장 약함 (유니버스에서 초대형주 제외)</span></li>
-      <li>Park, C.-H., &amp; Irwin, S. H. (2007). What Do We Know About the Profitability of Technical Analysis? <em>Journal of Economic Surveys</em>, 21(4), 786–826.
-        <a href="https://doi.org/10.1111/j.1467-6419.2007.00519.x" target="_blank" rel="noopener">doi:10.1111/j.1467-6419.2007.00519.x</a>
-        <span class="use">— 거래비용·데이터 스누핑 경고 (유동성 상위 종목만 스캔)</span></li>
-      <li>Jegadeesh, N., &amp; Titman, S. (1993). Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency. <em>The Journal of Finance</em>, 48(1), 65–91.
-        <a href="https://doi.org/10.1111/j.1540-6261.1993.tb04702.x" target="_blank" rel="noopener">doi:10.1111/j.1540-6261.1993.tb04702.x</a>
-        <span class="use">— 모멘텀(상대강도) 효과 (와인스타인 RS 가점의 학술 근거)</span></li>
-      <li>Bulkowski, T. N. (2005). <em>Encyclopedia of Chart Patterns</em> (2nd ed.). Wiley.
-        <span class="use">— 패턴별 실패율·busted 패턴 정의·5% 룰·삼각형 돌파는 꼭짓점 거리의 평균 73~75% 지점 (헤드앤숄더·삼각수렴 탈락 기준)</span></li>
-      <li>O'Neil, W. J. (2009). <em>How to Make Money in Stocks</em> (4th ed.). McGraw-Hill. (초판 1988)
-        <span class="use">— 컵앤핸들 정의 · 핸들은 컵 상반부 · 매수는 피벗 +5% 이내 (컵앤핸들 매칭·탈락 기준)</span></li>
-      <li>Weinstein, S. (1988). <em>Secrets for Profiting in Bull and Bear Markets</em>. Dow Jones-Irwin.
-        <span class="use">— 4단계 주가 사이클 · 30주선 매매 규칙 · 돌파 거래량 기준 (초기 2단계 매칭·탈락 기준)</span></li>
-    </ol>
+    스캔 대상 — 🇰🇷 국내: 거래대금 상위 300개 종목 (시가총액 상위 30개 초대형주 제외) ·
+    🇺🇸 미국: S&amp;P500 구성종목 중 메가캡 제외 · 결과 30분 캐시 · 지지/저항 판정은 마지막 거래일 기준.<br>
+    장중에는 마지막 봉이 아직 확정되지 않았으므로, 종가 기준으로 상태가 달라질 수 있습니다.
   </div>
 
   <footer>
@@ -607,7 +592,7 @@
 </div>
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="/static/tips.js"></script>
-<script src="/static/patterns.js"></script>
+<script src="/static/lines.js"></script>
 <script src="/static/ticker.js"></script>
 <script src="/static/presence.js"></script>
 </body>
