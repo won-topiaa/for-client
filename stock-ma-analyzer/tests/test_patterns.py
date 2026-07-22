@@ -485,8 +485,9 @@ def test_scanner_stale_while_revalidate():
         first = await scanner.snapshot()
         assert first["status"] == "done" and not first.get("refreshing")
 
-        scanner._generated -= scanner._ttl + 1  # 강제 만료
-        scanner._scan_ended -= scanner._ttl + 1  # 스캔 간 최소 휴지도 경과
+        import time as _t
+        scanner._generated_wall = _t.time() - 2 * 86400  # 아침 경계 넘김 (만료)
+        scanner._scan_ended -= scanner._ttl + 1          # 스캔 간 최소 휴지도 경과
         stale = await scanner.snapshot()
         assert stale["status"] == "done", "만료됐다고 결과를 숨기면 안 됨"
         assert stale["refreshing"] is True
@@ -782,6 +783,7 @@ def test_partial_results_trigger_early_rescan():
         assert snap1["status"] == "done" and not snap1.get("refreshing")
         # 부분 결과 + 쿨다운 경과 상태를 시뮬레이션
         scanner._results["partial"] = True
+        scanner._daily_frozen = False  # 부분 결과는 하루 고정 대상이 아님
         scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         snap2 = await scanner.snapshot()
@@ -829,6 +831,7 @@ def test_rescan_never_shrinks_served_results():
         assert scanner._results["scanned"] == 3
         # 부분 결과 + 쿨다운 경과를 시뮬레이션한 뒤, 업스트림이 악화된 재스캔
         scanner._results["partial"] = True
+        scanner._daily_frozen = False  # 부분 결과는 하루 고정 대상이 아님
         scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         provider.degraded = True
@@ -878,6 +881,7 @@ def test_below_coverage_final_backs_off_then_recovers():
         await scanner._task                       # 1차 완주: scanned=3
         # 만료 + 휴지 경과 → 악화된 재스캔 (1종목만 성공, 미달 완주)
         scanner._results["partial"] = True
+        scanner._daily_frozen = False  # 부분 결과는 하루 고정 대상이 아님
         scanner._generated -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         scanner._scan_ended -= ps.PARTIAL_RESCAN_COOLDOWN_SEC + 1
         provider.degraded = True
@@ -1151,3 +1155,94 @@ def test_scanner_completes_past_negative_cache_skips():
     snap = asyncio.new_event_loop().run_until_complete(go())
     assert snap["status"] == "done", f"스킵 때문에 완주하지 못함: {snap}"
     assert snap["scanned"] >= 20, f"신선한 종목까지 진행하지 못함 (scanned={snap['scanned']})"
+
+
+def test_daily_boundary_math():
+    """아침 갱신 경계 계산: KST 08:00 기준, '이후 처음 오는' 시각을 돌려준다."""
+    import app.pattern_scan as ps
+    from app.pattern_scan import _next_daily_boundary
+
+    KST = ps._KST_OFFSET_SEC
+    # 2024-01-01 09:00 KST (=00:00 UTC) → 다음 경계는 2024-01-02 08:00 KST
+    t = 1704067200.0  # 2024-01-01T00:00:00Z = 09:00 KST
+    b = _next_daily_boundary(t)
+    kst_hour = ((b + KST) % 86400) / 3600
+    assert abs(kst_hour - ps.DAILY_REFRESH_HOUR_KST) < 1e-6
+    assert b > t and (b - t) <= 86400
+    # 경계 직전(07:59 KST)이면 같은 날 08:00 이 나온다 (몇 분 뒤)
+    just_before = b - 86400 - 60   # 전날 07:59 KST 근처
+    b2 = _next_daily_boundary(just_before)
+    assert 0 < (b2 - just_before) <= 3600
+
+
+def test_full_result_frozen_until_morning(monkeypatch):
+    """완주한 양호 결과는 30분이 지나도 재스캔하지 않고 다음 아침까지 고정된다."""
+    import time
+
+    import app.pattern_scan as ps
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class OkProvider:
+        name = "fake"
+        calls = 0
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            OkProvider.calls += 1
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("S2", "종목", "T")]
+
+    scanner = PatternScanner(OkProvider(), universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task
+        assert scanner._daily_frozen is True          # 완주 = 고정 대상
+        calls_after_first = OkProvider.calls
+        # 30분 경과를 시뮬레이션해도(모노토닉 age 큼) 고정이라 재스캔 안 함
+        scanner._generated -= ps.RESULT_TTL_SEC + 100
+        scanner._scan_ended -= ps.RESULT_TTL_SEC + 100
+        snap = await scanner.snapshot()
+        assert snap["status"] == "done" and not snap.get("refreshing")
+        assert scanner._task.done()                   # 새 스캔이 시작되지 않았다
+        assert OkProvider.calls == calls_after_first
+        # 아침 경계를 넘긴 것으로 시뮬레이션 → stale → 재스캔 시작
+        scanner._generated_wall = time.time() - 2 * 86400
+        snap2 = await scanner.snapshot()
+        assert snap2["status"] == "done" and snap2.get("refreshing") is True
+        assert scanner._task is not None and not scanner._task.done()
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_partial_result_not_daily_frozen():
+    """부분(partial) 결과는 하루 고정 대상이 아니라 짧은 TTL 로 계속 채운다."""
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+
+    class OkProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            return validate_candles(_df(closes, volume=volume))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("S2", "종목", "T")]
+
+    scanner = PatternScanner(OkProvider(), universe_fn)
+    scanner._partial = True
+    scanner._finish({"patterns": {}}, universe_n=10, scanned_n=3, started=0.0)
+    assert scanner._daily_frozen is False    # 부분 결과는 고정 안 함

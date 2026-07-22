@@ -138,7 +138,44 @@ async def lifespan(app: FastAPI):
     # 초기화해, 키를 바꿔가며 요청하는 것만으로 무한 스캔을 돌릴 수 있다.
     # 키 공간이 유한(시장 2 × 기간 246)해 크기도 자연히 유계다.
     app.state.line_cooldowns = {}
+
+    # 하루 한 번(아침) 자동 예열: 갱신 시각이 지나면 패턴·터치 스캐너를 미리
+    # 돌려둔다 → 아침 첫 방문자가 몇 분짜리 스캔을 기다리지 않는다. 서버가
+    # UptimeRobot 등으로 깨어 있으면 이 태스크가 살아 정시에 예열한다.
+    # (맞춤선은 기간별 on-demand 라 예열 대상에서 제외)
+    prewarm_targets = (list(app.state.scanners.values())
+                       + list(app.state.touch_scanners.values()))
+
+    async def _daily_prewarm() -> None:
+        from .pattern_scan import _next_daily_boundary
+        # 부팅 직후 1회 예열 — 배포/재시작 후 첫 방문자 대기 제거
+        for sc in prewarm_targets:
+            try:
+                await sc.snapshot()
+            except Exception:  # noqa: BLE001
+                logger.warning("예열 스냅샷 실패", exc_info=True)
+            await asyncio.sleep(1)
+        while True:
+            now = time.time()
+            await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now))
+            # 경계 통과 → 고정 결과가 stale → snapshot 이 백그라운드 재스캔을 킥
+            for sc in prewarm_targets:
+                try:
+                    await sc.snapshot()
+                except Exception:  # noqa: BLE001
+                    logger.warning("아침 예열 스냅샷 실패", exc_info=True)
+                await asyncio.sleep(2)  # 업스트림 배려용 약간의 stagger
+
+    app.state.prewarm_task = asyncio.create_task(_daily_prewarm())
     yield
+    # 예열 스케줄러 먼저 정리 — 종료 중 새 스캔을 킥하지 않게
+    pw = getattr(app.state, "prewarm_task", None)
+    if pw is not None and not pw.done():
+        pw.cancel()
+        try:
+            await pw
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
     # 진행 중인 백그라운드 스캔을 정리하고 종료 — 안 하면 "Task was destroyed
     # but it is pending!" 경고와 함께 행 스레드가 셧다운을 지연시킨다
     for scanner in (list(app.state.scanners.values())

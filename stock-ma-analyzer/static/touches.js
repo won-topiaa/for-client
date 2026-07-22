@@ -74,6 +74,14 @@
   let lastFp = null; // 직전 렌더의 지문 — 같은 결과 재렌더(깜빡임) 방지
   let pollFails = 0;
   const charts = [];
+  // 첫 공개 최소 로딩: 결과가 이미 계산돼 즉시 와도 몇 초간 스캔 애니메이션을
+  // 보여줘 '진짜로 훑는다'는 신뢰를 준다 (한 화면 진입당 1회). 실제 스캔이
+  // 그보다 오래 걸리면 추가 지연은 없다.
+  let revealed = false;
+  let loadStartMs = 0;
+  const nowMs = () => (window.performance && performance.now
+    ? performance.now() : Date.now());
+  function minRevealMs() { return 3000 + Math.random() * 1800; } // 3.0~4.8초
 
   el.marketToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-market]");
@@ -151,7 +159,9 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
-      showParty(false); // 이전 스캔의 봇+캡션이 스피너와 겹쳐 보이지 않게
+      revealed = false;
+      loadStartMs = nowMs();
+      showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
       el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
     }
     try {
@@ -191,6 +201,35 @@
         pollTimer = setTimeout(() => load(true), 15000);
         return;
       }
+      // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 재렌더 없음
+      const fp = matchFp(body);
+      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
+      // 이 화면 진입 후 '첫 공개'는 최소 로딩 시간을 지킨다 (즉시 오는 고정
+      // 결과라도 몇 초간 스캔 애니메이션). 실제 스캔이 더 오래 걸렸으면 wait=0.
+      if (!revealed) {
+        revealed = true;
+        const wait = Math.max(0, minRevealMs() - (nowMs() - loadStartMs));
+        if (wait > 0) {
+          showParty(true);
+          pollTimer = setTimeout(() => {
+            if (seq !== reqSeq) return; // 그새 시장을 바꿨으면 폐기
+            // 이 콜백은 load 의 try/catch 밖이라, render 예외로 폴링 체인이
+            // 죽지 않게 여기서 직접 감싸 다음 폴을 반드시 예약한다
+            let nextMs = keepAlive;
+            try {
+              showParty(false);
+              render(body);
+              lastFp = fp;
+              renderedWhileRefreshing = !!body.refreshing;
+            } catch (e) {
+              lastFp = null;   // 재렌더 강제
+              nextMs = 4000;   // 곧 회복 폴
+            }
+            pollTimer = setTimeout(() => load(true), nextMs);
+          }, wait);
+          return;
+        }
+      }
       showParty(false);
       // '완성된 만료 결과'를 배경 재스캔 중 보여주는 경우만 재렌더 생략한다.
       // 부분(partial) 결과는 스캔이 돌며 점점 채워지므로 계속 갱신해야 한다.
@@ -199,9 +238,6 @@
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
-      // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 재렌더 없음
-      const fp = matchFp(body);
-      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
       if (isPoll && fp === lastFp) {
         el.status.textContent = statusText(body);
         pollTimer = setTimeout(() => load(true), keepAlive);

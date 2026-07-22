@@ -7,13 +7,15 @@
 - 미국: S&P500 구성종목(유동성 검증된 풀)에서 메가캡 제외
 - 유니버스는 스캔 때마다 최신 상장목록으로 다시 뽑아 시장 변화를 따라감
 
-스캔은 수십 초~수 분이 걸릴 수 있으므로 백그라운드 태스크로 돌고, 결과는
-30분간 전 사용자가 공유한다. 진행률을 노출해 프런트가 폴링할 수 있게 한다.
+스캔은 수십 초~수 분이 걸릴 수 있으므로 백그라운드 태스크로 돌고, 완주한
+결과는 다음 아침 갱신 시각까지 전 사용자가 공유한다(하루 한 번 갱신).
+진행률을 노출해 프런트가 폴링할 수 있게 한다.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import time
 import weakref
@@ -28,8 +30,29 @@ from .providers.cache import NegativeCacheSkip
 
 logger = logging.getLogger("ma-analyzer")
 
-RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간
+RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간 (부분/저커버리지 결과의 갱신 주기)
 LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
+# 하루 한 번(아침) 갱신: 완주(양호 커버리지)한 결과는 이 시각(KST)까지 그대로
+# 고정된다 — 일봉 기준 스크리너라 장중에 마지막(미확정) 봉이 움직이며 목록이
+# 흔들리는 것을 막고, 매일 아침 직전 거래일 종가 기준으로 한 번만 새로 뽑는다.
+# 08:00 KST 는 미국 장 마감(전일)이 반영되고 국내 장(09:00)은 아직 안 연 시각.
+DAILY_REFRESH_HOUR_KST = int(os.getenv("DAILY_REFRESH_HOUR_KST", "8"))
+_KST_OFFSET_SEC = 9 * 3600  # KST = UTC+9 (서머타임 없음)
+
+
+def _next_daily_boundary(after_epoch: float) -> float:
+    """after_epoch(초, UTC epoch) 이후 처음 오는 '아침 갱신 시각'의 epoch.
+
+    결과가 이 시각 전에 만들어졌으면 그 시각에 stale 이 되어 재스캔이 시작된다.
+    KST 로 환산해 날짜 경계를 잡으므로 서버 타임존과 무관하다."""
+    kst = after_epoch + _KST_OFFSET_SEC
+    day_start = kst - (kst % 86400)                    # 그날 00:00 KST
+    boundary = day_start + DAILY_REFRESH_HOUR_KST * 3600
+    if boundary <= kst:                                # 이미 지났으면 다음 날
+        boundary += 86400
+    return boundary - _KST_OFFSET_SEC                  # 다시 UTC epoch
+
+
 # 부분(partial) 결과는 이 쿨다운만 지나면 바로 백그라운드 재스캔을 시작한다 —
 # TTL(5분) 내내 '일부만 스캔' 화면이 얼어붙지 않고, 따뜻한 캐시 위에서 다음
 # 스캔이 이어받아 점점 채워진다. 쿨다운은 소프트 예산(150초)의 절반 미만으로
@@ -187,10 +210,19 @@ class BaseScanner:
         # 간격을 지수적으로 늘리고, 정상 발행이 되면 기본값으로 되돌린다.
         self._scan_ended = 0.0
         self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC
+        # 완주(양호 커버리지)한 결과인지 + 그 결과의 벽시계 생성 시각.
+        # 이런 결과는 다음 아침 갱신 시각까지 고정하고, 부분/저커버리지 결과만
+        # 짧은 TTL 로 계속 채운다.
+        self._daily_frozen = False
+        self._generated_wall = 0.0
 
     def _fresh(self) -> bool:
         if self._results is None:
             return False
+        # 완주한 양호 결과: 다음 아침 갱신 시각까지 그대로 고정 (하루 한 번 갱신).
+        # 장중 마지막 봉 변동으로 목록이 흔들리지 않게 monotonic age 는 무시한다.
+        if self._daily_frozen:
+            return time.time() < _next_daily_boundary(self._generated_wall)
         age = time.monotonic() - self._generated
         # 부분 결과(시간예산 조기 마감)는 짧은 쿨다운까지만 신선으로 취급 —
         # 그 뒤엔 stale 로 판정돼 재스캔이 시작되고, 사용자는 기존 부분 결과를
@@ -272,11 +304,15 @@ class BaseScanner:
                         # (elapsedSec 등) 대신 이 값으로 판별한다
                         "generatedAt": round(time.time(), 3)})
         coverage = scanned_n / universe_n if universe_n else 1.0
-        # 부분 결과이거나 절반도 못 훑었으면 수명을 짧게 잡아 곧 재스캔해 채운다
-        self._ttl = (LOW_COVERAGE_TTL_SEC if (self._partial or coverage < 0.5)
-                     else RESULT_TTL_SEC)
+        # 완주하고 커버리지가 충분한 '양호' 결과만 하루 고정 대상. 부분 결과·
+        # 저커버리지(업스트림 장애 등)는 짧은 TTL 로 곧 재스캔해 채운다 —
+        # 반쪽 목록을 24시간 얼려두지 않기 위함.
+        good = (not self._partial) and coverage >= 0.5
+        self._ttl = RESULT_TTL_SEC if good else LOW_COVERAGE_TTL_SEC
+        self._daily_frozen = good
         self._results = results
         self._generated = time.monotonic()
+        self._generated_wall = time.time()
         return coverage
 
     async def _scan_inner(self) -> None:
