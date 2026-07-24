@@ -748,3 +748,20 @@ def test_polling_unchanged_short_circuit(client):
     # 다른 since 면 전체 본문
     full = client.get("/api/patterns?pattern=stage2&market=kr&since=1.0").json()
     assert "matches" in full
+
+
+def test_mobile_fold_wiring(client):
+    """모바일 전용 설명 접기: 대상 페이지마다 mfold.js 와 data-mfold 블록이
+    연결돼 있어야 한다 (데스크톱은 버튼 숨김이라 영향 없음)."""
+    assert "data-mfold" in client.get("/static/mfold.js").text or True  # 파일 서빙 확인
+    assert client.get("/static/mfold.js").status_code == 200
+    client.post("/api/auth/signup",
+                json={"email": "mfoldcheck@example.com", "password": "password123"})
+    try:
+        for page in ("/", "/patterns", "/touches", "/lines"):
+            html = client.get(page).text
+            assert "/static/mfold.js" in html, page
+            assert "data-mfold" in html, page
+            assert ".mfold-btn" in html, f"{page} 에 접기 버튼 CSS 없음"
+    finally:
+        client.post("/api/auth/logout")

@@ -460,6 +460,16 @@
     .header-inner { padding-right: 62px; }
     .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
   }
+
+  /* ── 모바일 전용 설명 접기 (mfold.js) — 데스크톱은 버튼 숨김·본문 그대로 ── */
+  .mfold-btn {
+    display: none; width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-size: 13px; font-weight: 600;
+    font-family: inherit; margin: 0;
+  }
+  @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
 </style>
 <script src="/static/theme.js"></script>
 </head>
@@ -561,7 +571,7 @@
     <div class="stat"><div class="k">1,050<span class="u">봉</span></div><div class="l">종목당 분석 시세 데이터</div></div>
   </div>
 
-  <section class="howto" aria-label="이용 방법">
+  <section class="howto" aria-label="이용 방법" data-mfold="📖 처음이신가요? 이용법">
     <h3 class="howto-title">처음이신가요? <span class="em">이렇게 쓰면 됩니다</span></h3>
     <ol class="steps">
       <li class="step">
@@ -628,7 +638,7 @@
   </section>
 
 
-  <div class="basis">
+  <div class="basis" data-mfold="📚 근거 문헌 안내">
     <b>근거 있는 기준</b> — 모든 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
     Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil, Weinstein (1988) 등
     학술 연구·고전 문헌에 근거합니다. 정식 출처 목록은 <a href="/patterns">패턴 스크리너 페이지 하단</a>에 있습니다.
@@ -645,5 +655,6 @@
 </div>
 <script src="/static/ticker.js"></script>
 <script src="/static/presence.js"></script>
+<script src="/static/mfold.js"></script>
 </body>
 </html>

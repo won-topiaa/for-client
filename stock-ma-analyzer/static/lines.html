@@ -476,6 +476,16 @@
     .header-inner { padding-right: 62px; }
     .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
   }
+
+  /* ── 모바일 전용 설명 접기 (mfold.js) — 데스크톱은 버튼 숨김·본문 그대로 ── */
+  .mfold-btn {
+    display: none; width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-size: 13px; font-weight: 600;
+    font-family: inherit; margin: 0;
+  }
+  @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
 </style>
 <script src="/static/theme.js"></script>
 </head>
@@ -525,7 +535,7 @@
     <button type="button" class="preset" data-period="200">200일</button>
   </div>
 
-  <div class="method">
+  <div class="method" data-mfold="ℹ️ 판정 기준 (지지/저항)">
     <b>판정 기준 (퀀트 규칙 — 전부 만족해야 목록에 오릅니다)</b><br>
     <b>지지를 받는 중</b> = ① 직전 20봉(당일 제외) 종가의 70% 이상이 선 위(추세가 선 위에 정박)
     ② 최근 5봉 안에 저가가 허용 밴드(max(0.5×ATR14, 종가의 0.15%) — 사이트 공통)까지 선에 닿음
@@ -577,7 +587,7 @@
   <h3 class="side-title res" id="resTitle" style="display:none">🔴 <span class="t"></span> <span class="cnt"></span></h3>
   <div class="matches" id="resistList"></div>
 
-  <div class="note">
+  <div class="note" data-mfold="📄 스캔 대상 안내">
     스캔 대상 — 🇰🇷 국내: 거래대금 상위 300개 종목 (시가총액 상위 30개 초대형주 제외) ·
     🇺🇸 미국: S&amp;P500 구성종목 중 메가캡 제외 · 지지/저항 판정은 마지막 거래일 종가 기준.
 </div>
@@ -595,5 +605,6 @@
 <script src="/static/lines.js"></script>
 <script src="/static/ticker.js"></script>
 <script src="/static/presence.js"></script>
+<script src="/static/mfold.js"></script>
 </body>
 </html>

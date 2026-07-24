@@ -476,6 +476,16 @@
     .header-inner { padding-right: 62px; }
     .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
   }
+
+  /* ── 모바일 전용 설명 접기 (mfold.js) — 데스크톱은 버튼 숨김·본문 그대로 ── */
+  .mfold-btn {
+    display: none; width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-size: 13px; font-weight: 600;
+    font-family: inherit; margin: 0;
+  }
+  @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
 </style>
 <script src="/static/theme.js"></script>
 </head>
@@ -528,7 +538,7 @@
     </div>
   </div>
 
-  <div class="pattern-desc" id="patternDesc"></div>
+  <div class="pattern-desc" id="patternDesc" data-mfold="ℹ️ 패턴 설명·판정 기준"></div>
 
   <div class="scan-party" id="scanParty" aria-hidden="true">
     <div class="bot up">
@@ -565,7 +575,7 @@
   <div class="sr-only" id="srStatus" role="status"></div>
   <div class="matches" id="matches"></div>
 
-  <div class="note">
+  <div class="note" data-mfold="📄 스캔 대상 안내">
     스캔 대상 — 🇰🇷 국내: 거래대금 상위 300개 종목 (시가총액 상위 30개 초대형주 제외 · 관련 연구상 초대형주에서 기술적 분석 효과가 가장 약하기 때문) ·
     🇺🇸 미국: S&amp;P500 구성종목 중 메가캡 제외 · 스캔 시점의 최신 상장목록 기준.<br>
     패턴 탐지는 규칙 기반 자동 분석이며 미완성/실패 가능성이 있는 형태도 포함됩니다.<br>
@@ -573,7 +583,7 @@
     걸리면 다음 갱신 때 목록에서 빠집니다.
   </div>
 
-  <div class="refs">
+  <div class="refs" data-mfold="📚 참고 문헌">
     <div class="refs-title">📚 참고 문헌 — 스크리너의 매칭·탈락 기준이 근거한 자료</div>
     <ol>
       <li>Lo, A. W., Mamaysky, H., &amp; Wang, J. (2000). Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation. <em>The Journal of Finance</em>, 55(4), 1705–1765.
@@ -610,5 +620,6 @@
 <script src="/static/patterns.js"></script>
 <script src="/static/ticker.js"></script>
 <script src="/static/presence.js"></script>
+<script src="/static/mfold.js"></script>
 </body>
 </html>
