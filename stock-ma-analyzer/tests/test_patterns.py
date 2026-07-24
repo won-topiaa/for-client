@@ -1158,21 +1158,79 @@ def test_scanner_completes_past_negative_cache_skips():
 
 
 def test_daily_boundary_math():
-    """아침 갱신 경계 계산: KST 08:00 기준, '이후 처음 오는' 시각을 돌려준다."""
+    """아침 갱신 경계 계산: 설정된 KST 시각 기준, '이후 처음 오는' 시각."""
     import app.pattern_scan as ps
-    from app.pattern_scan import _next_daily_boundary
+    from app.pattern_scan import _next_daily_boundary, _parse_refresh_kst
 
     KST = ps._KST_OFFSET_SEC
-    # 2024-01-01 09:00 KST (=00:00 UTC) → 다음 경계는 2024-01-02 08:00 KST
-    t = 1704067200.0  # 2024-01-01T00:00:00Z = 09:00 KST
+    t = 1704067200.0  # 2024-01-01T00:00:00Z = 09:00 KST (경계 06:30 이후)
     b = _next_daily_boundary(t)
-    kst_hour = ((b + KST) % 86400) / 3600
-    assert abs(kst_hour - ps.DAILY_REFRESH_HOUR_KST) < 1e-6
+    kst_min = ((b + KST) % 86400) / 60
+    assert abs(kst_min - ps.DAILY_REFRESH_MIN_KST) < 1e-6
     assert b > t and (b - t) <= 86400
-    # 경계 직전(07:59 KST)이면 같은 날 08:00 이 나온다 (몇 분 뒤)
-    just_before = b - 86400 - 60   # 전날 07:59 KST 근처
+    # 경계 직전이면 같은 날 경계가 나온다 (몇 분 뒤)
+    just_before = b - 86400 - 60
     b2 = _next_daily_boundary(just_before)
     assert 0 < (b2 - just_before) <= 3600
+    # "HH:MM" 파싱: 정상값·이상값(폴백 06:30)
+    assert _parse_refresh_kst("06:30") == 6 * 60 + 30
+    assert _parse_refresh_kst("23:05") == 23 * 60 + 5
+    assert _parse_refresh_kst("banana") == 6 * 60 + 30
+    assert _parse_refresh_kst("25:00") == 6 * 60 + 30
+
+
+def test_prewarm_babysits_until_all_frozen():
+    """예열은 '한 번 킥'이 아니라 전 시장이 완주(하루 고정)될 때까지 반복한다 —
+    첫 스캔이 부분으로 끝난 시장(주로 미국)이 방치되던 문제의 회귀 테스트."""
+    from app.server import _prewarm_until_frozen
+
+    class FakeScanner:
+        def __init__(self, rounds_needed):
+            self.rounds_needed = rounds_needed
+            self.calls = 0
+            self._daily_frozen = False
+
+        async def snapshot(self):
+            self.calls += 1
+            if self.calls >= self.rounds_needed:
+                self._daily_frozen = True
+            return {}
+
+        def _fresh(self):
+            return self._daily_frozen
+
+    fast = FakeScanner(rounds_needed=1)   # 국내: 첫 라운드에 완주
+    slow = FakeScanner(rounds_needed=3)   # 미국: 세 번 킥해야 완주
+
+    async def go():
+        done = await _prewarm_until_frozen(
+            [fast, slow], deadline_sec=30, kick_gap_sec=0, round_gap_sec=0)
+        assert done is True
+        assert fast._daily_frozen and slow._daily_frozen
+        assert slow.calls >= 3            # 부분으로 끝난 시장을 계속 킥했다
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_prewarm_gives_up_after_deadline():
+    """영원히 완주 못 하는 스캐너가 있어도 예열 루프는 시한에 끝난다 (무한루프 방지)."""
+    from app.server import _prewarm_until_frozen
+
+    class NeverFrozen:
+        _daily_frozen = False
+
+        async def snapshot(self):
+            return {}
+
+        def _fresh(self):
+            return False
+
+    async def go():
+        done = await _prewarm_until_frozen(
+            [NeverFrozen()], deadline_sec=0.05, kick_gap_sec=0, round_gap_sec=0.01)
+        assert done is False
+
+    asyncio.new_event_loop().run_until_complete(go())
 
 
 def test_full_result_frozen_until_morning(monkeypatch):

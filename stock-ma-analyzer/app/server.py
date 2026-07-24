@@ -83,6 +83,35 @@ def _kr_fallback_universe(settings: Settings, provider: Provider) -> list:
     return out
 
 
+async def _prewarm_until_frozen(targets, deadline_sec: float = 5400.0,
+                                kick_gap_sec: float = 1.0,
+                                round_gap_sec: float = 70.0) -> bool:
+    """모든 스캐너가 '완주(하루 고정) + 신선'이 될 때까지 스냅숏을 반복한다.
+
+    snapshot() 은 방문자의 폴링과 같은 효과 — stale 이면 스캔을 킥하고, 부분/
+    실패로 끝난 스캔은 쿨다운(60초)이 지나면 다음 라운드에서 자연히 재시작된다.
+    이렇게 '봐주지' 않으면 첫 스캔이 부분으로 끝난 시장(주로 미국)은 방문자가
+    올 때까지 방치된다. 완료 시 True, 시한(기본 90분) 초과 시 False.
+    round_gap(70초)은 부분 결과 쿨다운·휴지(60초)보다 약간 길게 잡는다."""
+    start = time.monotonic()
+    while True:
+        pending = False
+        for sc in targets:
+            try:
+                await sc.snapshot()
+            except Exception:  # noqa: BLE001
+                logger.warning("예열 스냅샷 실패", exc_info=True)
+            if not (sc._daily_frozen and sc._fresh()):
+                pending = True
+            await asyncio.sleep(kick_gap_sec)  # 스캔 시작 stagger (업스트림 배려)
+        if not pending:
+            return True
+        if time.monotonic() - start > deadline_sec:
+            logger.warning("예열 시한 초과 — 나머지는 방문자 폴링이 이어받는다")
+            return False
+        await asyncio.sleep(round_gap_sec)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .pattern_scan import INDEX_SYMBOL, US_FALLBACK, PatternScanner, make_universe_fn
@@ -139,32 +168,24 @@ async def lifespan(app: FastAPI):
     # 키 공간이 유한(시장 2 × 기간 246)해 크기도 자연히 유계다.
     app.state.line_cooldowns = {}
 
-    # 하루 한 번(아침) 자동 예열: 갱신 시각이 지나면 패턴·터치 스캐너를 미리
-    # 돌려둔다 → 아침 첫 방문자가 몇 분짜리 스캔을 기다리지 않는다. 서버가
-    # UptimeRobot 등으로 깨어 있으면 이 태스크가 살아 정시에 예열한다.
+    # 하루 한 번(아침) 자동 예열: 갱신 시각이 지나면 패턴·터치 스캐너(국내+미국
+    # 전부)를 미리 돌려둔다 → 아침 첫 방문자가 몇 분짜리 스캔을 기다리지 않는다.
+    # 스캔을 '한 번 툭 치고' 끝내면 첫 시도가 부분/실패로 끝난 시장(주로 미국 —
+    # 야후 페이싱·세마포어 경쟁)은 다음 방문자가 올 때까지 방치된다. 그래서
+    # 네 스캐너 모두 완주(하루 고정)될 때까지 폴링 방문자처럼 반복해서 킥한다.
     # (맞춤선은 기간별 on-demand 라 예열 대상에서 제외)
     prewarm_targets = (list(app.state.scanners.values())
                        + list(app.state.touch_scanners.values()))
 
     async def _daily_prewarm() -> None:
         from .pattern_scan import _next_daily_boundary
-        # 부팅 직후 1회 예열 — 배포/재시작 후 첫 방문자 대기 제거
-        for sc in prewarm_targets:
-            try:
-                await sc.snapshot()
-            except Exception:  # noqa: BLE001
-                logger.warning("예열 스냅샷 실패", exc_info=True)
-            await asyncio.sleep(1)
+        # 부팅 직후 — 배포/재시작 뒤에도 방문자 없이 결과가 준비되게
+        await _prewarm_until_frozen(prewarm_targets)
         while True:
             now = time.time()
-            await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now))
-            # 경계 통과 → 고정 결과가 stale → snapshot 이 백그라운드 재스캔을 킥
-            for sc in prewarm_targets:
-                try:
-                    await sc.snapshot()
-                except Exception:  # noqa: BLE001
-                    logger.warning("아침 예열 스냅샷 실패", exc_info=True)
-                await asyncio.sleep(2)  # 업스트림 배려용 약간의 stagger
+            # 경계 +5초: 통과 직후 _fresh 가 확실히 stale 로 판정되게 여유
+            await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now + 5))
+            await _prewarm_until_frozen(prewarm_targets)
 
     app.state.prewarm_task = asyncio.create_task(_daily_prewarm())
     yield

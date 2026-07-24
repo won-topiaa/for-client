@@ -35,8 +35,22 @@ LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 �
 # 하루 한 번(아침) 갱신: 완주(양호 커버리지)한 결과는 이 시각(KST)까지 그대로
 # 고정된다 — 일봉 기준 스크리너라 장중에 마지막(미확정) 봉이 움직이며 목록이
 # 흔들리는 것을 막고, 매일 아침 직전 거래일 종가 기준으로 한 번만 새로 뽑는다.
-# 08:00 KST 는 미국 장 마감(전일)이 반영되고 국내 장(09:00)은 아직 안 연 시각.
-DAILY_REFRESH_HOUR_KST = int(os.getenv("DAILY_REFRESH_HOUR_KST", "8"))
+# 기본 06:30 KST = 미국 정규장 마감(겨울 06:00 / 여름 05:00 KST)의 30분~1시간
+# 30분 뒤라 미국 종가가 반영되고, 국내 장(09:00)은 아직 열리기 전이다.
+# 환경변수 DAILY_REFRESH_KST("HH:MM")로 조정 가능.
+def _parse_refresh_kst(raw: str) -> int:
+    """"HH:MM" → 자정 이후 분(minute-of-day). 형식이 이상하면 06:30."""
+    try:
+        h, m = raw.strip().split(":")
+        mod = int(h) * 60 + int(m)
+        if 0 <= mod < 24 * 60:
+            return mod
+    except (ValueError, AttributeError):
+        pass
+    return 6 * 60 + 30
+
+
+DAILY_REFRESH_MIN_KST = _parse_refresh_kst(os.getenv("DAILY_REFRESH_KST", "06:30"))
 _KST_OFFSET_SEC = 9 * 3600  # KST = UTC+9 (서머타임 없음)
 
 
@@ -47,7 +61,7 @@ def _next_daily_boundary(after_epoch: float) -> float:
     KST 로 환산해 날짜 경계를 잡으므로 서버 타임존과 무관하다."""
     kst = after_epoch + _KST_OFFSET_SEC
     day_start = kst - (kst % 86400)                    # 그날 00:00 KST
-    boundary = day_start + DAILY_REFRESH_HOUR_KST * 3600
+    boundary = day_start + DAILY_REFRESH_MIN_KST * 60
     if boundary <= kst:                                # 이미 지났으면 다음 날
         boundary += 86400
     return boundary - _KST_OFFSET_SEC                  # 다시 UTC epoch
