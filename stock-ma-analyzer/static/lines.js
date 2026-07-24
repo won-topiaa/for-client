@@ -77,6 +77,17 @@
   let pollFails = 0;
   let inFlight = false; // fetch 진행 중 표시 — 수동 재조회의 중복 발사 방지
   const charts = [];
+  // 첫 공개 최소 로딩 (패턴·터치 페이지와 동일한 규약): 결과가 즉시 와도
+  // 잠깐 스캔 애니메이션을 보여줘 '실제 계산' 신뢰를 준다. 첫 진입만 길게.
+  let revealed = false;
+  let firstReveal = true;
+  let loadStartMs = 0;
+  const nowMs = () => (window.performance && performance.now
+    ? performance.now() : Date.now());
+  function minRevealMs() {
+    return firstReveal ? 3000 + Math.random() * 1800   // 첫 진입 3.0~4.8초
+                       : 1200 + Math.random() * 800;   // 전환 1.2~2.0초
+  }
 
   function clampPeriod(v) {
     // Number("") === 0 이라 빈칸이 조용히 5일선으로 둔갑한다 — 명시적으로 거른다
@@ -117,7 +128,7 @@
 
   el.marketToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-market]");
-    if (!btn) return;
+    if (!btn || btn.dataset.market === market) return; // 같은 시장 재클릭 무시
     market = btn.dataset.market;
     Array.from(el.marketToggle.children).forEach((b) => {
       b.classList.toggle("active", b === btn);
@@ -209,7 +220,9 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
-      showParty(false);
+      revealed = false;
+      loadStartMs = nowMs();
+      showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
       el.status.innerHTML = `<span class="spinner"></span>${period}일선 스캔 준비 중…`;
     }
     try {
@@ -253,14 +266,38 @@
         pollTimer = setTimeout(() => load(true), 15000);
         return;
       }
+      const fp = matchFp(body);
+      const keepAlive = (body.refreshing || body.partial) ? 5000 : 30 * 60 * 1000;
+      // 첫 공개 최소 로딩 (패턴·터치와 동일) — 준비된 결과라도 잠깐 연출
+      if (!revealed) {
+        revealed = true;
+        const wait = Math.max(0, minRevealMs() - (nowMs() - loadStartMs));
+        firstReveal = false;
+        if (wait > 0) {
+          showParty(true);
+          pollTimer = setTimeout(() => {
+            if (seq !== reqSeq) return; // 그새 시장/기간을 바꿨으면 폐기
+            let nextMs = keepAlive;
+            try {
+              showParty(false);
+              render(body);
+              lastFp = fp;
+              renderedWhileRefreshing = !!body.refreshing;
+            } catch (e2) {
+              lastFp = null;   // 재렌더 강제
+              nextMs = 4000;   // 곧 회복 폴
+            }
+            pollTimer = setTimeout(() => load(true), nextMs);
+          }, wait);
+          return;
+        }
+      }
       showParty(false);
       if (isPoll && renderedWhileRefreshing && body.refreshing && !body.partial) {
         el.status.textContent = statusText(body);
         pollTimer = setTimeout(() => load(true), 5000);
         return;
       }
-      const fp = matchFp(body);
-      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
       if (isPoll && fp === lastFp) {
         el.status.textContent = statusText(body);
         pollTimer = setTimeout(() => load(true), keepAlive);

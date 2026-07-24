@@ -158,12 +158,17 @@
   // 보여줘 '진짜로 훑는다'는 신뢰를 준다 (한 화면 진입당 1회). 실제 스캔이
   // 그보다 오래 걸리면 추가 지연은 없다.
   let revealed = false;
+  let firstReveal = true; // 첫 진입만 길게 — 이후 카드/시장 전환은 짧은 확인만
   let loadStartMs = 0;
   const nowMs = () => (window.performance && performance.now
     ? performance.now() : Date.now());
-  function minRevealMs() { return 3000 + Math.random() * 1800; } // 3.0~4.8초
+  function minRevealMs() {
+    return firstReveal ? 3000 + Math.random() * 1800   // 첫 진입 3.0~4.8초
+                       : 1200 + Math.random() * 800;   // 전환 1.2~2.0초
+  }
 
   function activateCard(card) {
+    if (card.dataset.pattern === pattern) return; // 같은 카드 재클릭 — 재스캔 불필요
     pattern = card.dataset.pattern;
     Array.from(el.cards.children).forEach((c) => {
       c.classList.toggle("active", c === card);
@@ -186,7 +191,7 @@
 
   el.marketToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-market]");
-    if (!btn) return;
+    if (!btn || btn.dataset.market === market) return; // 같은 시장 재클릭 무시
     market = btn.dataset.market;
     Array.from(el.marketToggle.children).forEach((b) => {
       b.classList.toggle("active", b === btn);
@@ -309,13 +314,14 @@
       // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 차트를
       // 재생성하지 않아 깜빡임이 없다 (문구만 갱신).
       const fp = matchFp(body);
-      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
+      const keepAlive = (body.refreshing || body.partial) ? 5000 : 30 * 60 * 1000;
       // 이 화면 진입 후 '첫 공개'는 최소 로딩 시간을 지킨다. 실제 스캔이 이미
       // 그만큼 걸렸으면 wait=0 이라 즉시, 결과가 순식간에 왔으면 남은 만큼 더
       // 애니메이션을 보여준 뒤 공개한다.
       if (!revealed) {
         revealed = true;
         const wait = Math.max(0, minRevealMs() - (nowMs() - loadStartMs));
+        firstReveal = false;
         if (wait > 0) {
           showParty(true);
           pollTimer = setTimeout(() => {

@@ -78,14 +78,18 @@
   // 보여줘 '진짜로 훑는다'는 신뢰를 준다 (한 화면 진입당 1회). 실제 스캔이
   // 그보다 오래 걸리면 추가 지연은 없다.
   let revealed = false;
+  let firstReveal = true; // 첫 진입만 길게 — 이후 시장 전환은 짧은 확인만
   let loadStartMs = 0;
   const nowMs = () => (window.performance && performance.now
     ? performance.now() : Date.now());
-  function minRevealMs() { return 3000 + Math.random() * 1800; } // 3.0~4.8초
+  function minRevealMs() {
+    return firstReveal ? 3000 + Math.random() * 1800   // 첫 진입 3.0~4.8초
+                       : 1200 + Math.random() * 800;   // 전환 1.2~2.0초
+  }
 
   el.marketToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-market]");
-    if (!btn) return;
+    if (!btn || btn.dataset.market === market) return; // 같은 시장 재클릭 무시
     market = btn.dataset.market;
     Array.from(el.marketToggle.children).forEach((b) => {
       b.classList.toggle("active", b === btn);
@@ -203,12 +207,13 @@
       }
       // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 재렌더 없음
       const fp = matchFp(body);
-      const keepAlive = (body.refreshing || body.partial) ? 5000 : 5 * 60 * 1000;
+      const keepAlive = (body.refreshing || body.partial) ? 5000 : 30 * 60 * 1000;
       // 이 화면 진입 후 '첫 공개'는 최소 로딩 시간을 지킨다 (즉시 오는 고정
       // 결과라도 몇 초간 스캔 애니메이션). 실제 스캔이 더 오래 걸렸으면 wait=0.
       if (!revealed) {
         revealed = true;
         const wait = Math.max(0, minRevealMs() - (nowMs() - loadStartMs));
+        firstReveal = false;
         if (wait > 0) {
           showParty(true);
           pollTimer = setTimeout(() => {
