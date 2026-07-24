@@ -765,3 +765,21 @@ def test_mobile_fold_wiring(client):
             assert ".mfold-btn" in html, f"{page} 에 접기 버튼 CSS 없음"
     finally:
         client.post("/api/auth/logout")
+
+
+def test_production_mode_boot_with_prewarm(monkeypatch):
+    """운영 모드(free 공급자) 부팅 경로 — 샘플 모드 스위트가 못 보던 맹점.
+
+    예열 태스크가 생성·생존하고, 예열이 도는 동안에도 페이지/API 가 정상
+    서빙되며, 종료가 깨끗해야 한다 (네트워크가 막힌 환경에서도 부팅 자체는
+    절대 실패하면 안 된다)."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("MA_PROVIDER", "free")
+    with TestClient(server_mod.app) as c:
+        assert c.get("/api/health").json()["provider"] == "free"
+        task = server_mod.app.state.prewarm_task
+        assert task is not None and not task.done(), "예열 태스크가 즉사함"
+        assert c.get("/").status_code == 200
+        assert c.get("/api/patterns?pattern=stage2&market=kr").status_code == 200

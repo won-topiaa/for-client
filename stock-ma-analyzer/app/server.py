@@ -93,17 +93,26 @@ async def _prewarm_until_frozen(targets, deadline_sec: float = 5400.0,
     이렇게 '봐주지' 않으면 첫 스캔이 부분으로 끝난 시장(주로 미국)은 방문자가
     올 때까지 방치된다. 완료 시 True, 시한(기본 90분) 초과 시 False.
     round_gap(70초)은 부분 결과 쿨다운·휴지(60초)보다 약간 길게 잡는다."""
+    from .pattern_scan import SCAN_SOFT_BUDGET_SEC
+
     start = time.monotonic()
     while True:
         pending = False
         for sc in targets:
             try:
                 await sc.snapshot()
+                # 순차 예열: 이 스캐너의 스캔이 끝날 때까지 기다렸다 다음으로.
+                # 4개를 동시에 터뜨리면 부팅/아침 직후 업스트림에 요청이 몰려
+                # 전면 차단(fail-fast) → 방문자에게 '스캔 실패'가 보일 확률이
+                # 커진다. 방문자 트리거 스캔은 그대로 동시 허용 — 예열만 순하게.
+                task = getattr(sc, "_task", None)
+                if task is not None and not task.done():
+                    await asyncio.wait({task}, timeout=SCAN_SOFT_BUDGET_SEC + 60)
             except Exception:  # noqa: BLE001
                 logger.warning("예열 스냅샷 실패", exc_info=True)
             if not (sc._daily_frozen and sc._fresh()):
                 pending = True
-            await asyncio.sleep(kick_gap_sec)  # 스캔 시작 stagger (업스트림 배려)
+            await asyncio.sleep(kick_gap_sec)  # 스캔 사이 간격 (업스트림 배려)
         if not pending:
             return True
         if time.monotonic() - start > deadline_sec:
@@ -179,6 +188,9 @@ async def lifespan(app: FastAPI):
 
     async def _daily_prewarm() -> None:
         from .pattern_scan import _next_daily_boundary
+        # 부팅 직후 10초 유예 — 배포 전환(헬스체크·트래픽 이동)이 끝난 뒤에
+        # 예열을 시작해, 재시작 순간의 업스트림 요청 폭주를 피한다
+        await asyncio.sleep(10)
         while True:
             # 예상 못 한 예외로 예열 루프가 조용히 죽으면 이후 매일 아침 예열이
             # 전부 사라진다 — 한 사이클의 어떤 실패도 다음 사이클을 막지 않게
