@@ -54,6 +54,7 @@ from .pattern_scan import (
     BaseScanner,
     UniverseFn,
     _shared_fetch_sem,
+    _strip_forming_bar,
 )
 from .providers.base import Provider, SymbolInfo
 from .providers.cache import NegativeCacheSkip
@@ -104,8 +105,9 @@ class LineScanner(BaseScanner):
     시세 캐시(FETCH_BARS=1050, 30분 TTL)는 패턴/터치 스캐너와 공유하므로,
     다른 스캐너가 이미 돈 뒤라면 네트워크 없이 CPU 계산만으로 완주한다."""
 
-    def __init__(self, provider: Provider, universe_fn: UniverseFn, period: int):
-        super().__init__(provider, universe_fn)
+    def __init__(self, provider: Provider, universe_fn: UniverseFn, period: int,
+                 market: str = "kr"):
+        super().__init__(provider, universe_fn, market)
         self.period = int(period)
         # min_touches=3: 특정 선 하나를 지목하는 화면이라 터치 5회를 요구하면
         # 장기선(200일 등)이 과도하게 걸러진다 — 방향별 결정 2회 기준(아래)이
@@ -164,6 +166,7 @@ class LineScanner(BaseScanner):
                     await asyncio.sleep(0.02 + random.random() * 0.08)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
                                                      use_fail_cache=True)
+                    df = _strip_forming_bar(df, self.market)  # 확정 봉만
                     if len(df) < MIN_BARS:
                         raise ValueError("데이터 부족")
                     item = await asyncio.to_thread(self._analyze_sync, info, df)

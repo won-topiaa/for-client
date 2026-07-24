@@ -133,6 +133,46 @@ US_FALLBACK = [
 
 UniverseFn = Callable[[], Awaitable[list[SymbolInfo]]]
 
+# ── 확정 봉만 사용: 스캔이 하루 중 언제 돌아도 같은 결과가 나오게 ──
+# 장 마감 + 여유 시각(분 단위, 현지 시간). 마지막 봉의 날짜가 '현지 오늘'인데
+# 아직 이 시각 전이면 진행 중(미확정) 봉이므로 떼고 계산한다 — 예열(06:30)이
+# 실패한 날 장중 첫 방문자가 킥한 스캔도 예열과 똑같이 '직전 확정 종가 기준'
+# 목록을 만들고, 그게 하루 고정되므로 기준이 날마다 달라지지 않는다.
+_KR_SESSION_END_MIN = 15 * 60 + 40   # 15:30 마감 + 10분 여유 (KST)
+_US_SESSION_END_MIN = 16 * 60 + 10   # 16:00 마감 + 10분 여유 (ET)
+
+
+def _now_market_minutes(market: str, now_epoch: float) -> tuple[Any, int]:
+    """(현지 오늘 날짜, 자정 이후 분). US 는 zoneinfo 로 서머타임 반영."""
+    from datetime import datetime, timedelta, timezone
+
+    if market == "us":
+        try:
+            from zoneinfo import ZoneInfo
+            local = datetime.fromtimestamp(now_epoch, ZoneInfo("America/New_York"))
+        except Exception:  # noqa: BLE001 — tzdata 없으면 EST(UTC-5) 근사
+            local = datetime.fromtimestamp(now_epoch, timezone(timedelta(hours=-5)))
+    else:
+        local = datetime.fromtimestamp(now_epoch, timezone(timedelta(hours=9)))
+    return local.date(), local.hour * 60 + local.minute
+
+
+def _strip_forming_bar(df: pd.DataFrame, market: str,
+                       now_epoch: float | None = None) -> pd.DataFrame:
+    """마지막 일봉이 '현지 오늘 + 장 마감 전'이면 진행 중인 봉이므로 떼어낸다."""
+    if df is None or len(df) == 0:
+        return df
+    now_epoch = time.time() if now_epoch is None else now_epoch
+    today, minute = _now_market_minutes(market, now_epoch)
+    end_min = _US_SESSION_END_MIN if market == "us" else _KR_SESSION_END_MIN
+    try:
+        last_date = pd.Timestamp(df["date"].iloc[-1]).date()
+    except Exception:  # noqa: BLE001 — 날짜 파싱 불가 시 그대로 사용
+        return df
+    if last_date == today and minute < end_min:
+        return df.iloc[:-1]
+    return df
+
 
 def _unwrap(provider: Provider):
     """CachingProvider 래퍼를 벗겨 원 공급자(listing 접근용)를 얻는다."""
@@ -202,9 +242,11 @@ class BaseScanner:
     유니버스를 훑고 `_finish(results, ...)` 로 결과를 확정한다.
     """
 
-    def __init__(self, provider: Provider, universe_fn: UniverseFn):
+    def __init__(self, provider: Provider, universe_fn: UniverseFn,
+                 market: str = "kr"):
         self.provider = provider
         self.universe_fn = universe_fn
+        self.market = market             # 확정 봉 판정(현지 장 마감)용
         self._results: dict[str, Any] | None = None
         self._generated = 0.0
         self._ttl = RESULT_TTL_SEC
@@ -335,8 +377,8 @@ class BaseScanner:
 
 class PatternScanner(BaseScanner):
     def __init__(self, provider: Provider, universe_fn: UniverseFn,
-                 index_symbol: str | None = None):
-        super().__init__(provider, universe_fn)
+                 index_symbol: str | None = None, market: str = "kr"):
+        super().__init__(provider, universe_fn, market)
         self.index_symbol = index_symbol
 
     async def _scan_inner(self) -> None:
@@ -349,6 +391,7 @@ class PatternScanner(BaseScanner):
         if self.index_symbol:
             try:
                 idx_df = await self.provider.candles(self.index_symbol, "day", 300)
+                idx_df = _strip_forming_bar(idx_df, self.market)
                 index_close = idx_df["close"].to_numpy(float)
             except Exception:
                 logger.info("지수(%s) 조회 실패 — RS 없이 스캔", self.index_symbol)
@@ -401,6 +444,7 @@ class PatternScanner(BaseScanner):
                     await asyncio.sleep(0.02 + random.random() * 0.08)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
                                                      use_fail_cache=True)
+                    df = _strip_forming_bar(df, self.market)  # 확정 봉만
                     if len(df) < 60:
                         raise ValueError("데이터 부족")
                     entry = await asyncio.to_thread(

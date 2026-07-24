@@ -1304,3 +1304,42 @@ def test_partial_result_not_daily_frozen():
     scanner._partial = True
     scanner._finish({"patterns": {}}, universe_n=10, scanned_n=3, started=0.0)
     assert scanner._daily_frozen is False    # 부분 결과는 고정 안 함
+
+
+def test_strip_forming_bar_rules():
+    """확정 봉만 사용: 마지막 봉이 '현지 오늘 + 장 마감 전'일 때만 떼어낸다 —
+    예열 실패 후 장중 방문자가 킥한 스캔도 아침 예열과 같은 기준이 되게."""
+    import pandas as pd
+
+    from app.pattern_scan import _strip_forming_bar
+
+    def df_ending(date_str, n=5):
+        dates = pd.bdate_range(end=date_str, periods=n)
+        return pd.DataFrame({"date": dates, "open": 1.0, "high": 1.0,
+                             "low": 1.0, "close": 1.0, "volume": 1.0})
+
+    # 국내: 2024-01-03(수) 12:00 KST = 03:00 UTC — 장중이므로 오늘 봉 제거
+    noon_kst = pd.Timestamp("2024-01-03 03:00:00", tz="UTC").timestamp()
+    df = df_ending("2024-01-03")
+    out = _strip_forming_bar(df, "kr", now_epoch=noon_kst)
+    assert len(out) == len(df) - 1
+    # 국내: 같은 날 16:00 KST(마감 후) — 오늘 봉은 확정이므로 유지
+    after_close = pd.Timestamp("2024-01-03 07:00:00", tz="UTC").timestamp()
+    assert len(_strip_forming_bar(df, "kr", now_epoch=after_close)) == len(df)
+    # 국내: 마지막 봉이 어제 날짜면 언제든 유지
+    y = df_ending("2024-01-02")
+    assert len(_strip_forming_bar(y, "kr", now_epoch=noon_kst)) == len(y)
+
+    # 미국: 2024-01-03 10:00 ET(장중, 15:00 UTC) — 오늘(ET) 봉 제거
+    us_session = pd.Timestamp("2024-01-03 15:00:00", tz="UTC").timestamp()
+    udf = df_ending("2024-01-03")
+    assert len(_strip_forming_bar(udf, "us", now_epoch=us_session)) == len(udf) - 1
+    # 미국: 같은 날 20:00 ET(마감 후, 01:00 UTC 다음날) — 유지
+    us_closed = pd.Timestamp("2024-01-04 01:00:00", tz="UTC").timestamp()
+    assert len(_strip_forming_bar(udf, "us", now_epoch=us_closed)) == len(udf)
+    # 06:30 KST(= 전날 16:30/17:30 ET): 방금 마감된 미국 봉은 유지돼야 한다
+    kst_dawn = pd.Timestamp("2024-01-03 21:30:00", tz="UTC").timestamp()  # 01-04 06:30 KST
+    assert len(_strip_forming_bar(udf, "us", now_epoch=kst_dawn)) == len(udf)
+    # 빈 DF 안전
+    empty = df_ending("2024-01-03").iloc[0:0]
+    assert len(_strip_forming_bar(empty, "kr", now_epoch=noon_kst)) == 0

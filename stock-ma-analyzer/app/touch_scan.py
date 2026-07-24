@@ -33,6 +33,7 @@ from .pattern_scan import (
     BaseScanner,
     UniverseFn,
     _shared_fetch_sem,
+    _strip_forming_bar,
 )
 from .providers.base import Provider, SymbolInfo
 from .providers.cache import NegativeCacheSkip
@@ -71,8 +72,9 @@ def _support_success_rate(stat) -> float:
 
 class TouchScanner(BaseScanner):
     def __init__(self, provider: Provider, universe_fn: UniverseFn,
-                 candidates: list[int], min_touches: int = 5):
-        super().__init__(provider, universe_fn)
+                 candidates: list[int], min_touches: int = 5,
+                 market: str = "kr"):
+        super().__init__(provider, universe_fn, market)
         # 단기선(기본 5일선)은 터치 스크리너 후보에서 뺀다 — 지지선으로서 신뢰도가
         # 낮기 때문. 개별 분석에는 그대로 남고, 여기서만 좁힌다.
         self.candidates = [p for p in candidates if p >= TOUCH_MIN_MA_PERIOD]
@@ -126,6 +128,7 @@ class TouchScanner(BaseScanner):
                     await asyncio.sleep(0.02 + random.random() * 0.08)
                     df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
                                                      use_fail_cache=True)
+                    df = _strip_forming_bar(df, self.market)  # 확정 봉만
                     if len(df) < MIN_BARS:
                         raise ValueError("데이터 부족")
                     item = await asyncio.to_thread(self._analyze_sync, info, df)

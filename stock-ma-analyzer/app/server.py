@@ -149,13 +149,13 @@ async def lifespan(app: FastAPI):
         "us": make_universe_fn(provider, "us", us_fallback),
     }
     app.state.scanners = {
-        m: PatternScanner(provider, universe_fns[m], INDEX_SYMBOL[m])
+        m: PatternScanner(provider, universe_fns[m], INDEX_SYMBOL[m], market=m)
         for m in ("kr", "us")
     }
     app.state.touch_scanners = {
         m: TouchScanner(provider, universe_fns[m],
                         candidates=settings.candidates["day"],
-                        min_touches=settings.min_touches["day"])
+                        min_touches=settings.min_touches["day"], market=m)
         for m in ("kr", "us")
     }
     # 맞춤 이평선 스크리너: (시장, 기간)별 스캐너를 요청 시 lazily 생성.
@@ -179,13 +179,21 @@ async def lifespan(app: FastAPI):
 
     async def _daily_prewarm() -> None:
         from .pattern_scan import _next_daily_boundary
-        # 부팅 직후 — 배포/재시작 뒤에도 방문자 없이 결과가 준비되게
-        await _prewarm_until_frozen(prewarm_targets)
         while True:
-            now = time.time()
-            # 경계 +5초: 통과 직후 _fresh 가 확실히 stale 로 판정되게 여유
-            await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now + 5))
-            await _prewarm_until_frozen(prewarm_targets)
+            # 예상 못 한 예외로 예열 루프가 조용히 죽으면 이후 매일 아침 예열이
+            # 전부 사라진다 — 한 사이클의 어떤 실패도 다음 사이클을 막지 않게
+            # 감싼다. (그래도 방문자 폴링 = 예열과 동일 효과라는 최종 안전망 존재)
+            try:
+                # 부팅 직후/경계 통과 후 — 방문자 없이도 결과가 준비되게
+                await _prewarm_until_frozen(prewarm_targets)
+                now = time.time()
+                # 경계 +5초: 통과 직후 _fresh 가 확실히 stale 로 판정되게 여유
+                await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now + 5))
+            except asyncio.CancelledError:
+                raise                      # 종료 시그널은 그대로 전파
+            except Exception:  # noqa: BLE001
+                logger.exception("예열 사이클 실패 — 60초 후 계속")
+                await asyncio.sleep(60)
 
     app.state.prewarm_task = asyncio.create_task(_daily_prewarm())
     yield
@@ -790,7 +798,8 @@ def _line_scanner(market: str, period: int):
     if sc is None:
         if len(reg) >= _MAX_LINE_SCANNERS and not _evict_line_slot(reg, cooldowns):
             return None                   # 전부 정상 스캔 중 — 잠시 후 다시
-        sc = LineScanner(app.state.provider, app.state.universe_fns[market], period)
+        sc = LineScanner(app.state.provider, app.state.universe_fns[market], period,
+                         market=market)
         # 같은 키의 이전 인스턴스가 남긴 휴지·백오프를 승계한다 — 퇴출→재생성이
         # 쿨다운을 초기화하면 스캔 churn 방지 장치 전체가 우회된다
         sc._scan_ended, sc._retry_wait = cooldowns.get(
