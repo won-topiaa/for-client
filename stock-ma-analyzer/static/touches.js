@@ -73,6 +73,7 @@
   let renderedWhileRefreshing = false;
   let lastFp = null; // 직전 렌더의 지문 — 같은 결과 재렌더(깜빡임) 방지
   let pollFails = 0;
+  let lastGen = null; // 마지막으로 렌더한 스냅숏 식별자 — 변화 없으면 서버가 본문 생략
   const charts = [];
   // 첫 공개 최소 로딩: 결과가 이미 계산돼 즉시 와도 몇 초간 스캔 애니메이션을
   // 보여줘 '진짜로 훑는다'는 신뢰를 준다 (한 화면 진입당 1회). 실제 스캔이
@@ -163,13 +164,15 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
+      lastGen = null;
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
       el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
     }
     try {
-      const r = await fetch(`/api/touches?market=${market}`,
+      const r = await fetch(`/api/touches?market=${market}` +
+                            (lastGen != null ? `&since=${lastGen}` : ""),
                             { signal: pollSignal() });
       if (seq !== reqSeq) return;
       if (r.status === 401) {  // 세션 만료 등 — 로그인 페이지로
@@ -180,6 +183,11 @@
       const body = await r.json();
       if (seq !== reqSeq) return;
       pollFails = 0;
+      if (body.unchanged) {
+        // 서버: 마지막 렌더 이후 변화 없음 — 본문 전송 생략 (유휴 트래픽·CPU 절감)
+        pollTimer = setTimeout(() => load(true), 30 * 60 * 1000);
+        return;
+      }
       if (body.status === "running") {
         if (lastBody) {
           // 서버 재시작 등으로 done -> running 으로 되돌아간 경우: 이전 결과 정리
@@ -205,6 +213,7 @@
         pollTimer = setTimeout(() => load(true), 15000);
         return;
       }
+      lastGen = body.generatedAt;
       // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 재렌더 없음
       const fp = matchFp(body);
       const keepAlive = (body.refreshing || body.partial) ? 5000 : 30 * 60 * 1000;

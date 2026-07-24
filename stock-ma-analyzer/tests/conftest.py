@@ -35,3 +35,16 @@ def _reset_rate_windows():
     mod = sys.modules.get("app.server")
     if mod is not None:
         mod._rate_windows.clear()
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_windows():
+    """레이트리밋 창을 테스트마다 초기화 — 모듈 스코프 클라이언트로 수십 개
+    테스트가 같은 IP 버킷을 공유하므로, 누적 카운트가 뒤 테스트를 429 로
+    오염시키지 않게 한다."""
+    try:
+        from app import server
+        server._rate_windows.clear()
+    except Exception:
+        pass
+    yield

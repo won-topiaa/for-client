@@ -75,6 +75,7 @@
   let renderedWhileRefreshing = false;
   let lastFp = null;
   let pollFails = 0;
+  let lastGen = null; // 마지막으로 렌더한 스냅숏 식별자 — 변화 없으면 서버가 본문 생략
   let inFlight = false; // fetch 진행 중 표시 — 수동 재조회의 중복 발사 방지
   const charts = [];
   // 첫 공개 최소 로딩 (패턴·터치 페이지와 동일한 규약): 결과가 즉시 와도
@@ -220,13 +221,15 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
+      lastGen = null;
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
       el.status.innerHTML = `<span class="spinner"></span>${period}일선 스캔 준비 중…`;
     }
     try {
-      const r = await fetch(`/api/lines?market=${market}&period=${period}`,
+      const r = await fetch(`/api/lines?market=${market}&period=${period}` +
+                            (lastGen != null ? `&since=${lastGen}` : ""),
                             { signal: pollSignal() });
       if (seq !== reqSeq) return;
       if (r.status === 401) {  // 세션 만료 등 — 로그인 페이지로
@@ -244,6 +247,11 @@
       const body = await r.json();
       if (seq !== reqSeq) return;
       pollFails = 0;
+      if (body.unchanged) {
+        // 서버: 마지막 렌더 이후 변화 없음 — 본문 전송 생략 (유휴 트래픽·CPU 절감)
+        pollTimer = setTimeout(() => load(true), 30 * 60 * 1000);
+        return;
+      }
       if (body.status === "running") {
         if (lastBody) {
           clearLists();
@@ -266,6 +274,7 @@
         pollTimer = setTimeout(() => load(true), 15000);
         return;
       }
+      lastGen = body.generatedAt;
       const fp = matchFp(body);
       const keepAlive = (body.refreshing || body.partial) ? 5000 : 30 * 60 * 1000;
       // 첫 공개 최소 로딩 (패턴·터치와 동일) — 준비된 결과라도 잠깐 연출

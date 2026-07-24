@@ -1323,8 +1323,8 @@ def test_strip_forming_bar_rules():
     df = df_ending("2024-01-03")
     out = _strip_forming_bar(df, "kr", now_epoch=noon_kst)
     assert len(out) == len(df) - 1
-    # 국내: 같은 날 16:00 KST(마감 후) — 오늘 봉은 확정이므로 유지
-    after_close = pd.Timestamp("2024-01-03 07:00:00", tz="UTC").timestamp()
+    # 국내: 같은 날 17:00 KST(가장 늦은 마감 16:30+여유 뒤) — 확정이므로 유지
+    after_close = pd.Timestamp("2024-01-03 08:00:00", tz="UTC").timestamp()
     assert len(_strip_forming_bar(df, "kr", now_epoch=after_close)) == len(df)
     # 국내: 마지막 봉이 어제 날짜면 언제든 유지
     y = df_ending("2024-01-02")
@@ -1343,3 +1343,75 @@ def test_strip_forming_bar_rules():
     # 빈 DF 안전
     empty = df_ending("2024-01-03").iloc[0:0]
     assert len(_strip_forming_bar(empty, "kr", now_epoch=noon_kst)) == 0
+
+
+def test_new_day_resets_coverage_highwater():
+    """어제 고정된 커버리지(예: 300)를 오늘의 최대치(299)가 영원히 못 넘으면
+    완주 스캔이 무한히 버려져 며칠 묵은 목록이 계속 서빙되던 구멍 — 경계가
+    지난 결과는 고수위 기준에서 제외돼 새 완주가 그대로 채택돼야 한다."""
+    import time as _t
+
+    import app.pattern_scan as ps
+    from app.pattern_scan import PatternScanner
+    from app.providers.base import SymbolInfo, validate_candles
+
+    closes, volume = _stage2_series()
+    good_df = validate_candles(_df(closes, volume=volume))
+
+    class Switchable:
+        name = "fake"
+        degraded = False
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            if self.degraded and symbol == "S2":
+                raise RuntimeError("상장폐지")   # 오늘은 1종목이 사라짐
+            return good_df
+
+        async def search(self, q):
+            return []
+
+    provider = Switchable()
+
+    async def universe_fn():
+        return [SymbolInfo(f"S{i}", f"n{i}", "T") for i in range(3)]
+
+    scanner = PatternScanner(provider, universe_fn)
+
+    async def go():
+        await scanner.snapshot()
+        await scanner._task                      # 어제 스캔: scanned=3, 고정
+        assert scanner._results["scanned"] == 3 and scanner._daily_frozen
+        # 하루 경과 + 오늘은 1종목이 영구 실패
+        scanner._generated_wall = _t.time() - 2 * 86400
+        scanner._scan_ended -= ps.RESULT_TTL_SEC
+        provider.degraded = True
+        await scanner.snapshot()                 # 아침 재스캔 시작
+        await scanner._task
+        snap = await scanner.snapshot()
+        # 새 날의 완주(2/3)는 어제 고수위(3)에 막히지 않고 채택된다
+        assert snap["scanned"] == 2, snap.get("scanned")
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
+def test_sma_cumsum_matches_pandas_rolling():
+    """cumsum 방식 sma 가 pandas rolling 과 수치·NaN 워밍업 모두 일치하는지
+    (유한 입력 허용 오차 1e-6 — 출력 반올림 2자리 대비 무시 가능)."""
+    import numpy as np
+    import pandas as pd
+
+    from app.analysis import sma
+
+    rng = np.random.default_rng(3)
+    x = 700000 * np.exp(np.cumsum(rng.normal(0, 0.02, 5000)))
+    for w in (5, 20, 60, 240):
+        ours = sma(x, w)
+        ref = pd.Series(x).rolling(w).mean().to_numpy()
+        assert np.isnan(ours[:w - 1]).all()               # 워밍업 NaN 동일
+        assert np.nanmax(np.abs(ours - ref)) < 1e-6
+    # 짧은 입력·비유한 입력(폴백 경로)도 안전
+    assert np.isnan(sma(np.array([1.0, 2.0]), 5)).all()
+    with_nan = np.array([1.0, np.nan, 3.0, 4.0, 5.0])
+    ref = pd.Series(with_nan).rolling(2).mean().to_numpy()
+    got = sma(with_nan, 2)
+    assert np.allclose(got, ref, equal_nan=True)

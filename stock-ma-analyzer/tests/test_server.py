@@ -616,7 +616,7 @@ def test_line_registry_cooldown_survives_eviction(client):
     try:
         sc = srv._line_scanner("kr", 33)
         sc._scan_ended, sc._retry_wait = 123.0, 240.0  # 스캔을 마친 상태 시뮬레이션
-        for p in range(40, 48):                        # 8개 키로 등록소를 채워 퇴출 유발
+        for p in range(40, 56):                        # 상한(16)만큼 채워 퇴출 유발
             srv._line_scanner("kr", p)
         assert ("kr", 33) not in reg                   # 가장 오래된 키가 밀려남
         sc2 = srv._line_scanner("kr", 33)              # 재생성
@@ -657,7 +657,7 @@ def test_line_registry_reclaims_hung_scanner(client):
     reg.clear(); cooldowns.clear()
     try:
         # 전부 '정상 스캔 중'(시작 10초 전)이면 슬롯이 없어 None (429 경로)
-        for p in range(40, 48):
+        for p in range(40, 56):
             reg[("kr", p)] = FakeScanner(started_ago=10)
         assert srv._line_scanner("kr", 99) is None
 
@@ -688,3 +688,63 @@ def test_lines_rate_limit(monkeypatch):
     server_mod._rate_windows.clear()
     assert codes[:3] == [200, 200, 200]
     assert 429 in codes[3:]
+
+
+def test_line_eviction_protects_frozen_results(client):
+    """등록소가 가득 차도 '하루 고정(신선)' 결과는 퇴출하지 않는다 — 키를
+    돌려가며 요청하는 것만으로 하루 1회 원칙이 재스캔 churn 으로 바뀌지 않게.
+    전부 신선하면 429 백프레셔."""
+    import time as _t
+
+    import app.server as srv
+
+    class FrozenIdle:
+        _task = None
+        _daily_frozen = True
+        _scan_ended = 0.0
+        _retry_wait = 60.0
+        _scan_started = 0.0
+
+        def _fresh(self):
+            return True
+
+    reg = srv.app.state.line_scanners
+    cooldowns = srv.app.state.line_cooldowns
+    saved_reg, saved_cd = dict(reg), dict(cooldowns)
+    reg.clear(); cooldowns.clear()
+    try:
+        for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
+            reg[("kr", p)] = FrozenIdle()
+        assert srv._line_scanner("kr", 99) is None   # 고정 결과 보호 → 429
+        # 하나가 신선하지 않으면(만료) 그 슬롯만 회수된다
+        class StaleIdle(FrozenIdle):
+            def _fresh(self):
+                return False
+        reg[("kr", 40)] = StaleIdle()
+        sc = srv._line_scanner("kr", 99)
+        assert sc is not None and ("kr", 40) not in reg
+    finally:
+        reg.clear(); reg.update(saved_reg)
+        cooldowns.clear(); cooldowns.update(saved_cd)
+
+
+def test_polling_unchanged_short_circuit(client):
+    """안정(비갱신) 스냅숏과 같은 since 로 폴링하면 본문 없이 unchanged 로
+    짧게 답한다 — 하루 고정 데이터의 유휴 재전송 제거."""
+    import time as _t
+
+    # 패턴 스캔이 완료될 때까지 대기 (샘플 공급자라 수 초)
+    for _ in range(240):
+        body = client.get("/api/patterns?pattern=stage2&market=kr").json()
+        if body.get("status") == "done" and not body.get("refreshing") \
+                and not body.get("partial"):
+            break
+        _t.sleep(0.5)
+    else:
+        raise AssertionError("샘플 스캔이 완료되지 않음")
+    gen = body["generatedAt"]
+    again = client.get(f"/api/patterns?pattern=stage2&market=kr&since={gen}").json()
+    assert again.get("unchanged") is True and "matches" not in again
+    # 다른 since 면 전체 본문
+    full = client.get("/api/patterns?pattern=stage2&market=kr&since=1.0").json()
+    assert "matches" in full

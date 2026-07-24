@@ -185,7 +185,19 @@ async def lifespan(app: FastAPI):
             # 감싼다. (그래도 방문자 폴링 = 예열과 동일 효과라는 최종 안전망 존재)
             try:
                 # 부팅 직후/경계 통과 후 — 방문자 없이도 결과가 준비되게
-                await _prewarm_until_frozen(prewarm_targets)
+                ok = await _prewarm_until_frozen(prewarm_targets)
+                if not ok:
+                    # 아침 상류 장애가 90분+ 지속 — 내일까지 포기하면 방문자
+                    # 없는 시장은 하루 종일 비어 있다. 30분 뒤 다시 봐준다.
+                    await asyncio.sleep(1800)
+                    continue
+                # 하루 한 번 만료 세션 정리 (부팅 시 1회 + 매 아침) — 로그인이
+                # 쌓기만 하고 지우는 곳이 없으면 무료 DB 가 세션 행으로 붓는다
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(app.state.auth.purge_expired), 15)
+                except Exception:  # noqa: BLE001
+                    logger.warning("만료 세션 정리 실패 (계속)", exc_info=True)
                 now = time.time()
                 # 경계 +5초: 통과 직후 _fresh 가 확실히 stale 로 판정되게 여유
                 await asyncio.sleep(max(1.0, _next_daily_boundary(now) - now + 5))
@@ -195,7 +207,12 @@ async def lifespan(app: FastAPI):
                 logger.exception("예열 사이클 실패 — 60초 후 계속")
                 await asyncio.sleep(60)
 
-    app.state.prewarm_task = asyncio.create_task(_daily_prewarm())
+    if settings.provider != "sample" or os.getenv("FORCE_PREWARM") == "1":
+        app.state.prewarm_task = asyncio.create_task(_daily_prewarm())
+    else:
+        # 샘플(테스트/데모) 모드: 합성 데이터 예열은 의미가 없고, 테스트마다
+        # 백그라운드 스캔 4개가 본문과 경쟁해 스위트만 분 단위로 느려진다
+        app.state.prewarm_task = None
     yield
     # 예열 스케줄러 먼저 정리 — 종료 중 새 스캔을 킥하지 않게
     pw = getattr(app.state, "prewarm_task", None)
@@ -260,6 +277,9 @@ PRESENCE_RATE_LIMIT_PER_MIN = 60  # 하트비트 정상치(1~2/분)의 30배 여
 # 맞춤선 스크리너: 정상 폴링은 2초 간격(30/분), 두 탭이어도 60/분 — 그 2배.
 # (기간, 시장) 조합마다 새 스캔을 유발할 수 있는 증폭 지점이라 상한이 필수다.
 LINES_RATE_LIMIT_PER_MIN = 120
+# 터치 폴링도 같은 예산 — 위조 세션 쿠키를 바꿔가며 DB 조회를 무한 유발하는
+# 증폭(캐시 미스마다 SELECT)을 막는다
+TOUCHES_RATE_LIMIT_PER_MIN = 120
 _rate_windows: dict[str, tuple[float, int]] = {}
 
 _RATE_LIMITS = {
@@ -267,6 +287,7 @@ _RATE_LIMITS = {
     "signup": lambda: SIGNUP_RATE_LIMIT_PER_MIN,
     "presence": lambda: PRESENCE_RATE_LIMIT_PER_MIN,
     "lines": lambda: LINES_RATE_LIMIT_PER_MIN,
+    "touches": lambda: TOUCHES_RATE_LIMIT_PER_MIN,
 }
 
 
@@ -336,7 +357,8 @@ async def security_headers(request: Request, call_next):
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 _RATE_LIMITED_PATHS = frozenset(
     {"/api/analyze", "/api/search", "/api/presence", "/api/lines",
-     "/api/auth/login", "/api/auth/signup"}
+     "/api/touches",
+     "/api/auth/login", "/api/auth/signup", "/api/auth/me", "/api/auth/logout"}
 )
 
 
@@ -353,6 +375,8 @@ def _rate_bucket(path: str) -> str:
         return "presence"
     if path == "/api/lines":
         return "lines"
+    if path == "/api/touches":
+        return "touches"
     return "analyze"
 
 
@@ -508,7 +532,11 @@ async def _current_user(request: Request) -> dict | None:
         return hit[1]
     user = await asyncio.to_thread(request.app.state.auth.user_for_token, token)
     if len(_session_cache) > _SESSION_CACHE_MAX:
-        _session_cache.clear()  # 짧은 TTL 이라 곧 다시 채워진다 — 통째로 비워도 됨
+        # 통째로 비우면 위조 쿠키 폭주가 정상 사용자 캐시까지 지워 전원이 DB 를
+        # 다시 때리게 된다 — 오래된(대부분 만료/위조) 절반만 비운다
+        for k in sorted(_session_cache,
+                        key=lambda k: _session_cache[k][0])[:_SESSION_CACHE_MAX // 2]:
+            _session_cache.pop(k, None)
     _session_cache[token] = (now, user)
     return user
 
@@ -626,15 +654,35 @@ async def analyze(
             detail="분석을 일시적으로 처리할 수 없어요 — 잠시 후 다시 시도해 주세요.") from exc
 
 
+def _unchanged_since(snap: dict, since: str | None) -> bool:
+    """폴링 클라이언트가 이미 렌더한 스냅숏과 같은가 (안정 상태에서만).
+
+    하루 고정 결과를 5~30분마다 수백 KB 씩 다시 직렬화·압축해 보내는 것이
+    유휴 상태 이벤트루프 CPU 의 대부분이었다 — 같으면 몇십 바이트로 답한다."""
+    if not since or snap.get("refreshing") or snap.get("partial"):
+        return False
+    try:
+        return abs(float(since) - float(snap.get("generatedAt", 0))) < 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
+_UNCHANGED_SINCE_Q = Query(None, max_length=32, pattern=r"^[0-9.]+$")
+
+
 @app.get("/api/patterns")
 async def patterns_api(
     pattern: str = Query("stage2", pattern=r"^(stage2|triangle|head_shoulders|inv_head_shoulders|cup_handle)$"),
     market: str = Query("kr", pattern=r"^(kr|us)$"),
+    since: str | None = _UNCHANGED_SINCE_Q,
 ):
     """패턴 스크리너: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링)."""
     snap = await app.state.scanners[market].snapshot()
     if snap["status"] != "done":
         return snap
+    if _unchanged_since(snap, since):
+        return {"status": "done", "unchanged": True,
+                "generatedAt": snap.get("generatedAt")}
     matches = snap["patterns"].get(pattern) or []
     return {
         "status": "done",
@@ -730,7 +778,9 @@ async def _refresh_indices(now: float):
 
 
 @app.get("/api/touches")
-async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr|us)$")):
+async def touches_api(request: Request,
+                      market: str = Query("kr", pattern=r"^(kr|us)$"),
+                      since: str | None = _UNCHANGED_SINCE_Q):
     """오늘의 지지선 터치: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링).
 
     회원 전용 — 로그인하지 않았으면 401 (프런트가 /login 으로 보낸다)."""
@@ -739,6 +789,9 @@ async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr
     snap = await app.state.touch_scanners[market].snapshot()
     if snap["status"] != "done":
         return snap
+    if _unchanged_since(snap, since):
+        return {"status": "done", "unchanged": True,
+                "generatedAt": snap.get("generatedAt")}
     return {
         "status": "done",
         "market": market,
@@ -754,28 +807,36 @@ async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr
 
 
 # 동시에 살아 있는 맞춤선 스캐너 상한 — (시장, 기간) 조합이 무한히 늘며
-# 메모리·페치 예산을 잠식하지 않게 가장 오래 안 쓴 유휴 스캐너부터 비운다.
-_MAX_LINE_SCANNERS = 8
+# 메모리·페치 예산을 잠식하지 않게 유휴 스캐너부터 비운다. 스캐너당 결과가
+# 수백 KB 수준이라 16개여도 몇 MB — 하루 고정 결과를 지키는 쪽이 이득이다.
+_MAX_LINE_SCANNERS = 16
 
 
 def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
-    """등록소에서 슬롯 하나를 회수한다. 유휴(스캔 안 도는) 스캐너 중 가장
-    오래 안 쓴 것부터; 없으면 워치독 시한(900초)을 넘긴 행(hang) 스캐너를
-    취소하고 회수한다 — 워치독은 원래 그 키를 다시 폴링해야 발동하는데,
-    사용자가 떠난 키는 재폴링이 없어 슬롯이 영구 잠길 수 있기 때문에
-    '접수 시점'에도 같은 조건을 집행한다. 전부 정상 스캔 중이면 False."""
+    """등록소에서 슬롯 하나를 회수한다.
+
+    1순위: 유휴이면서 '하루 고정(신선)' 결과가 아닌 스캐너(부분/만료/오류) —
+    고정 결과를 버리면 그 키의 다음 방문이 전체 재스캔을 유발해, 키를 돌려가며
+    요청하는 것만으로 하루 1회 원칙이 무한 재스캔 churn 으로 바뀐다.
+    2순위: 워치독 시한(900초)을 넘긴 행(hang) 스캐너 취소·회수.
+    전부 '정상 스캔 중'이거나 '신선한 고정 결과'면 False — 호출자가 429
+    백프레셔로 답해, 과부하가 재계산 폭주로 번지지 않게 한다."""
     from .pattern_scan import SCAN_TIMEOUT_SEC
 
     for k in list(reg):                   # 삽입 순 = LRU 순 (사용 시 재삽입하므로)
         cand = reg[k]
-        if cand._task is None or cand._task.done():
+        if ((cand._task is None or cand._task.done())
+                and not (getattr(cand, "_daily_frozen", False) and cand._fresh())):
             cooldowns[k] = (cand._scan_ended, cand._retry_wait)
             reg.pop(k, None)
             return True
     now = time.monotonic()
     for k in list(reg):
         cand = reg[k]
-        if now - cand._scan_started > SCAN_TIMEOUT_SEC:
+        # '실행 중'인 태스크만 행 판정 대상 — 유휴(고정 결과 보호로 1순위에서
+        # 남은) 스캐너는 _scan_started 가 오래돼도 행이 아니다
+        if (cand._task is not None and not cand._task.done()
+                and now - cand._scan_started > SCAN_TIMEOUT_SEC):
             cand._task.cancel()
             cooldowns[k] = (now, cand._retry_wait)
             reg.pop(k, None)
@@ -811,7 +872,8 @@ def _line_scanner(market: str, period: int):
 @app.get("/api/lines")
 async def lines_api(request: Request,
                     market: str = Query("kr", pattern=r"^(kr|us)$"),
-                    period: int = Query(20, ge=5, le=250)):
+                    period: int = Query(20, ge=5, le=250),
+                    since: str | None = _UNCHANGED_SINCE_Q):
     """맞춤 이평선 스크리너: N일선의 지지/저항 종목 리스트 (프런트가 폴링).
 
     회원 전용 — 로그인하지 않았으면 401 (프런트가 /login 으로 보낸다)."""
@@ -823,6 +885,9 @@ async def lines_api(request: Request,
     snap = await sc.snapshot()
     if snap["status"] != "done":
         return snap
+    if _unchanged_since(snap, since):
+        return {"status": "done", "unchanged": True,
+                "generatedAt": snap.get("generatedAt")}
     return {
         "status": "done",
         "market": market,

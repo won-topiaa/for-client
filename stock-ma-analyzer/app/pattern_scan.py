@@ -138,7 +138,10 @@ UniverseFn = Callable[[], Awaitable[list[SymbolInfo]]]
 # 아직 이 시각 전이면 진행 중(미확정) 봉이므로 떼고 계산한다 — 예열(06:30)이
 # 실패한 날 장중 첫 방문자가 킥한 스캔도 예열과 똑같이 '직전 확정 종가 기준'
 # 목록을 만들고, 그게 하루 고정되므로 기준이 날마다 달라지지 않는다.
-_KR_SESSION_END_MIN = 15 * 60 + 40   # 15:30 마감 + 10분 여유 (KST)
+# 국내는 수능일(연 1회) 16:30 마감까지 있어 '가장 늦은 마감'을 기준으로 잡는다
+# — 아침(06:30) 정규 스캔에는 영향이 없고, 드문 장중 재계산이 미확정 봉을
+# 확정으로 오인해 하루 고정되는 사고만 막는다 (보수적 방향의 오차만 허용).
+_KR_SESSION_END_MIN = 16 * 60 + 40   # 16:30(수능일 마감) + 10분 여유 (KST)
 _US_SESSION_END_MIN = 16 * 60 + 10   # 16:00 마감 + 10분 여유 (ET)
 
 
@@ -271,6 +274,16 @@ class BaseScanner:
         # 짧은 TTL 로 계속 채운다.
         self._daily_frozen = False
         self._generated_wall = 0.0
+
+    def _served_expired(self) -> bool:
+        """서빙 중인 '하루 고정' 결과가 이미 아침 경계를 지났는가.
+
+        지났다면 publish 의 커버리지 고수위(no-shrink) 기준으로 삼지 않는다 —
+        상장폐지·데이터 소스 이탈 등으로 오늘의 최대 종목 수가 어제보다 1이라도
+        작아지면, 완주한 스캔이 영원히 버려지고 며칠 지난 목록이 계속 서빙되는
+        구멍을 막는다 (새 날에는 새 기준)."""
+        return (self._results is not None and self._daily_frozen
+                and time.time() >= _next_daily_boundary(self._generated_wall))
 
     def _fresh(self) -> bool:
         if self._results is None:
@@ -414,6 +427,8 @@ class PatternScanner(BaseScanner):
             줄였다가 다시 채우는 깜빡임을 막는 진짜 stale-while-revalidate.
             (따뜻한 캐시 덕에 이전 범위는 보통 수 초 만에 따라잡는다)"""
             prev = self._results.get("scanned", 0) if self._results is not None else 0
+            if final and self._served_expired():
+                prev = 0  # 새 날 — 어제 커버리지는 고수위 기준이 아니다
             if len(per_symbol) < prev:
                 if final:
                     # 최종 발행인데 이전 커버리지에 못 미침(업스트림 악화) —

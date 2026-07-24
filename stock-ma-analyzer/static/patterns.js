@@ -152,7 +152,8 @@
   let reqSeq = 0;
   let renderedWhileRefreshing = false; // 만료 결과를 보여주며 재스캔 대기 중인지
   let lastFp = null; // 직전 렌더의 지문 — 같은 결과 재렌더(깜빡임) 방지
-  let pollFails = 0; // 연속 폴링 실패 횟수 (일시 오류는 재시도, 지속 오류만 포기)
+  let pollFails = 0;
+  let lastGen = null; // 마지막으로 렌더한 스냅숏 식별자 — 변화 없으면 서버가 본문 생략 // 연속 폴링 실패 횟수 (일시 오류는 재시도, 지속 오류만 포기)
   const charts = [];
   // 첫 공개 최소 로딩: 결과가 이미 계산돼 즉시 와도 몇 초간 스캔 애니메이션을
   // 보여줘 '진짜로 훑는다'는 신뢰를 준다 (한 화면 진입당 1회). 실제 스캔이
@@ -273,19 +274,26 @@
       renderedWhileRefreshing = false;
       lastBody = null;
       lastFp = null;
+      lastGen = null;
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
       el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
     }
     try {
-      const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}`,
+      const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}` +
+                            (lastGen != null ? `&since=${lastGen}` : ""),
                             { signal: pollSignal() });
       if (seq !== reqSeq) return;
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json();
       if (seq !== reqSeq) return;
       pollFails = 0;
+      if (body.unchanged) {
+        // 서버: 마지막 렌더 이후 변화 없음 — 본문 전송 생략 (유휴 트래픽·CPU 절감)
+        pollTimer = setTimeout(() => load(true), 30 * 60 * 1000);
+        return;
+      }
       if (body.status === "running") {
         if (lastBody) {
           // 서버 재시작 등으로 done -> running 으로 되돌아간 경우: 이전 결과 정리
@@ -311,6 +319,7 @@
         pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
         return;
       }
+      lastGen = body.generatedAt;
       // 지문은 '보이는 매칭 내용' 기준 — 스캔 수만 늘고 매칭이 그대로면 차트를
       // 재생성하지 않아 깜빡임이 없다 (문구만 갱신).
       const fp = matchFp(body);

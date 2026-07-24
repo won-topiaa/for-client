@@ -170,7 +170,7 @@ class CachingProvider:
             return None
         fetched, exhausted, df = cached
         if fetched >= max_bars or exhausted:
-            return df.tail(max_bars).reset_index(drop=True).copy()
+            return df.tail(max_bars).reset_index(drop=True)  # pandas3 CoW: 별도 copy 불필요 (쓰기 시 자동 분리)
         return None
 
     async def candles(self, symbol: str, timeframe: str, max_bars: int,
@@ -225,7 +225,7 @@ class CachingProvider:
             exhausted = len(df) < max_bars and not truncated and not window_bound
             fetched = len(df) if truncated else max_bars
             self._candles.set(key, (fetched, exhausted, df))
-            return df.tail(max_bars).reset_index(drop=True).copy()
+            return df.tail(max_bars).reset_index(drop=True)  # pandas3 CoW: 별도 copy 불필요 (쓰기 시 자동 분리)
 
     async def search(self, query: str) -> list[SymbolInfo]:
         key = ("search", query.strip().lower())

@@ -99,6 +99,8 @@ class TouchScanner(BaseScanner):
             재스캔이 이전 커버리지에 도달하기 전에는 기존 결과를 대체하지
             않는다 (pattern_scan 과 동일 규칙 — 목록 깜빡임 방지)."""
             prev = self._results.get("scanned", 0) if self._results is not None else 0
+            if final and self._served_expired():
+                prev = 0  # 새 날 — 어제 커버리지는 고수위 기준이 아니다
             if scanned < prev:
                 if final:
                     # 미달 완주 — 기존 결과 유지 + 재시도 휴지 지수 증가
@@ -244,19 +246,22 @@ class TouchScanner(BaseScanner):
         if best is None:
             return None
 
-        # 카드 차트: 최근 봉 + 터치한 이평선
+        # 카드 차트: 최근 봉 + 터치한 이평선. 행 단위 .iloc 대신 컬럼 tolist+zip
+        # — 매칭당 11.5ms → 0.15ms (GIL 을 쥔 워커 스레드의 CPU 점유 절감,
+        # pattern_scan._serialize_match 와 동일 기법)
         tail = df.tail(CHART_BARS).reset_index(drop=True)
-        dates = tail["date"].dt.strftime("%Y-%m-%d")
+        dates = tail["date"].dt.strftime("%Y-%m-%d").tolist()
         offset = n - len(tail)
         ma_full = sma(close, best["period"])
         best["candles"] = [
-            {"time": dates.iloc[i], "open": float(tail["open"].iloc[i]),
-             "high": float(tail["high"].iloc[i]), "low": float(tail["low"].iloc[i]),
-             "close": float(tail["close"].iloc[i])}
-            for i in range(len(tail))
+            {"time": t, "open": o, "high": h, "low": lo, "close": c}
+            for t, o, h, lo, c in zip(dates, tail["open"].tolist(),
+                                      tail["high"].tolist(), tail["low"].tolist(),
+                                      tail["close"].tolist())
         ]
+        ma_tail = ma_full[offset:offset + len(tail)].tolist()
         best["maLine"] = [
-            {"time": dates.iloc[i], "value": round(float(ma_full[offset + i]), 2)}
-            for i in range(len(tail)) if np.isfinite(ma_full[offset + i])
+            {"time": t, "value": round(v, 2)}
+            for t, v in zip(dates, ma_tail) if v == v  # NaN(워밍업) 제외
         ]
         return best
