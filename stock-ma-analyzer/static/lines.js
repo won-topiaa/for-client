@@ -11,11 +11,11 @@
     const forced = document.documentElement.dataset.theme;
     const dark = forced === "dark" || (forced !== "light" && darkMq.matches);
     return {
-      text: dark ? "#a1a1aa" : "#71717a",
-      grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
-      border: dark ? "#27272a" : "#e4e4e7",
-      up: dark ? "#34d399" : "#059669",
-      down: dark ? "#f87171" : "#dc2626",
+      text: dark ? "#9aa1a5" : "#62696d",
+      grid: dark ? "rgba(255,255,255,.06)" : "rgba(9,11,12,.06)",
+      border: dark ? "rgba(255,255,255,.11)" : "rgba(9,11,12,.10)",
+      up: dark ? "#00d95a" : "#00a844",
+      down: dark ? "#ff5f56" : "#e03131",
       maLine: dark ? "#fbbf24" : "#d97706",   // 조회한 이평선 (앰버)
       marker: dark ? "#818cf8" : "#4f46e5",   // 최근 터치 표시 (인디고)
     };
@@ -363,7 +363,7 @@
 
   function sideCard(m, side) {
     const card = document.createElement("div");
-    card.className = "m-card";
+    card.className = "m-card side-" + side;
     const rate = (m.respectRate * 100).toFixed(0);
     const dist = m.distPct > 0 ? `+${m.distPct}%` : `${m.distPct}%`;
     const label = side === "support" ? TR("지지", "support") : TR("저항", "resistance");

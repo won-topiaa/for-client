@@ -31,7 +31,7 @@
     "🚨 오늘의 터치": "🚨 Today's Touches", "오늘의 터치": "Today's Touches",
     "📐 내 이평선": "📐 My MA Line", "내 이평선": "My MA Line",
     "🏢 원토피아 소개": "🏢 About", "🏢 소개": "🏢 About",
-    "🔒 개인정보처리방침": "🔒 Privacy (KR)", "개인정보처리방침": "Privacy Policy (KR)",
+    "🔒 개인정보처리방침": "🔒 Privacy", "개인정보처리방침": "Privacy Policy",
     "로그아웃": "Log out",
     "명 접속 중": " online",
     "지금 접속 중인 방문자 수": "Visitors online now",
@@ -133,6 +133,11 @@
     "아직 계정이 없으신가요?": "Don't have an account yet?",
     "← 홈으로 돌아가기": "← Back to home",
 
+    // 소개 페이지
+    "원토피아 소개": "About Wontopia",
+    "주식 레이더를 만드는 곳": "The workshop behind Stock Radar",
+    "주식 레이더 홈": "Stock Radar home",
+
     // 패턴 스크리너 참고 문헌 (인용은 이미 영어 — 용도 설명만 번역)
     "📚 참고 문헌 — 스크리너의 매칭·탈락 기준이 근거한 자료":
       "📚 References — sources behind the matching & drop rules",
@@ -228,7 +233,76 @@
     },
     "/login": {
       ".lead": "<b>Today's Support Touches</b> is members-only.<br>Log in with your email, or sign up — it takes 10 seconds.",
-      ".consent span": 'I agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy (Korean)</a>. We only collect your email and an encrypted password.',
+      ".consent span": 'I agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>. We only collect your email and an encrypted password.',
+    },
+    "/about": {
+      ".hero h2": "Wontopia",
+      ".hero p": "A workshop for pulling ideas out freely and building whatever comes of them.",
+      "#ab-name h3": "Where the name comes from",
+      "#ab-name .card": "<p>Wontopia joins <b>Won</b> — the last syllable of the maker's name — to the <b>-topia</b> of <b>utopia</b>.</p>" +
+        "<p>There's no grand meaning behind it. It's simply meant to be a place where ideas can come out freely and get built. " +
+        "When something makes us curious, we check it against data; when the result looks useful, we turn it into a web tool anyone can use, and publish it.</p>",
+      "#ab-works h3": "Things we've built",
+      '#ab-works a[href="/"] .t': "📊 Stock Radar",
+      '#ab-works a[href="/"] .d': "MA backtests · chart-pattern screener · today's support touches · my-MA-line screener. " +
+        "Every decision rule carries its source — academic research and classic texts.",
+      "#ab-works a[target] .t": "📉 Earnings Volatility",
+      "#ab-works a[target] .d": "How much US stocks actually moved on quarterly earnings days, from 5 years of data — " +
+        "plus an estimate of the next report's move based on that history.",
+      "#ab-how h3": "How we work",
+      "#ab-how .hows": '<div class="how"><span class="n">01</span>' +
+        '<span><span class="b">We show our sources.</span> ' +
+        '<span class="d">We try not to ship a feature that can’t answer “where did this rule come from?”</span></span></div>' +
+        '<div class="how"><span class="n">02</span>' +
+        '<span><span class="b">We ship small, then improve.</span> ' +
+        '<span class="d">Using it and fixing it beats planning it perfectly.</span></span></div>' +
+        '<div class="how"><span class="n">03</span>' +
+        '<span><span class="b">We keep it fun.</span> ' +
+        '<span class="d">That’s why dancing candle bots live on the loading screen.</span></span></div>',
+      "#ab-contact h3": "Work with us · Contact",
+      "#ab-contact .contact p:first-of-type": "Data tools, investing content, web services — if there's something you'd like to build together, " +
+        "get in touch. Proposals, feedback and bug reports are all welcome.",
+      "#ab-contact .mail": "✉️ Send a collaboration inquiry",
+      "#ab-contact .tip": "A short intro plus what you have in mind gets you a faster reply.",
+      "footer p": "© Wontopia · The tools on this site are historical statistics, not investment advice.",
+    },
+    "/privacy": {
+      "h1": "Privacy Policy",
+      ".updated": "Wontopia treats your personal data with care and collects only the minimum required." +
+        '<br><span style="font-size:12.5px">This English text is a convenience translation. ' +
+        'The <a href="/privacy?lang=ko">Korean version</a> is the legally binding one.</span>',
+      ".card": "<h2>1. What we collect</h2>" +
+        "<p>For signup and login we collect only the following.</p>" +
+        "<table><tr><th>Item</th><th>Purpose</th></tr>" +
+        "<tr><td>Email address</td><td>Identifies your account and serves as your login ID</td></tr>" +
+        "<tr><td>Password</td><td>Stored only as an irreversible <b>one-way hash (PBKDF2)</b> — the plaintext is never stored</td></tr></table>" +
+        '<p class="muted">We collect no other personal data — no name, phone number or national ID. We take no payment information.</p>' +
+        "<h2>2. Why we collect it</h2>" +
+        "<ul><li>To identify members and keep you logged in</li>" +
+        "<li>To provide members-only features such as “Today's Support Touches”</li></ul>" +
+        '<p class="muted">We do not use it for marketing, advertising or profiling.</p>' +
+        "<h2>3. How long we keep it</h2>" +
+        "<p>Until you close your account or ask us to delete it — on request we erase it without delay. " +
+        "Where the law requires separate retention, we follow that period.</p>" +
+        "<h2>4. Sharing with third parties</h2>" +
+        "<p>We <b>never provide or sell your personal data to third parties.</b></p>" +
+        "<h2>5. Processors and overseas storage</h2>" +
+        "<p>We use cloud infrastructure to run the service, and member data is stored encrypted on servers of database " +
+        "providers (e.g. Neon, Render). Those servers <b>may be located outside Korea.</b> " +
+        "What is stored is limited to the items in section 1 (email, password hash).</p>" +
+        "<h2>6. Your rights</h2>" +
+        "<p>You may request <b>access, correction, deletion or suspension of processing</b> of your personal data at any time. " +
+        "Contact us at the address below and we will act promptly.</p>" +
+        "<h2>7. Security measures</h2>" +
+        "<ul><li>One-way password hashing (PBKDF2-HMAC-SHA256 + salt) — no plaintext stored</li>" +
+        "<li>Encryption in transit (HTTPS)</li>" +
+        "<li>Session tokens stored server-side as hashes only; cookies are httpOnly</li>" +
+        "<li>Least-privilege access</li></ul>" +
+        "<h2>8. Contact</h2>" +
+        "<p>Privacy questions, access and deletion requests: " +
+        '<a href="mailto:wontopiaaa@gmail.com?subject=%5BPrivacy%5D%20Inquiry">wontopiaaa@gmail.com</a></p>',
+      ".note": "This policy applies from the service's public launch, and any change will be announced on this page. " +
+        "If member features or the data we collect change, the policy is updated with them.",
     },
   };
 
@@ -289,6 +363,8 @@
       .replace("오늘의 지지선 터치", "Today's Support Touches")
       .replace("내 이평선 스크리너", "My MA Line Screener")
       .replace("이평선 레이더 — 주요 지지/저항 이동평균선 분석기", "MA Radar — support/resistance MA analyzer")
+      .replace("원토피아 소개", "About Wontopia")
+      .replace("개인정보처리방침", "Privacy Policy")
       .replace("로그인", "Log in");
   }
 

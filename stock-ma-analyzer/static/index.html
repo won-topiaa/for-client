@@ -9,8 +9,8 @@
 <meta property="og:url" content="https://ma-radar.onrender.com/">
 <meta property="og:title" content="주식 레이더 — 데이터로 보는 기술적 분석">
 <meta property="og:description" content="주식 레이더 — 이평선 백테스트와 차트 패턴 스크리너. 학술 연구에 근거한 기준으로 감이 아니라 데이터로 확인하세요.">
-<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
 <style>
   /* earnings-volatility 사이트와 같은 디자인 언어:
@@ -474,6 +474,255 @@
     font-family: inherit; margin: 0;
   }
   @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     디자인 레이어 — 글로벌 핀테크 감각 (로빈후드 계열의 절제된 미니멀)
+     원칙: ① 순백/순흑 바탕과 헤어라인 ② 크고 단단한 제목 타이포
+           ③ 그림자 대신 여백 ④ 알약형 버튼(검정/흰색) ⑤ 그린은 '데이터의 색'
+     앞의 규칙을 지우지 않고 뒤에서 덮어쓴다 — 구조는 그대로, 감각만 올린다.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+      --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+      --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+      --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+      --info: #8b9bff;
+      --up: #00d95a; --down: #ff5f56;
+      --cta: #ffffff; --cta-text: #0b0d0e;
+      --header-bg: rgba(0, 0, 0, .72);
+      --card-shadow: none;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+    --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+    --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+    --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+    --info: #8b9bff;
+    --up: #00d95a; --down: #ff5f56;
+    --cta: #ffffff; --cta-text: #0b0d0e;
+    --header-bg: rgba(0, 0, 0, .72);
+    --card-shadow: none;
+  }
+
+  /* ── 타이포: 본문은 조금 크게, 제목은 더 단단하게 ── */
+  body { font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .howto-title, .refs-title, .side-title {
+    letter-spacing: -.028em; font-weight: 700;
+  }
+  .stat .k, .m-score, .ma-chip, table, .k, .period, td, th,
+  .tk-val, .tk-chg, #chart, .m-summary b { font-variant-numeric: tabular-nums; }
+
+  /* ── 헤더: 얇은 헤어라인 + 흐릿한 유리 ── */
+  .site-header { border-bottom: 1px solid var(--hairline); }
+  .header-inner h1 { letter-spacing: -.02em; }
+  .top-nav a, .nav-link {
+    border-radius: 999px; font-weight: 500; transition: background .15s, color .15s, border-color .15s;
+  }
+  .top-nav a:hover, .nav-link:hover { color: var(--text); border-color: var(--text); }
+  .theme-toggle { border-radius: 999px; border-color: var(--border); }
+  .theme-toggle:hover { border-color: var(--text); box-shadow: none; }
+
+  /* ── 히어로: 크고 조용하게 ── */
+  .hero { padding: 92px 0 56px; }
+  .hero h2 {
+    font-size: clamp(38px, 5.6vw, 60px); line-height: 1.04;
+    letter-spacing: -.038em; margin: 0 0 18px; font-weight: 700;
+  }
+  .hero p { font-size: 17px; line-height: 1.65; max-width: 600px; color: var(--muted); }
+  .eyebrow {
+    background: transparent; border-color: var(--border);
+    letter-spacing: .16em; font-size: 10.5px; padding: 6px 15px;
+  }
+
+  /* ── 카드: 그림자 없이 헤어라인과 여백으로 ── */
+  .tool-card, .stat, .howto, .basis, .ma-method, .method, .note, .refs,
+  .m-card, .reco-card, .p-card, .card, .proj, .contact, .pattern-desc {
+    box-shadow: none;
+  }
+  .tool-card {
+    border-radius: 22px; padding: 32px 30px 28px; gap: 14px;
+    border-color: var(--border);
+    transition: border-color .18s, transform .18s, background .18s;
+  }
+  .tool-card:hover, .tool-card:focus-visible {
+    border-color: var(--text); transform: translateY(-2px); box-shadow: none;
+  }
+  .tool-card .icon {
+    border-radius: 16px; background: var(--panel2); border-color: var(--hairline);
+  }
+  .tool-card h3 { font-size: 22px; letter-spacing: -.03em; }
+  .tool-card .desc { font-size: 14px; line-height: 1.68; }
+  .tool-card li { font-size: 13px; }
+  .tool-card li::before { color: var(--brand); }
+
+  /* ── 주 버튼: 검정(라이트)·흰색(다크) 알약 — 그린은 데이터에 양보 ── */
+  .tool-card .go, button.primary, .contact .mail, .go-btn {
+    background: var(--cta); color: var(--cta-text);
+    border: none; border-radius: 999px; font-weight: 600;
+    padding: 12px 24px; box-shadow: none;
+    transition: opacity .15s, transform .15s;
+  }
+  .tool-card:hover .go, button.primary:hover:not(:disabled),
+  .contact .mail:hover, .go-btn:hover {
+    background: var(--cta); opacity: .86; box-shadow: none;
+  }
+  .go-btn { padding: 10px 22px; }
+
+  /* ── 칩·토글: 전부 알약으로 통일 ── */
+  .market-toggle button, .qp, .preset, .tabs button, .tf-toggle button, .ma-chip, .m-score {
+    border-radius: 999px;
+  }
+  .market-toggle button.active, .tabs button.active, .tf-toggle button.active {
+    background: var(--cta); color: var(--cta-text); border-color: var(--cta);
+  }
+  .qp:hover, .preset:hover { border-color: var(--text); }
+
+  /* ── 스탯: 숫자를 주인공으로 ── */
+  .stat { border-radius: 18px; padding: 18px 20px; border-color: var(--border); }
+  .stat .k { font-size: 30px; letter-spacing: -.035em; }
+  .stat .k .u { color: var(--brand); }
+  .stat .l {
+    font-size: 11px; letter-spacing: .04em; margin-top: 4px; color: var(--muted);
+  }
+
+  /* ── 설명 블록: 여백을 넉넉히 ── */
+  .howto, .basis, .ma-method, .method, .note, .refs, .pattern-desc {
+    border-radius: 20px; border-color: var(--border);
+  }
+  .howto { padding: 30px 32px 24px; }
+  .howto-title { font-size: 20px; }
+  .step .t { letter-spacing: -.015em; }
+  .step .n { border-radius: 12px; }
+
+  /* ── 결과 카드 ── */
+  .m-card, .reco-card, .p-card {
+    border-radius: 18px; border-color: var(--border);
+    transition: border-color .18s, transform .18s;
+  }
+  .m-card:hover, .p-card:hover { border-color: var(--text); box-shadow: none; }
+  .p-card.active { border-color: var(--text); }
+  .m-name { letter-spacing: -.02em; }
+  .m-meter { border-radius: 999px; overflow: hidden; }
+  .m-meter > span { background: var(--brand); }
+  /* 저항 카드의 막대까지 초록이면 방향을 잘못 읽게 된다 — 방향색을 따른다 */
+  .m-card.side-resistance .m-meter > span { background: var(--down); }
+
+  /* ── 표: 선을 줄이고 숫자 정렬 ── */
+  table { border-collapse: collapse; }
+  th {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--faint); font-weight: 600; border-bottom: 1px solid var(--border);
+  }
+  td { border-bottom: 1px solid var(--hairline); }
+
+  /* ── 입력 ── */
+  input, select {
+    border-radius: 12px; border-color: var(--border);
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--text); outline: none; }
+
+  /* ── 접근성: 또렷한 포커스 링 ── */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  /* ── 푸터: 조용하게 ── */
+  footer { border-top: 1px solid var(--hairline); color: var(--faint); }
+  .f-nav a { border-radius: 999px; }
+
+  /* ── 정보 박스: 파란 '알림' 느낌을 걷어내고 중립 패널로 ──
+     설명은 경고가 아니라 읽을거리다. 배경·글자를 본문 색으로 되돌리고
+     강조(굵은 글씨)에만 그린을 남긴다. */
+  .intro, .pattern-desc, .method {
+    background: var(--panel2); border: 1px solid var(--hairline);
+    color: var(--text);
+  }
+  .intro p, .pattern-desc, .pattern-desc p, .method { color: var(--text); }
+  .intro .sub2, .pattern-desc .src, .method .src { color: var(--muted); }
+  .pattern-desc b, .intro b, .method b { color: var(--accent); }
+
+  /* ── 헤더 내비: 데스크톱은 테두리 없는 '글자 링크' ──
+     칩 다섯 개는 폭을 너무 먹어 제목·부제를 두 줄로 밀어냈다. 담백한 텍스트
+     내비가 공간도 아끼고 상단이 훨씬 조용해진다. (모바일은 탭 영역이
+     필요하므로 기존 칩 모양 유지) */
+  @media (min-width: 761px) {
+    /* 3열 그리드를 '내용 크기'로 재배분 — 1fr 대칭이면 좁은 브랜드 쪽에 여백이
+       남는데도 내비가 두 줄로 접혔다(브랜드 268px vs 내비 필요 ~560px).
+       가운데 칸은 여전히 토글 전용이라 좌우와 절대 겹치지 않는다. */
+    .header-inner { grid-template-columns: auto minmax(56px, 1fr) auto; }
+    .header-inner > :nth-child(2) { justify-self: center; }
+    .top-nav { gap: 2px; }
+    .top-nav a, .nav-link {
+      border-color: transparent; background: transparent;
+      color: var(--muted); font-size: 13px; padding: 6px 10px;
+    }
+    .top-nav a:hover, .nav-link:hover {
+      color: var(--text); border-color: transparent; background: var(--panel2);
+    }
+  }
+  .header-inner .sub { font-size: 11.5px; }
+  /* 좁은 데스크톱(761~1099px)에서는 부제를 접는다 — 제목·내비·토글이 먼저다.
+     (부제를 남기면 두세 줄로 접히며 헤더가 뚱뚱해지고 내비가 밀린다) */
+  @media (min-width: 761px) and (max-width: 1279px) {
+    .header-inner .sub { display: none; }
+  }
+  /* 작은 태블릿(761~900px): 브랜드 + 내비 6개 + 토글이 한 줄에 들어갈 수 없다.
+     억지로 욱여넣어 겹치게 두지 말고, 모바일처럼 토글을 오른쪽 위로 빼고
+     내비를 아래 줄 전체 폭으로 내린다. */
+  @media (min-width: 761px) and (max-width: 900px) {
+    .header-inner {
+      position: relative; grid-template-columns: 1fr; padding-right: 112px; row-gap: 8px;
+    }
+    .header-inner > .mid-toggles { position: absolute; right: 12px; top: 9px; justify-self: end; }
+    .header-inner > :last-child { justify-self: start; }
+  }
+
+  /* ── 히어로 강조어: 세 가지 색 그라데이션 대신 한 가지 확신의 색 ── */
+  .hero h2 .em {
+    background: none; -webkit-background-clip: border-box; background-clip: border-box;
+    color: var(--accent);
+  }
+
+  /* ── 한/영 버튼: 아이콘 토글보다 글자가 작으니 색은 또렷하게 ── */
+  .lang-toggle { color: var(--text); }
+
+  /* ── 모바일: 히어로 여백만 줄인다 (나머지 리듬은 유지) ── */
+  @media (max-width: 760px) {
+    /* 부제는 접는다 — 오른쪽 위 토글 두 개가 자리를 쓰면서 두세 줄로 접혀
+       헤더만 길어졌다. 제목이 이미 페이지를 설명한다. */
+    .header-inner .sub { display: none; }
+    .hero { padding: 56px 0 36px; }
+    .hero p { font-size: 15.5px; }
+    .tool-card { padding: 26px 22px 22px; }
+    .howto { padding: 24px 20px 18px; }
+    .stat .k { font-size: 26px; }
+  }
 </style>
 <script src="/static/theme.js"></script>
 <script src="/static/i18n.js"></script>

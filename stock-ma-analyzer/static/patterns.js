@@ -12,11 +12,11 @@
     const forced = document.documentElement.dataset.theme;
     const dark = forced === "dark" || (forced !== "light" && darkMq.matches);
     return {
-      text: dark ? "#a1a1aa" : "#71717a",
-      grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
-      border: dark ? "#27272a" : "#e4e4e7",
-      up: dark ? "#34d399" : "#059669",
-      down: dark ? "#f87171" : "#dc2626",
+      text: dark ? "#9aa1a5" : "#62696d",
+      grid: dark ? "rgba(255,255,255,.06)" : "rgba(9,11,12,.06)",
+      border: dark ? "rgba(255,255,255,.11)" : "rgba(9,11,12,.10)",
+      up: dark ? "#00d95a" : "#00a844",
+      down: dark ? "#ff5f56" : "#e03131",
       // 오버레이(넥라인·추세선 등): 캔들과 겹치지 않는 인디고·앰버·시안 계열
       overlays: dark ? ["#818cf8", "#fbbf24", "#22d3ee"]
                      : ["#4f46e5", "#d97706", "#0891b2"],

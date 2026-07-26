@@ -17,17 +17,17 @@
     const forced = document.documentElement.dataset.theme;
     const dark = forced === "dark" || (forced !== "light" && darkMq.matches);
     return {
-      text: dark ? "#a1a1aa" : "#71717a",
-      grid: dark ? "rgba(39,39,42,.6)" : "rgba(228,228,231,.8)",
-      border: dark ? "#27272a" : "#e4e4e7",
-      up: dark ? "#34d399" : "#059669",
-      down: dark ? "#f87171" : "#dc2626",
+      text: dark ? "#9aa1a5" : "#62696d",
+      grid: dark ? "rgba(255,255,255,.06)" : "rgba(9,11,12,.06)",
+      border: dark ? "rgba(255,255,255,.11)" : "rgba(9,11,12,.10)",
+      up: dark ? "#00d95a" : "#00a844",
+      down: dark ? "#ff5f56" : "#e03131",
       // 이평선: 캔들(에메랄드/빨강)과 겹치지 않는 인디고·앰버·시안 계열
       ma: dark ? ["#818cf8", "#fbbf24", "#22d3ee", "#f472b6", "#a3e635"]
                : ["#4f46e5", "#d97706", "#0891b2", "#db2777", "#65a30d"],
       events: dark
-        ? { support: "#34d399", resistance: "#f87171", breakDown: "#f87171", breakUp: "#34d399" }
-        : { support: "#059669", resistance: "#dc2626", breakDown: "#dc2626", breakUp: "#059669" },
+        ? { support: "#00d95a", resistance: "#ff5f56", breakDown: "#ff5f56", breakUp: "#00d95a" }
+        : { support: "#00a844", resistance: "#e03131", breakDown: "#e03131", breakUp: "#00a844" },
     };
   }
   // 테마가 바뀌면 차트를 새 팔레트로 다시 그린다. 신호는 theme.js 의

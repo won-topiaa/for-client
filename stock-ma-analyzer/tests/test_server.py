@@ -771,24 +771,46 @@ def test_mobile_fold_wiring(client):
 
 
 def test_language_toggle_wiring(client):
-    """한/영 전환: i18n.js 가 서빙되고, 5개 도구 페이지에 토글 버튼과 스크립트가
-    연결돼 있어야 한다 (로그인 페이지는 스크립트만 — 번역은 되고 토글은 없음)."""
+    """한/영 전환: i18n.js 가 서빙되고, 사용자에게 보이는 모든 페이지에 토글
+    버튼과 스크립트가 연결돼 있어야 한다 (한 페이지라도 빠지면 그 페이지만
+    한국어로 남아 외국인 방문자의 흐름이 끊긴다)."""
     r = client.get("/static/i18n.js")
     assert r.status_code == 200
     assert "wt_lang" in r.text and "WT_T" in r.text
     client.post("/api/auth/signup",
                 json={"email": "langcheck@example.com", "password": "password123"})
     try:
-        for page in ("/", "/ma", "/patterns", "/touches", "/lines"):
+        for page in ("/", "/ma", "/patterns", "/touches", "/lines",
+                     "/about", "/privacy", "/login"):
             html = client.get(page).text
             assert "/static/i18n.js" in html, page
             assert 'id="langToggle"' in html, page
             assert "lang-toggle" in html, f"{page} 에 토글 CSS 클래스 없음"
     finally:
         client.post("/api/auth/logout")
-    login_html = client.get("/login").text
-    assert "/static/i18n.js" in login_html
-    assert 'id="langToggle"' not in login_html
+
+
+def test_i18n_dictionary_keys_exist_in_pages():
+    """번역 사전의 한국어 키는 실제 페이지에 존재하는 문구여야 한다.
+
+    문구를 고치면서 사전을 안 고치면 그 자리만 조용히 한국어로 남는다 —
+    죽은 키를 테스트로 잡아 '영어인 줄 알았는데 한글'인 상황을 막는다."""
+    import re
+    from pathlib import Path
+
+    static = Path(__file__).resolve().parent.parent / "static"
+    src = (static / "i18n.js").read_text()
+    body = "\n".join(p.read_text() for p in sorted(static.glob("*.html")))
+
+    # TEXT 사전 블록만 추출 (HTML 사전의 영문 값은 검사 대상이 아니다)
+    start = src.index("var TEXT = {")
+    end = src.index("\n  };", start)
+    keys = re.findall(r'\n    "((?:[^"\\]|\\.)+)":', src[start:end])
+    korean = [k for k in keys if re.search(r"[가-힣]", k)]
+    assert len(korean) >= 60, f"사전 키를 제대로 못 읽음 ({len(korean)}개)"
+
+    missing = [k for k in korean if k.replace('\\"', '"') not in body]
+    assert not missing, f"페이지에 없는 죽은 번역 키: {missing}"
 
 
 def test_production_mode_boot_with_prewarm(monkeypatch):
