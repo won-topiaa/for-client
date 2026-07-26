@@ -8,15 +8,40 @@
   "use strict";
 
   var LANG = "ko";
+
+  function readStored() {
+    try { return localStorage.getItem("wt_lang"); } catch (e) { return null; }
+  }
+  // 저장 후 실제로 저장됐는지까지 확인 — 사생활 보호 모드처럼 쓰기가 막힌
+  // 브라우저에서는 setItem 이 조용히 실패하거나 예외를 던진다.
+  function store(v) {
+    try {
+      localStorage.setItem("wt_lang", v);
+      return localStorage.getItem("wt_lang") === v;
+    } catch (e) { return false; }
+  }
+  function stripLangParam() {
+    if (!window.history || !history.replaceState) return;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete("lang");
+      history.replaceState(null, "", u.pathname + u.search + u.hash);
+    } catch (e) { /* 주소만 못 지웠을 뿐, 화면은 정상 */ }
+  }
+
   try {
     // ?lang=en|ko 로 접속하면 그 언어를 저장하고 바로 적용 — SNS 공유 링크가
-    // 외국인 방문자를 곧장 영어 화면으로 데려갈 수 있게 한다
+    // 외국인 방문자를 곧장 영어 화면으로 데려갈 수 있게 한다.
     var qs = new URLSearchParams(location.search).get("lang");
     if (qs === "en" || qs === "ko") {
-      try { localStorage.setItem("wt_lang", qs); } catch (e2) {}
       LANG = qs;
+      // 저장에 성공했을 때만 주소에서 lang 을 지운다. 남겨두면 토글을 눌러
+      // 저장값을 바꿔도 새로고침 때 URL 값이 다시 덮어써서 버튼이 영원히
+      // 안 먹는다. 반대로 저장이 막힌 브라우저에서는 URL 이 유일한 기억
+      // 수단이므로 그대로 둔다.
+      if (store(qs)) stripLangParam();
     } else {
-      LANG = localStorage.getItem("wt_lang") === "en" ? "en" : "ko";
+      LANG = readStored() === "en" ? "en" : "ko";
     }
   } catch (e) {}
   window.WT_LANG = LANG;
@@ -375,8 +400,18 @@
     btn.setAttribute("aria-label",
       LANG === "en" ? "한국어로 보기" : "View in English");
     btn.addEventListener("click", function () {
-      try { localStorage.setItem("wt_lang", LANG === "en" ? "ko" : "en"); } catch (e) {}
-      location.reload();
+      var next = LANG === "en" ? "ko" : "en";
+      if (store(next)) {
+        location.reload();
+        return;
+      }
+      // 저장이 막힌 브라우저: 새로고침해도 같은 상태라 아무 일도 안 일어난다.
+      // 주소에 lang 을 실어 이동하면 최소한 지금 보는 페이지는 전환된다.
+      try {
+        var u = new URL(location.href);
+        u.searchParams.set("lang", next);
+        location.href = u.pathname + u.search + u.hash;
+      } catch (e) { location.reload(); }
     });
   }
 

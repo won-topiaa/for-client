@@ -292,6 +292,13 @@ LINES_RATE_LIMIT_PER_MIN = 120
 # 터치 폴링도 같은 예산 — 위조 세션 쿠키를 바꿔가며 DB 조회를 무한 유발하는
 # 증폭(캐시 미스마다 SELECT)을 막는다
 TOUCHES_RATE_LIMIT_PER_MIN = 120
+# 패턴 스크리너 폴링 — 매 호출이 매칭 수백 봉을 직렬화·압축하는 CPU 증폭
+# 지점이라 다른 스크리너와 같은 예산으로 묶는다 (없으면 유일하게 무제한이었다).
+PATTERNS_RATE_LIMIT_PER_MIN = 120
+# 회원 전용 페이지(HTML)도 진입 때마다 세션 조회(캐시 미스 시 DB SELECT)를
+# 한다 — 쿠키를 바꿔가며 때리는 증폭을 막되, 정상 탐색은 절대 막지 않을 만큼
+# 넉넉하게.
+PAGE_RATE_LIMIT_PER_MIN = 120
 _rate_windows: dict[str, tuple[float, int]] = {}
 
 _RATE_LIMITS = {
@@ -300,6 +307,8 @@ _RATE_LIMITS = {
     "presence": lambda: PRESENCE_RATE_LIMIT_PER_MIN,
     "lines": lambda: LINES_RATE_LIMIT_PER_MIN,
     "touches": lambda: TOUCHES_RATE_LIMIT_PER_MIN,
+    "patterns": lambda: PATTERNS_RATE_LIMIT_PER_MIN,
+    "page": lambda: PAGE_RATE_LIMIT_PER_MIN,
 }
 
 
@@ -367,10 +376,14 @@ async def security_headers(request: Request, call_next):
 
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
+# 세션 조회(캐시 미스 시 DB SELECT)를 유발하는 HTML 페이지들
+_MEMBER_PAGES = frozenset({"/touches", "/lines", "/login"})
+
 _RATE_LIMITED_PATHS = frozenset(
     {"/api/analyze", "/api/search", "/api/presence", "/api/lines",
-     "/api/touches",
+     "/api/touches", "/api/patterns",
      "/api/auth/login", "/api/auth/signup", "/api/auth/me", "/api/auth/logout"}
+    | _MEMBER_PAGES
 )
 
 
@@ -389,6 +402,10 @@ def _rate_bucket(path: str) -> str:
         return "lines"
     if path == "/api/touches":
         return "touches"
+    if path == "/api/patterns":
+        return "patterns"
+    if path in _MEMBER_PAGES:
+        return "page"
     return "analyze"
 
 
@@ -522,12 +539,24 @@ def _cookie_secure(request: Request) -> bool:
 _SESSION_CACHE_TTL_SEC = 30.0
 _SESSION_CACHE_MAX = 10_000
 _session_cache: dict[str, tuple[float, dict | None]] = {}
+# 로그아웃된 토큰 → 무효화 시각. 로그아웃과 겹친 진행 중 조회가 캐시를
+# 되살리지 못하게 하는 용도라 TTL 만큼만 의미가 있다 (주기적으로 정리).
+_session_revoked: dict[str, float] = {}
 
 
 def _session_cache_evict(token: str | None) -> None:
-    """로그아웃 시 즉시 무효화 — 캐시된 '로그인됨' 판정이 남지 않게."""
+    """로그아웃 시 즉시 무효화 — 캐시된 '로그인됨' 판정이 남지 않게.
+
+    무효화 '시점'도 함께 기록한다. 로그아웃과 겹쳐 이미 DB 를 조회 중이던
+    요청이 뒤늦게 돌아와 캐시에 '로그인됨'을 다시 써 넣으면, 방금 로그아웃한
+    토큰이 캐시 TTL(30초) 동안 되살아난다."""
     if token:
         _session_cache.pop(token, None)
+        _session_revoked[token] = time.monotonic()
+        if len(_session_revoked) > _SESSION_CACHE_MAX:
+            cutoff = time.monotonic() - _SESSION_CACHE_TTL_SEC
+            for k in [k for k, t in _session_revoked.items() if t < cutoff]:
+                _session_revoked.pop(k, None)
 
 
 async def _current_user(request: Request) -> dict | None:
@@ -542,7 +571,12 @@ async def _current_user(request: Request) -> dict | None:
     hit = _session_cache.get(token)
     if hit is not None and now - hit[0] < _SESSION_CACHE_TTL_SEC:
         return hit[1]
+    started = time.monotonic()
     user = await asyncio.to_thread(request.app.state.auth.user_for_token, token)
+    # 조회하는 동안 이 토큰이 로그아웃됐으면 결과를 버린다 (캐시에도 안 넣는다)
+    revoked_at = _session_revoked.get(token)
+    if revoked_at is not None and revoked_at >= started:
+        return None
     if len(_session_cache) > _SESSION_CACHE_MAX:
         # 통째로 비우면 위조 쿠키 폭주가 정상 사용자 캐시까지 지워 전원이 DB 를
         # 다시 때리게 된다 — 오래된(대부분 만료/위조) 절반만 비운다
@@ -855,7 +889,19 @@ def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
             logger.warning("맞춤선 스캐너 %s 행(hang) 회수 (%.0f초 초과)",
                            k, SCAN_TIMEOUT_SEC)
             return True
-    return False
+    # 3순위: 남은 게 전부 '신선한 고정 결과'뿐이면 가장 오래 안 쓴 것을 내준다.
+    # 이 단계가 없으면 서로 다른 (시장, 기간) 16개가 고정되는 순간부터 다음
+    # 아침까지 17번째 조합은 하루 종일 429 만 받는다 — 기다려도 절대 안 풀리는
+    # 교착이다. 쿨다운을 승계시키므로 키를 돌려가며 재스캔을 유발하는 churn 은
+    # 여전히 막힌다 (재생성된 스캐너가 이전 휴지·백오프를 그대로 물려받는다).
+    for k in list(reg):
+        cand = reg[k]
+        if cand._task is None or cand._task.done():
+            cooldowns[k] = (cand._scan_ended, cand._retry_wait)
+            reg.pop(k, None)
+            logger.info("맞춤선 슬롯 부족 — 고정 결과 %s 를 LRU 로 회수", k)
+            return True
+    return False   # 전부 실제 스캔 중 — 이때의 429 는 정당한 백프레셔
 
 
 def _line_scanner(market: str, period: int):
@@ -943,7 +989,8 @@ async def patterns_page():
 async def touches_page(request: Request):
     """회원 전용 — 로그인 안 했으면 로그인 페이지로 보낸다 (로그인 후 되돌아옴)."""
     if not await _current_user(request):
-        return RedirectResponse(url="/login?next=%2Ftouches", status_code=302)
+        return RedirectResponse(url=_login_redirect("/touches", request),
+                                status_code=302)
     return FileResponse(STATIC_DIR / "touches.html")
 
 
@@ -951,8 +998,23 @@ async def touches_page(request: Request):
 async def lines_page(request: Request):
     """맞춤 이평선 스크리너 — 회원 전용 (터치 스크리너와 동일 규칙)."""
     if not await _current_user(request):
-        return RedirectResponse(url="/login?next=%2Flines", status_code=302)
+        return RedirectResponse(url=_login_redirect("/lines", request),
+                                status_code=302)
     return FileResponse(STATIC_DIR / "lines.html")
+
+
+def _login_redirect(dest: str, request: Request) -> str:
+    """회원 전용 페이지 → 로그인 페이지 이동 URL.
+
+    들어온 ?lang= 을 그대로 물려준다. 버리면 공유된 영어 링크
+    (/touches?lang=en)를 비회원이 열었을 때 로그인 화면이 한국어로 뜨고,
+    로그인 뒤 돌아온 페이지도 한국어라 외국인 방문자의 흐름이 끊긴다."""
+    from urllib.parse import quote
+
+    lang = request.query_params.get("lang", "")
+    suffix = f"?lang={lang}" if lang in ("en", "ko") else ""
+    url = f"/login?next={quote(dest + suffix, safe='')}"
+    return url + (f"&lang={lang}" if suffix else "")
 
 
 def _safe_next(nxt: str) -> str:

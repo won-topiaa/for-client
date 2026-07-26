@@ -1415,3 +1415,41 @@ def test_sma_cumsum_matches_pandas_rolling():
     ref = pd.Series(with_nan).rolling(2).mean().to_numpy()
     got = sma(with_nan, 2)
     assert np.allclose(got, ref, equal_nan=True)
+
+
+def test_every_pattern_summary_has_english_twin():
+    """요약문을 새로 추가할 때 영문판을 빠뜨리면 영어 모드 카드에 한국어가
+    그대로 새어 나온다 — 숫자가 끼워진 문장이라 프런트에서 번역할 수 없다.
+    PatternHit(summary=...) 가 있으면 summary_en 도 반드시 함께 있어야 한다."""
+    import ast
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "app" / "patterns.py").read_text()
+    tree = ast.parse(src)
+    missing = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "PatternHit"):
+            continue
+        kw = {k.arg for k in node.keywords}
+        if "summary" in kw and "summary_en" not in kw:
+            missing.append(node.lineno)
+    assert not missing, f"summary_en 이 빠진 PatternHit (줄 번호): {missing}"
+
+    # 영문 요약 리터럴에 한글이 섞여 있지 않은지도 확인
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "PatternHit"):
+            continue
+        for k in node.keywords:
+            if k.arg != "summary_en":
+                continue
+            text = ast.unparse(k.value)
+            assert not re.search(r"[가-힣]", text), f"영문 요약에 한글: {text[:80]}"
+
+
+def test_api_card_carries_english_summary():
+    """직렬화된 매칭 카드에 summaryEn 이 실려야 프런트가 고를 수 있다."""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "app" / "pattern_scan.py").read_text()
+    assert '"summaryEn"' in src, "카드 직렬화에 summaryEn 이 없다"

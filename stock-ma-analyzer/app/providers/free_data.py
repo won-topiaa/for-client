@@ -482,7 +482,16 @@ class FreeDataProvider:
             chain = (via_fdr, via_yahoo)
         else:
             chain = (via_stooq, via_yahoo, via_fdr)
+        # 전체 사슬에 하나의 마감 시한을 둔다. 호출자는 25초
+        # (_CANDLES_TIMEOUT_SEC)에 await 를 포기하지만, 그건 '기다림'만 끊을 뿐
+        # 이 스레드는 계속 돈다 — 소스마다 자체 타임아웃이 있어 최악의 경우
+        # 몇 배의 시간 동안 풀 워커 하나를 붙잡고, 스캔 내내 동시성이 줄어든다.
+        # 시한이 지났으면 남은 소스는 시도하지 않고 즉시 실패로 끝낸다.
+        deadline = time.monotonic() + _CANDLES_TIMEOUT_SEC
         for fetch in chain:
+            if time.monotonic() >= deadline:
+                errors.append("남은 소스 생략(시한 초과)")
+                break
             df = fetch()
             if df is not None and len(df) > 0:
                 return df

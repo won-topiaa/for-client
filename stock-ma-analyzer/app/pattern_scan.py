@@ -276,13 +276,19 @@ class BaseScanner:
         self._generated_wall = 0.0
 
     def _served_expired(self) -> bool:
-        """서빙 중인 '하루 고정' 결과가 이미 아침 경계를 지났는가.
+        """서빙 중인 결과가 이미 아침 경계를 지났는가 (하루 고정 여부와 무관).
 
         지났다면 publish 의 커버리지 고수위(no-shrink) 기준으로 삼지 않는다 —
         상장폐지·데이터 소스 이탈 등으로 오늘의 최대 종목 수가 어제보다 1이라도
         작아지면, 완주한 스캔이 영원히 버려지고 며칠 지난 목록이 계속 서빙되는
-        구멍을 막는다 (새 날에는 새 기준)."""
-        return (self._results is not None and self._daily_frozen
+        구멍을 막는다 (새 날에는 새 기준).
+
+        '하루 고정된 결과'로 한정하면 안 된다: 부분·저커버리지 결과는 애초에
+        고정되지 않으므로(_daily_frozen=False) 탈출구가 닫혀, 업스트림이 조금만
+        나빠져도 어제의 반쪽 목록이 고수위로 남아 이후 모든 스캔이 기각되는
+        영구 교착이 된다. _generated_wall 은 발행할 때마다 갱신되므로 부분
+        결과에도 그대로 성립한다."""
+        return (self._results is not None
                 and time.time() >= _next_daily_boundary(self._generated_wall))
 
     def _fresh(self) -> bool:
@@ -551,6 +557,7 @@ def _serialize_match(info: SymbolInfo, hit, df: pd.DataFrame) -> dict[str, Any]:
     return {
         "symbol": info.symbol, "name": info.name, "market": info.market,
         "score": hit.score, "summary": hit.summary,
+        "summaryEn": hit.summary_en or hit.summary,
         "candles": candles,
         "overlays": _map_overlays(hit, dates),
     }

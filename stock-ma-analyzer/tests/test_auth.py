@@ -199,3 +199,30 @@ def test_login_redirect_blocks_open_redirect(client):
         assert r.headers["location"] == "/ma"
     finally:
         client.post("/api/auth/logout")
+
+
+def test_explicit_db_path_beats_database_url_env(tmp_path, monkeypatch):
+    """명시한 db_path 는 셸의 DATABASE_URL 에 절대 밀리지 않아야 한다.
+
+    밀리면 테스트·스크립트가 운영 DB(Neon)에 그대로 붙어 실제 사용자 표를
+    오염시킨다. 반대로 인자를 아무것도 안 주면 DATABASE_URL 이 이겨야 한다
+    (운영 서버는 AuthStore() 로 만들고 그 경로로 Neon 에 붙는다)."""
+    from app.auth import _resolve_url
+
+    prod = "postgresql://user:pw@ep-x.neon.tech/neondb"
+    monkeypatch.setenv("DATABASE_URL", prod)
+
+    explicit = tmp_path / "explicit.db"
+    assert _resolve_url(explicit, None) == f"sqlite:///{explicit}", "명시 경로가 무시됨"
+    # 인자가 없으면 운영 규칙대로 DATABASE_URL 사용
+    assert _resolve_url(None, None).startswith("postgresql+psycopg://")
+    # url= 인자는 언제나 최우선
+    assert _resolve_url(explicit, "sqlite:///x.db") == "sqlite:///x.db"
+
+
+def test_conftest_removes_database_url_from_test_env():
+    """conftest 가 DATABASE_URL 을 제거해, 어떤 테스트도 운영 DB 를 못 본다."""
+    import os
+
+    assert "DATABASE_URL" not in os.environ, (
+        "테스트 환경에 DATABASE_URL 이 남아 있다 — 운영 DB 오염 위험")

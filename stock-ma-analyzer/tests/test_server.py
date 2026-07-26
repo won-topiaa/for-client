@@ -11,6 +11,17 @@ def client():
         yield c
 
 
+def _signup(client, email: str) -> None:
+    """가입(또는 이미 있음)을 '확인하고' 세션을 얻는다.
+
+    응답을 안 보면 가입 실패 시 회원 전용 페이지 대신 로그인 페이지를 받고도
+    테스트가 통과해, 정작 검사하려던 내용을 하나도 안 보게 된다."""
+    r = client.post("/api/auth/signup", json={"email": email, "password": "password123"})
+    if r.status_code == 409:   # 이미 가입됨 — 로그인으로 세션 확보
+        r = client.post("/api/auth/login", json={"email": email, "password": "password123"})
+    assert r.status_code == 200, f"세션 확보 실패({email}): {r.status_code} {r.text[:120]}"
+
+
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200
@@ -105,8 +116,7 @@ def test_legacy_symbol_deeplink_redirects_to_ma(client):
 
 def test_touches_page_and_api(client):
     # 터치는 회원 전용 — 가입해 세션을 얻은 뒤 접근
-    client.post("/api/auth/signup",
-                json={"email": "touchview@example.com", "password": "password123"})
+    _signup(client, "touchview@example.com")
     try:
         r = client.get("/touches")
         assert r.status_code == 200 and 'id="scanStatus"' in r.text
@@ -382,8 +392,7 @@ def test_theme_toggle_on_every_page(client):
 
     check("/login")  # 로그인 전에 확인 (로그인 뒤엔 /touches 로 리다이렉트됨)
     # 회원 전용 /touches 는 로그인 후 확인
-    client.post("/api/auth/signup",
-                json={"email": "themetest@example.com", "password": "password123"})
+    _signup(client, "themetest@example.com")
     try:
         for page in ("/", "/ma", "/patterns", "/touches", "/lines", "/about", "/privacy"):
             check(page)
@@ -394,8 +403,7 @@ def test_theme_toggle_on_every_page(client):
 def test_privacy_link_in_every_footer(client):
     """이메일을 수집하는 사이트 — 개인정보처리방침 링크가 모든 주요 페이지
     푸터에서 도달 가능해야 한다 (개인정보보호법 고지 의무)."""
-    client.post("/api/auth/signup",
-                json={"email": "footercheck@example.com", "password": "password123"})
+    _signup(client, "footercheck@example.com")
     try:
         for page in ("/", "/ma", "/patterns", "/touches", "/lines", "/about"):
             html = client.get(page).text
@@ -486,8 +494,7 @@ def test_loading_tips_served_and_wired(client):
     assert r.status_code == 200
     assert "LoadingTips" in r.text
     # /touches 는 회원 전용이라 로그인해야 실제 페이지가 나온다 (아니면 /login 리다이렉트)
-    client.post("/api/auth/signup",
-                json={"email": "tipsview@example.com", "password": "password123"})
+    _signup(client, "tipsview@example.com")
     try:
         for page in ("/patterns", "/touches"):
             assert "/static/tips.js" in client.get(page).text
@@ -591,8 +598,7 @@ def test_lines_page_and_api_are_member_only(client):
     assert r.status_code == 302 and "/login" in r.headers["location"]
     assert client.get("/api/lines").status_code == 401
     # 기간 검증: 5~250 밖이면 422 (로그인 여부와 무관하게 스캐너에 닿지 않음)
-    client.post("/api/auth/signup",
-                json={"email": "linescheck@example.com", "password": "password123"})
+    _signup(client, "linescheck@example.com")
     try:
         assert client.get("/api/lines?period=4").status_code == 422
         assert client.get("/api/lines?period=251").status_code == 422
@@ -694,9 +700,12 @@ def test_lines_rate_limit(monkeypatch):
 
 
 def test_line_eviction_protects_frozen_results(client):
-    """등록소가 가득 차도 '하루 고정(신선)' 결과는 퇴출하지 않는다 — 키를
+    """'하루 고정(신선)' 결과는 다른 후보가 있는 한 퇴출하지 않는다 — 키를
     돌려가며 요청하는 것만으로 하루 1회 원칙이 재스캔 churn 으로 바뀌지 않게.
-    전부 신선하면 429 백프레셔."""
+
+    다만 전부 고정이라고 429 로 잠그면 안 된다: 서로 다른 (시장, 기간) 16개가
+    고정되는 순간부터 다음 아침까지 17번째 조합이 하루 종일 막히는 교착이
+    된다. 이 경우엔 가장 오래 안 쓴 슬롯을 내주되 쿨다운을 승계시킨다."""
     import time as _t
 
     import app.server as srv
@@ -718,14 +727,37 @@ def test_line_eviction_protects_frozen_results(client):
     try:
         for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
             reg[("kr", p)] = FrozenIdle()
-        assert srv._line_scanner("kr", 99) is None   # 고정 결과 보호 → 429
-        # 하나가 신선하지 않으면(만료) 그 슬롯만 회수된다
+        # 만료된 슬롯이 하나라도 있으면 고정 결과 대신 그 슬롯을 회수한다
         class StaleIdle(FrozenIdle):
             def _fresh(self):
                 return False
-        reg[("kr", 40)] = StaleIdle()
+        reg[("kr", 45)] = StaleIdle()
+        sc = srv._line_scanner("kr", 98)
+        assert sc is not None
+        assert ("kr", 45) not in reg, "만료 슬롯을 놔두고 다른 걸 버렸다"
+        assert ("kr", 40) in reg, "고정 결과가 먼저 희생됐다"
+
+        # 전부 '신선한 고정'뿐이면: 교착 대신 가장 오래된 슬롯을 내준다
+        reg.clear()
+        for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
+            reg[("kr", p)] = FrozenIdle()
         sc = srv._line_scanner("kr", 99)
-        assert sc is not None and ("kr", 40) not in reg
+        assert sc is not None, "전부 고정이라고 429 로 잠그면 하루 종일 안 풀린다"
+        assert ("kr", 40) not in reg, "LRU(가장 오래된) 슬롯이 회수돼야 한다"
+        assert ("kr", 40) in cooldowns, "쿨다운 승계가 없으면 재스캔 churn 이 열린다"
+
+        # 전부 '실제 스캔 중'이면 그때는 정당한 429
+        class Running(FrozenIdle):
+            class _T:
+                @staticmethod
+                def done():
+                    return False
+            _task = _T()
+            _scan_started = _t.monotonic()
+        reg.clear()
+        for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
+            reg[("kr", p)] = Running()
+        assert srv._line_scanner("kr", 97) is None, "실제 과부하에는 백프레셔"
     finally:
         reg.clear(); reg.update(saved_reg)
         cooldowns.clear(); cooldowns.update(saved_cd)
@@ -758,8 +790,7 @@ def test_mobile_fold_wiring(client):
     연결돼 있어야 한다 (데스크톱은 버튼 숨김이라 영향 없음)."""
     assert "data-mfold" in client.get("/static/mfold.js").text or True  # 파일 서빙 확인
     assert client.get("/static/mfold.js").status_code == 200
-    client.post("/api/auth/signup",
-                json={"email": "mfoldcheck@example.com", "password": "password123"})
+    _signup(client, "mfoldcheck@example.com")
     try:
         for page in ("/", "/patterns", "/touches", "/lines"):
             html = client.get(page).text
@@ -777,8 +808,7 @@ def test_language_toggle_wiring(client):
     r = client.get("/static/i18n.js")
     assert r.status_code == 200
     assert "wt_lang" in r.text and "WT_T" in r.text
-    client.post("/api/auth/signup",
-                json={"email": "langcheck@example.com", "password": "password123"})
+    _signup(client, "langcheck@example.com")
     try:
         for page in ("/", "/ma", "/patterns", "/touches", "/lines",
                      "/about", "/privacy", "/login"):
@@ -829,3 +859,99 @@ def test_production_mode_boot_with_prewarm(monkeypatch):
         assert task is not None and not task.done(), "예열 태스크가 즉사함"
         assert c.get("/").status_code == 200
         assert c.get("/api/patterns?pattern=stage2&market=kr").status_code == 200
+
+
+def test_patterns_rate_limit(monkeypatch):
+    """/api/patterns 도 IP 당 제한 — 호출마다 매칭 수백 봉을 직렬화·압축하는
+    CPU 증폭 지점이라, 다른 스크리너와 달리 무제한이면 안 된다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "PATTERNS_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        codes = [c.get("/api/patterns",
+                       params={"pattern": "stage2", "market": "kr"}).status_code
+                 for _ in range(5)]
+    server_mod._rate_windows.clear()
+    assert codes[:3] == [200, 200, 200]
+    assert 429 in codes[3:], "패턴 API 가 제한 없이 열려 있다"
+
+
+def test_member_pages_rate_limited(monkeypatch):
+    """회원 전용 HTML 페이지도 제한 — 진입마다 세션 조회(캐시 미스 시 DB
+    SELECT)를 유발하므로 쿠키를 바꿔가며 때리면 DB 증폭이 된다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "PAGE_RATE_LIMIT_PER_MIN", 3)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        codes = [c.get("/login").status_code for _ in range(5)]
+    server_mod._rate_windows.clear()
+    assert 429 in codes[3:], "회원 페이지가 제한 없이 열려 있다"
+
+
+def test_page_and_api_buckets_are_separate(monkeypatch):
+    """페이지 예산을 다 써도 API 예산은 남아 있어야 한다 (버킷 분리)."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "PAGE_RATE_LIMIT_PER_MIN", 2)
+    monkeypatch.setattr(server_mod, "SEARCH_RATE_LIMIT_PER_MIN", 5)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        for _ in range(4):
+            c.get("/login")
+        assert c.get("/api/search", params={"q": "삼성"}).status_code == 200
+    server_mod._rate_windows.clear()
+
+
+def test_login_redirect_preserves_lang(client):
+    """공유된 영어 링크(/touches?lang=en)를 비회원이 열면 로그인 화면도 영어로,
+    로그인 후 돌아갈 곳도 영어로 유지돼야 한다 (?lang= 을 버리지 않는다)."""
+    from urllib.parse import parse_qs, urlparse
+
+    r = client.get("/touches?lang=en", follow_redirects=False)
+    assert r.status_code == 302
+    q = parse_qs(urlparse(r.headers["location"]).query)
+    assert q.get("lang") == ["en"], "로그인 페이지가 언어를 잃었다"
+    assert "lang%3Den" in r.headers["location"] or "lang=en" in q["next"][0], \
+        "로그인 후 돌아갈 주소가 언어를 잃었다"
+
+    # 언어 파라미터가 없으면 예전 그대로
+    r2 = client.get("/lines", follow_redirects=False)
+    assert r2.status_code == 302 and "lang" not in r2.headers["location"]
+
+    # 이상한 값은 무시한다 (열린 파라미터로 쓰이지 않게)
+    r3 = client.get("/touches?lang=zz", follow_redirects=False)
+    assert "lang" not in r3.headers["location"]
+
+
+def test_logout_not_undone_by_inflight_lookup(monkeypatch):
+    """로그아웃과 겹쳐 진행 중이던 세션 조회가 캐시를 되살리면 안 된다 —
+    되살아나면 로그아웃 후에도 최대 30초간 회원 페이지가 열린다."""
+    import asyncio
+
+    import app.server as server_mod
+
+    server_mod._session_cache.clear()
+    server_mod._session_revoked.clear()
+
+    class _Req:
+        cookies = {server_mod.COOKIE_NAME: "tok-race"}
+
+        class app:  # noqa: N801
+            class state:
+                class auth:
+                    @staticmethod
+                    def user_for_token(_t):
+                        # 조회가 느린 사이 로그아웃이 끼어드는 상황을 재현
+                        server_mod._session_cache_evict("tok-race")
+                        return {"id": 1, "email": "race@example.com"}
+
+    got = asyncio.new_event_loop().run_until_complete(
+        server_mod._current_user(_Req()))
+    assert got is None, "로그아웃된 토큰이 되살아났다"
+    assert "tok-race" not in server_mod._session_cache, "무효 토큰이 캐시에 남았다"
+    server_mod._session_revoked.clear()

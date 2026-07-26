@@ -271,7 +271,9 @@
     } catch (err) {
       if (seq === analyzeSeq) el.status.textContent = TR("분석 실패: ", "Analysis failed: ") + err.message;
     } finally {
-      if (seq === analyzeSeq) el.analyze.disabled = false;
+      // 요청 중에 사용자가 검색어를 다시 타이핑했으면 selected 가 비워진다 —
+      // 그때 버튼을 되살리면 '눌리는데 아무 일도 안 나는' 죽은 버튼이 된다.
+      if (seq === analyzeSeq) el.analyze.disabled = !selected;
     }
   }
 

@@ -90,9 +90,12 @@
   .theme-toggle:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
   /* 한/영 전환 버튼 — 고정 토글을 한 묶음으로 (가운데 정렬 유지) */
   .mid-toggles {
-    position: fixed; left: 50%; top: 12px; transform: translateX(-50%);
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
     z-index: 50; display: inline-flex; gap: 8px; align-items: center;
   }
+  /* 토글 자리 확보 (위 규칙과 같은 이유) */
+  .wrap { padding-top: 56px; }
+
   .mid-toggles .theme-toggle { position: static; transform: none; left: auto; top: auto; }
   .lang-toggle { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
 
@@ -339,6 +342,19 @@
        헤더만 길어졌다. 제목이 이미 페이지를 설명한다. */
     .header-inner .sub { display: none; }
     .hero { padding: 56px 0 36px; }
+  }
+  /* 작은 폰(≤420px): 토글 두 개가 예약한 108px 때문에 제목이 두 줄로 접히며
+     헤더가 170~220px 까지 부풀었다(작은 화면의 4분의 1). 버튼을 조금 줄이고
+     예약폭을 88px 로 낮춰 제목이 한 줄에 들어가게 한다. */
+  @media (max-width: 420px) {
+    .header-inner { padding-right: 88px; }
+    .theme-toggle { width: 34px; height: 27px; }
+    .theme-toggle.lang-toggle { width: auto; padding: 0 7px; font-size: 11px; right: 52px; }
+    .header-inner h1 { font-size: 15px; }
+    /* 접속자 배지는 장식이라 제일 먼저 양보한다 — 이게 제목 옆에서 90px 를
+       가져가는 바람에 긴 제목(오늘의 지지선 터치 등)이 두 줄로 접혔다.
+       presence.js 가 인라인 display 를 켜므로 !important 가 필요하다. */
+    .presence { display: none !important; }
     .hero p { font-size: 15.5px; }
     .tool-card { padding: 26px 22px 22px; }
     .howto { padding: 24px 20px 18px; }

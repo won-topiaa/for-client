@@ -25,6 +25,11 @@ os.environ["MA_PROVIDER"] = "sample"  # 셸에 다른 값이 있어도 강제 (�
 _auth_dir = pathlib.Path(tempfile.mkdtemp(prefix="wt_test_auth_"))
 _auth_db = _auth_dir / "auth.db"
 os.environ["AUTH_DB_PATH"] = str(_auth_db)
+# 셸에 DATABASE_URL(운영 Neon 등)이 export 돼 있으면 AUTH_DB_PATH 보다 우선해
+# 테스트가 통째로 '운영 DB'에 붙는다 — 실제로 가입 테스트가 운영 사용자 표에
+# 계정을 만들고, 두 번째 실행부터는 이메일 중복으로 스위트가 영구히 빨개진다.
+# Postgres 경로 검증은 전용 변수 TEST_DATABASE_URL 로만 한다 (test_auth.py).
+os.environ.pop("DATABASE_URL", None)
 
 
 @atexit.register

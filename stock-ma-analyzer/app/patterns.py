@@ -56,6 +56,7 @@ class PatternHit:
     matched: bool
     score: float = 0.0
     summary: str = ""
+    summary_en: str = ""
     detail: dict[str, Any] = field(default_factory=dict)
     # 차트에 그릴 보조선: [{"name", "points": [(bar_idx, price), ...]}]
     overlays: list[dict[str, Any]] = field(default_factory=list)
@@ -354,6 +355,7 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             if dist_now > 0.06:
                 continue
             state = "넥라인 접근 중"
+            state_en = "approaching the neckline"
         else:
             since = n - 1 - break_bar
             # 탈락 기준 2 (신호 소진): 완성 후 10봉 초과 경과 — 패턴 정보력은
@@ -373,6 +375,7 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             if dist_now < -0.05:
                 continue
             state = f"넥라인 이탈 {since}봉 전"
+            state_en = f"neckline break {since} bar{'s' if since != 1 else ''} ago"
             # 채점용 되돌림은 이탈봉 '이후'만 본다 — 게이트용 recovered 는
             # 이탈봉 자체를 포함해, 되돌림 없이 쭉 멀어진 정석 패턴도 이탈봉의
             # 종가 마진에 영원히 고정된 값(0점대 중반)을 받는 왜곡이 있었다.
@@ -392,9 +395,13 @@ def detect_head_shoulders(ctx: dict, inverse: bool = False) -> PatternHit:
             f"{'바닥' if inverse else '천장'} 머리 {head_txt} · "
             f"어깨 대칭 {sym_score:.0f}점 · 넥라인 {neck_now:,.0f} · {state}"
         )
+        summary_en = (
+            f"{'Bottom' if inverse else 'Top'} head {head_txt} · "
+            f"shoulder symmetry {sym_score:.0f}/100 · neckline {neck_now:,.0f} · {state_en}"
+        )
         hit = PatternHit(
             pattern=key, matched=True, score=score,
-            summary=summary,
+            summary=summary, summary_en=summary_en,
             detail={"head": hp, "shoulders": [p1, p3], "neckline": neck_now,
                     "state": state, "conformity": conf},
             overlays=[
@@ -448,10 +455,13 @@ def detect_triangle(ctx: dict) -> PatternHit:
     eps = 0.02
     if nu < -eps and nl > eps:
         kind = "대칭 삼각수렴"
+        kind_en = "Symmetrical triangle"
     elif abs(nu) <= eps and nl > eps:
         kind = "상승 삼각형 (수평 저항 + 저점 상승)"
+        kind_en = "Ascending triangle (flat resistance + rising lows)"
     elif nu < -eps and abs(nl) <= eps:
         kind = "하락 삼각형 (수평 지지 + 고점 하락)"
+        kind_en = "Descending triangle (flat support + falling highs)"
     else:
         return PatternHit(pattern="triangle", matched=False)
     # 탈락 기준 (이탈 = 돌파 완료): 종가가 추세선 밖으로 1 ATR 넘게 나가면
@@ -527,6 +537,7 @@ def detect_triangle(ctx: dict) -> PatternHit:
     return PatternHit(
         pattern="triangle", matched=True, score=score,
         summary=f"{kind} · 폭 {ratio * 100:.0f}%까지 수렴 · 꼭짓점 접근 중",
+        summary_en=(f"{kind_en} · range compressed to {ratio * 100:.0f}% · approaching the apex"),
         detail={"ratio": ratio, "kind": kind, "conformity": conf},
         overlays=[
             {"name": "저항선", "points": [(int(x0), su * x0 + bu), (n - 1, up_now)]},
@@ -684,6 +695,8 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
             pattern="cup_handle", matched=True, score=score,
             summary=(f"컵 깊이 {depth * 100:.0f}% · 둥근바닥 적합도 {r2 * 100:.0f}% · "
                      f"핸들 조정 {h_depth * 100:.1f}% · 테두리 {lp:,.0f}"),
+            summary_en=(f"Cup depth {depth * 100:.0f}% · roundness fit {r2 * 100:.0f}% · "
+                        f"handle pullback {h_depth * 100:.1f}% · rim {lp:,.0f}"),
             detail={"rim": lp, "depth": depth, "r2": r2, "handle_depth": h_depth,
                     "conformity": conf},
             overlays=[{"name": "컵 테두리", "points": [(li, lp), (n - 1, lp)]}],
@@ -697,6 +710,8 @@ def detect_cup_handle(ctx: dict) -> PatternHit:
 
 STAGE_NAMES = {1: "1단계 (바닥 다지기)", 2: "2단계 (상승 추세)",
                3: "3단계 (천장 다지기)", 4: "4단계 (하락 추세)"}
+STAGE_NAMES_EN = {1: "Stage 1 (basing)", 2: "Stage 2 (advancing)",
+                  3: "Stage 3 (topping)", 4: "Stage 4 (declining)"}
 
 
 def detect_stage(ctx: dict) -> PatternHit:
@@ -704,7 +719,8 @@ def detect_stage(ctx: dict) -> PatternHit:
     close, n = ctx["close"], ctx["n"]
     if n < 220:
         return PatternHit(pattern="stage", matched=False,
-                          summary="데이터 부족 (150일선 계산 불가)")
+                          summary="데이터 부족 (150일선 계산 불가)",
+                          summary_en="Not enough data (150d MA unavailable)")
     ma150 = sma(close, 150)
     ma_now, ma_m1 = ma150[-1], ma150[-22]
     slope_m = (ma_now / ma_m1 - 1)          # 최근 1개월 기울기
@@ -737,10 +753,12 @@ def detect_stage(ctx: dict) -> PatternHit:
         conf += max(0.0, near_high - 0.85)
     summary = (f"{STAGE_NAMES[stage]} · 150일선 월기울기 {slope_m * 100:+.1f}% · "
                f"이격 {pos * 100:+.1f}% · 52주고점 대비 {near_high * 100:.0f}%")
+    summary_en = (f"{STAGE_NAMES_EN[stage]} · 150d MA monthly slope {slope_m * 100:+.1f}% · "
+                  f"distance {pos * 100:+.1f}% · {near_high * 100:.0f}% of 52w high")
     idx0 = max(0, n - 260)
     return PatternHit(
         pattern="stage", matched=True, score=round(float(conf), 4),
-        summary=summary,
+        summary=summary, summary_en=summary_en,
         detail={"stage": stage, "slope_month": slope_m, "pos": pos,
                 "near_52w_high": near_high},
         overlays=[{"name": "150일선(≈30주선)",
@@ -762,7 +780,8 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
     key = "stage2"
     close, volume, n = ctx["close"], ctx["volume"], ctx["n"]
     if n < 260:
-        return PatternHit(pattern=key, matched=False, summary="데이터 부족")
+        return PatternHit(pattern=key, matched=False, summary="데이터 부족",
+                          summary_en="Not enough data")
     ma = sma(close, 150)
     # 탈락 기준 1 (와인스타인의 매도 규칙): 종가가 30주선 아래면 2단계가 아니다
     # — 그의 손절 기준이 '30주선 하향 이탈'이므로 그 즉시 후보에서 제외.
@@ -899,9 +918,12 @@ def detect_stage2_early(ctx: dict, index_close: np.ndarray | None = None) -> Pat
     ])
     summary = (f"베이스 상단 {base_high:,.0f} 돌파 ({days_ago}일 전) · "
                f"돌파 거래량 {vol_ratio:.1f}배 · 30주선 상승 전환{rs_txt}")
+    summary_en = (f"Broke base top {base_high:,.0f} ({days_ago}d ago) · "
+                  f"breakout volume {vol_ratio:.1f}x · 30w MA turned up{rs_txt}")
     idx0 = max(0, n - 260)
     return PatternHit(
         pattern=key, matched=True, score=score, summary=summary,
+        summary_en=summary_en,
         detail={"breakout": base_high, "vol_ratio": vol_ratio, "ext": ext,
                 "days_ago": days_ago, "conformity": conf},
         overlays=[

@@ -85,13 +85,24 @@ def _normalize_db_url(url: str) -> str:
 
 
 def _resolve_url(db_path: Path | str | None, url: str | None) -> str:
+    """접속 URL 결정 — 명시한 인자가 환경변수에 묻히지 않는 순서.
+
+    ① url= 인자 ② db_path= 인자 ③ DATABASE_URL ④ AUTH_DB_PATH/기본 파일.
+
+    db_path 를 DATABASE_URL 보다 앞에 두는 이유: 호출자가 파일을 콕 집어
+    넘겼는데 셸에 DATABASE_URL 이 떠 있다는 이유로 전혀 다른(운영) DB 에
+    붙는 것은 어떤 경우에도 옳지 않다. 반대로 AUTH_DB_PATH 는 '주변 환경'
+    이므로 DATABASE_URL 보다 뒤에 둔다 — 앞에 두면 운영에서 두 값이 함께
+    설정됐을 때 Neon 대신 임시 SQLite 로 조용히 내려앉아 계정이 날아간다.
+    """
     if url:
         return _normalize_db_url(url)
+    if db_path:
+        return f"sqlite:///{Path(db_path)}"
     env_url = os.environ.get("DATABASE_URL", "").strip()
     if env_url:
         return _normalize_db_url(env_url)
-    path = Path(db_path) if db_path else _default_sqlite_path()
-    return f"sqlite:///{path}"
+    return f"sqlite:///{_default_sqlite_path()}"
 
 
 _metadata = MetaData()

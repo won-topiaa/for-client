@@ -361,6 +361,7 @@
         el.matches.innerHTML = "";
         lastBody = null; // 테마 변경 시 지워진 옛 결과가 되살아나지 않게
         lastFp = null;
+        lastGen = null;   // unchanged 최적화가 회복 렌더를 막지 않게
         el.status.textContent = body.detail || TR("스캔 실패 — 잠시 후 다시 시도해 주세요.", "Scan failed — please try again in a moment.");
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
@@ -392,6 +393,7 @@
               renderedWhileRefreshing = !!body.refreshing;
             } catch (e) {
               lastFp = null;   // 재렌더 강제
+              lastGen = null;  // unchanged 로 막히지 않게
               nextMs = 4000;   // 곧 회복 폴
             }
             pollTimer = setTimeout(() => load(true), nextMs);
@@ -432,6 +434,7 @@
       if (lastBody) lastBody.refreshing = false;
       renderedWhileRefreshing = false;
       lastFp = null; // 회복 폴이 실패 문구를 확실히 걷어내도록 재렌더 강제
+      lastGen = null;  // unchanged 로 막히지 않게
       el.status.textContent = TR("스캔 실패: ", "Scan failed: ") + err.message;
       announce(el.status.textContent);
       // 체인을 죽이지 않고 느리게 재시도 (네트워크 복구 시 자동 회복)
@@ -491,7 +494,7 @@
         `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">${TR("이평선 분석 →", "MA analysis →")}</a></span>` +
         `</div>` +
         `<div class="m-meter" role="img" aria-label="${TR(`정석 부합도 ${sc}점 (100점 만점)`, `Textbook fit ${sc} out of 100`)}"><span style="width:${sc}%"></span></div>` +
-        `<div class="m-summary">${esc(m.summary)}</div>` +
+        `<div class="m-summary">${esc(TR(m.summary, m.summaryEn || m.summary))}</div>` +
         `<div class="m-chart"></div>`;
       el.matches.appendChild(card);
       drawChart(card.querySelector(".m-chart"), m);
