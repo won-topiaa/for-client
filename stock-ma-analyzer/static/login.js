@@ -16,6 +16,8 @@
   if (!form) return;
 
   var mode = "login"; // "login" | "signup"
+  // 한/영 분기 — i18n.js 가 head 에서 window.WT_T 를 정의한다 (없으면 한국어)
+  var TR = window.WT_T || function (ko) { return ko; };
 
   // 로그인 후 돌아갈 경로 — 반드시 '같은 출처(origin)'로만. 문자열을 손으로
   // 파싱하지 않고 URL 로 해석해 비교한다: 브라우저가 URL 에서 제거하는 탭·개행
@@ -42,18 +44,18 @@
     mode = next;
     clearMsg();
     if (mode === "signup") {
-      title.textContent = "회원가입";
-      btn.textContent = "가입하고 시작하기";
-      toggleText.textContent = "이미 계정이 있으신가요?";
-      toggleBtn.textContent = "로그인";
+      title.textContent = TR("회원가입", "Sign up");
+      btn.textContent = TR("가입하고 시작하기", "Create account & start");
+      toggleText.textContent = TR("이미 계정이 있으신가요?", "Already have an account?");
+      toggleBtn.textContent = TR("로그인", "Log in");
       pw.setAttribute("autocomplete", "new-password");
       pwHint.style.display = "";
       if (consentWrap) consentWrap.style.display = "";
     } else {
-      title.textContent = "로그인";
-      btn.textContent = "로그인";
-      toggleText.textContent = "아직 계정이 없으신가요?";
-      toggleBtn.textContent = "가입하기";
+      title.textContent = TR("로그인", "Log in");
+      btn.textContent = TR("로그인", "Log in");
+      toggleText.textContent = TR("아직 계정이 없으신가요?", "Don't have an account yet?");
+      toggleBtn.textContent = TR("가입하기", "Create account");
       pw.setAttribute("autocomplete", "current-password");
       pwHint.style.display = "none";
       if (consentWrap) consentWrap.style.display = "none";
@@ -70,15 +72,15 @@
     clearMsg();
     var em = email.value.trim();
     var password = pw.value;
-    if (!em || em.indexOf("@") < 0) { showMsg("이메일을 확인해 주세요."); email.focus(); return; }
-    if (password.length < 8) { showMsg("비밀번호는 8자 이상이어야 해요."); pw.focus(); return; }
+    if (!em || em.indexOf("@") < 0) { showMsg(TR("이메일을 확인해 주세요.", "Please check your email address.")); email.focus(); return; }
+    if (password.length < 8) { showMsg(TR("비밀번호는 8자 이상이어야 해요.", "Password must be at least 8 characters.")); pw.focus(); return; }
     if (mode === "signup" && consent && !consent.checked) {
-      showMsg("개인정보처리방침에 동의해 주세요."); return;
+      showMsg(TR("개인정보처리방침에 동의해 주세요.", "Please agree to the privacy policy.")); return;
     }
 
     btn.disabled = true;
     var original = btn.textContent;
-    btn.textContent = mode === "signup" ? "가입 중…" : "로그인 중…";
+    btn.textContent = mode === "signup" ? TR("가입 중…", "Signing up…") : TR("로그인 중…", "Logging in…");
 
     fetch("/api/auth/" + mode, {
       method: "POST",
@@ -96,13 +98,13 @@
           return;
         }
         var detail = (res.body && res.body.detail) || "";
-        if (res.status === 429) detail = "요청이 너무 잦아요 — 잠시 후 다시 시도해 주세요.";
-        showMsg(detail || "처리에 실패했어요. 잠시 후 다시 시도해 주세요.");
+        if (res.status === 429) detail = TR("요청이 너무 잦아요 — 잠시 후 다시 시도해 주세요.", "Too many requests — please try again in a moment.");
+        showMsg(detail || TR("처리에 실패했어요. 잠시 후 다시 시도해 주세요.", "Something went wrong. Please try again in a moment."));
         btn.disabled = false;
         btn.textContent = original;
       })
       .catch(function () {
-        showMsg("네트워크 오류예요. 연결을 확인하고 다시 시도해 주세요.");
+        showMsg(TR("네트워크 오류예요. 연결을 확인하고 다시 시도해 주세요.", "Network error. Check your connection and try again."));
         btn.disabled = false;
         btn.textContent = original;
       });

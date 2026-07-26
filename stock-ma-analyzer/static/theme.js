@@ -33,7 +33,9 @@
       // 아이콘 = 지금 모드의 표식 (달=다크, 해=라이트) — 누르면 반대로
       btn.textContent = dark ? "🌙" : "☀️";
       btn.setAttribute("aria-pressed", dark ? "true" : "false");
-      btn.title = dark ? "라이트 모드로 전환" : "다크 모드로 전환";
+      var TRT = window.WT_T || function (ko) { return ko; };
+      btn.title = dark ? TRT("라이트 모드로 전환", "Switch to light mode")
+                       : TRT("다크 모드로 전환", "Switch to dark mode");
     }
     // 모바일 주소창 색도 함께 맞춘다 (수동 선택 시 media 조건을 걷어냄)
     var metas = document.querySelectorAll('meta[name="theme-color"]');

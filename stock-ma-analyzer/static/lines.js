@@ -2,6 +2,9 @@
 (function () {
   "use strict";
 
+  // 한/영 분기 — i18n.js 가 head 에서 window.WT_T 를 정의한다 (없으면 한국어)
+  const TR = window.WT_T || function (ko) { return ko; };
+
   // 라이트/다크 자동 대응 차트 테마 (사이트 공통 규약)
   const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
   function chartTheme() {
@@ -46,7 +49,7 @@
   function showTip() {
     const t = window.LoadingTips && window.LoadingTips.next();
     if (!t) {
-      el.partyCaption.textContent = "양봉이와 음봉이가 이평선을 대보는 중…";
+      el.partyCaption.textContent = TR("양봉이와 음봉이가 이평선을 대보는 중…", "Candle buddies are holding the line up to each stock…");
       return;
     }
     el.partyCaption.innerHTML =
@@ -110,7 +113,7 @@
     const bad = el.periodInput.validity && el.periodInput.validity.badInput;
     const p = bad ? null : clampPeriod(el.periodInput.value);
     if (p === null) {
-      el.status.textContent = "이평선 기간은 5~250 사이 숫자로 입력해 주세요.";
+      el.status.textContent = TR("이평선 기간은 5~250 사이 숫자로 입력해 주세요.", "Enter an MA period between 5 and 250.");
       announce(el.status.textContent);
       return;
     }
@@ -181,23 +184,30 @@
   }
 
   function statusText(body) {
-    return `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · ` +
-      `${body.period}일선 지지 ${body.totalSupport}개 · 저항 ${body.totalResistance}개` +
-      (body.partial ? " · 남은 종목 계속 확인 중…"
-        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+    return TR(
+      `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · ` +
+        `${body.period}일선 지지 ${body.totalSupport}개 · 저항 ${body.totalResistance}개` +
+        (body.partial ? " · 남은 종목 계속 확인 중…"
+          : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : ""),
+      `${body.scanned} stocks ${body.partial ? "backtested so far" : "backtested"} · ` +
+        `${body.period}-day MA: ${body.totalSupport} at support · ${body.totalResistance} at resistance` +
+        (body.partial ? " · still checking the rest…"
+          : body.refreshing ? " · fresh scan running in background" : ""));
   }
 
   function updateProgress(body) {
     const label =
-      `${market === "kr" ? "국내" : "미국"} 종목에 ${period}일선을 대보는 중… ` +
-      (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중");
+      TR(`${market === "kr" ? "국내" : "미국"} 종목에 ${period}일선을 대보는 중… ` +
+           (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중"),
+         `Checking the ${period}-day MA on ${market === "kr" ? "Korean" : "US"} stocks… ` +
+           (body.total ? `${body.done}/${body.total} stocks` : "picking the universe"));
     const pct = body.total ? Math.round((body.done / body.total) * 100) : 0;
     let bar = el.status.querySelector(".bar > div");
     if (!bar) {
       el.status.innerHTML =
         `<span class="scan-label"></span><div class="bar"><div style="width:0%"></div></div>`;
       bar = el.status.querySelector(".bar > div");
-      announce("종목 스캔을 시작했습니다. 완료되면 알려드립니다.");
+      announce(TR("종목 스캔을 시작했습니다. 완료되면 알려드립니다.", "Scan started. We\u2019ll let you know when it finishes."));
     }
     el.status.querySelector(".scan-label").textContent = label;
     bar.style.width = pct + "%";
@@ -225,7 +235,7 @@
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
-      el.status.innerHTML = `<span class="spinner"></span>${period}일선 스캔 준비 중…`;
+      el.status.innerHTML = `<span class="spinner"></span>` + TR(`${period}일선 스캔 준비 중…`, `Preparing the ${period}-day MA scan…`);
     }
     try {
       const r = await fetch(`/api/lines?market=${market}&period=${period}` +
@@ -238,7 +248,7 @@
       }
       if (r.status === 429) {  // 스캐너 슬롯 가득 — 잠시 뒤 자동 재시도
         el.status.textContent =
-          "지금 다른 이평선 스캔이 많아요 — 잠시 후 자동으로 다시 시도합니다.";
+          TR("지금 다른 이평선 스캔이 많아요 — 잠시 후 자동으로 다시 시도합니다.", "Many MA scans are running right now — retrying automatically in a moment.");
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 10000);
         return;
@@ -269,7 +279,7 @@
         clearLists();
         lastBody = null;
         lastFp = null;
-        el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
+        el.status.textContent = body.detail || TR("스캔 실패 — 잠시 후 다시 시도해 주세요.", "Scan failed — please try again in a moment.");
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000);
         return;
@@ -327,7 +337,7 @@
       if (lastBody) lastBody.refreshing = false;
       renderedWhileRefreshing = false;
       lastFp = null;
-      el.status.textContent = "스캔 실패: " + err.message;
+      el.status.textContent = TR("스캔 실패: ", "Scan failed: ") + err.message;
       announce(el.status.textContent);
       pollTimer = setTimeout(() => { pollFails = 0; load(true); }, 30000);
     } finally {
@@ -356,18 +366,20 @@
     card.className = "m-card";
     const rate = (m.respectRate * 100).toFixed(0);
     const dist = m.distPct > 0 ? `+${m.distPct}%` : `${m.distPct}%`;
-    const label = side === "support" ? "지지" : "저항";
+    const label = side === "support" ? TR("지지", "support") : TR("저항", "resistance");
     card.innerHTML =
       `<div class="m-head">` +
       `<span><span class="m-name">${esc(m.name)}</span> ` +
       `<span class="m-code">${esc(m.symbol)}${m.market ? " · " + esc(m.market) : ""}</span></span>` +
       `<span><span class="ma-chip">MA ${esc(m.period)}</span> ` +
-      `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
+      `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">${TR("이평선 분석 →", "MA analysis →")}</a></span>` +
       `</div>` +
-      `<div class="m-meter" role="img" aria-label="3년 ${label} 성공률 ${esc(rate)}%">` +
+      `<div class="m-meter" role="img" aria-label="${TR(`3년 ${label} 성공률`, `3-yr ${label} hold rate`)} ${esc(rate)}%">` +
       `<span style="width:${Math.max(0, Math.min(100, Number(rate) || 0))}%"></span></div>` +
-      `<div class="m-summary">3년 ${label} 성공률 <b>${esc(rate)}%</b> (결정 ${esc(m.decided)}회 · 터치 ${esc(m.touches)}회) · ` +
-      `종가는 선 대비 <b>${esc(dist)}</b> · 선 기울기 ${m.slopePct > 0 ? "+" : ""}${esc(m.slopePct)}%</div>` +
+      TR(`<div class="m-summary">3년 ${label} 성공률 <b>${esc(rate)}%</b> (결정 ${esc(m.decided)}회 · 터치 ${esc(m.touches)}회) · ` +
+           `종가는 선 대비 <b>${esc(dist)}</b> · 선 기울기 ${m.slopePct > 0 ? "+" : ""}${esc(m.slopePct)}%</div>`,
+         `<div class="m-summary">3-yr ${label} hold rate <b>${esc(rate)}%</b> (${esc(m.decided)} decided · ${esc(m.touches)} touches) · ` +
+           `close vs line <b>${esc(dist)}</b> · line slope ${m.slopePct > 0 ? "+" : ""}${esc(m.slopePct)}%</div>`) +
       `<div class="m-chart"></div>`;
     return card;
   }
@@ -375,15 +387,18 @@
   function renderList(listEl, titleEl, items, total, side, partial) {
     listEl.innerHTML = "";
     titleEl.style.display = "flex";
-    titleEl.querySelector(".t").textContent =
-      side === "support" ? `${period}일선 지지를 받는 중` : `${period}일선 저항을 받는 중`;
-    titleEl.querySelector(".cnt").textContent =
-      total > items.length ? `${total}개 중 상위 ${items.length}개` : `${total}개`;
+    titleEl.querySelector(".t").textContent = side === "support"
+      ? TR(`${period}일선 지지를 받는 중`, `Holding the ${period}-day MA as support`)
+      : TR(`${period}일선 저항을 받는 중`, `Blocked at the ${period}-day MA resistance`);
+    titleEl.querySelector(".cnt").textContent = total > items.length
+      ? TR(`${total}개 중 상위 ${items.length}개`, `top ${items.length} of ${total}`)
+      : TR(`${total}개`, `${total}`);
     if (!items.length) {
       listEl.innerHTML = partial
-        ? `<div class="empty">남은 종목을 확인하는 중입니다…</div>`
-        : `<div class="empty">${period}일선 ${side === "support" ? "지지" : "저항"} 조건을 모두 만족하는 종목이 지금은 없습니다.<br>` +
-          `<span style="font-size:12px">기간을 바꾸거나 다른 시장을 확인해 보세요 — 상태는 매일 달라집니다.</span></div>`;
+        ? `<div class="empty">${TR("남은 종목을 확인하는 중입니다…", "Still checking the remaining stocks…")}</div>`
+        : `<div class="empty">${TR(`${period}일선 ${side === "support" ? "지지" : "저항"} 조건을 모두 만족하는 종목이 지금은 없습니다.`,
+              `No stock meets every ${side} criterion for the ${period}-day MA right now.`)}<br>` +
+          `<span style="font-size:12px">${TR("기간을 바꾸거나 다른 시장을 확인해 보세요 — 상태는 매일 달라집니다.", "Try another period or market — the lists change daily.")}</span></div>`;
       return;
     }
     items.forEach((m) => {
@@ -430,8 +445,8 @@
     if (m.candles.length) {
       const last = m.candles[m.candles.length - 1].time;
       LWC.createSeriesMarkers(candles, [side === "support"
-        ? { time: last, position: "belowBar", shape: "arrowUp", color: T.marker, size: 1, text: "지지 시험" }
-        : { time: last, position: "aboveBar", shape: "arrowDown", color: T.marker, size: 1, text: "저항 시험" }]);
+        ? { time: last, position: "belowBar", shape: "arrowUp", color: T.marker, size: 1, text: TR("지지 시험", "Testing sup.") }
+        : { time: last, position: "aboveBar", shape: "arrowDown", color: T.marker, size: 1, text: TR("저항 시험", "Testing res.") }]);
     }
     chart.timeScale().fitContent();
     charts.push(chart);

@@ -2,7 +2,11 @@
 (function () {
   "use strict";
 
-  const TF_LABEL = { day: "일봉", week: "주봉", month: "월봉" };
+  // 한/영 분기 — i18n.js 가 head 에서 window.WT_T 를 정의한다 (없으면 한국어)
+  const TR = window.WT_T || function (ko) { return ko; };
+  const TF_LABEL = window.WT_LANG === "en"
+    ? { day: "Daily", week: "Weekly", month: "Monthly" }
+    : { day: "일봉", week: "주봉", month: "월봉" };
 
   // 라이트/다크 자동 대응 차트 테마 (에메랄드=상승 · 빨강=하락, 사이트 공통 규약)
   // 마커 색 = 사건 후 방향: 상승성(지지 성공·저항 돌파)=에메랄드, 하락성(저항 성공·지지 이탈)=빨강.
@@ -239,7 +243,7 @@
     const seq = ++analyzeSeq;
     el.analyze.disabled = true;
     el.result.style.display = "none";
-    el.status.innerHTML = '<span class="spinner"></span>일봉·주봉·월봉 백테스트 중…';
+    el.status.innerHTML = '<span class="spinner"></span>' + TR("일봉·주봉·월봉 백테스트 중…", "Backtesting daily · weekly · monthly bars…");
     const params = new URLSearchParams({ symbol: selected.symbol });
     const yd = parseFloat(el.yearsDay.value); if (!isNaN(yd)) params.set("years_day", yd);
     const yw = parseFloat(el.yearsWeek.value); if (!isNaN(yw)) params.set("years_week", yw);
@@ -265,7 +269,7 @@
       el.result.style.display = "flex";
       renderTimeframe(currentTf);
     } catch (err) {
-      if (seq === analyzeSeq) el.status.textContent = "분석 실패: " + err.message;
+      if (seq === analyzeSeq) el.status.textContent = TR("분석 실패: ", "Analysis failed: ") + err.message;
     } finally {
       if (seq === analyzeSeq) el.analyze.disabled = false;
     }
@@ -308,15 +312,15 @@
     if (!data || data.error) {
       el.windowNote.textContent = "";
       el.recoCards.innerHTML =
-        `<div class="reco-card"><div class="warn">${TF_LABEL[tf]} 분석 실패: ${
-          esc(data ? data.error : "데이터 없음")}</div></div>`;
+        `<div class="reco-card"><div class="warn">${TF_LABEL[tf]} ${TR("분석 실패:", "analysis failed:")} ${
+          esc(data ? data.error : TR("데이터 없음", "no data"))}</div></div>`;
       return;
     }
     if (!Array.isArray(data.recommended)) {
       // 방어: 오류도 아닌데 recommended 가 없는 응답이 와도 탭 전환이 깨지지 않게
       el.windowNote.textContent = "";
       el.recoCards.innerHTML =
-        `<div class="reco-card"><div class="warn">${TF_LABEL[tf]} 분석 결과가 비어 있습니다</div></div>`;
+        `<div class="reco-card"><div class="warn">${TF_LABEL[tf]} ${TR("분석 결과가 비어 있습니다", "analysis returned no result")}</div></div>`;
       return;
     }
 
@@ -330,9 +334,9 @@
       ).join("");
       const n = data.recommended.length;
       allCard.innerHTML =
-        `<div class="period">${dots}${n === 3 ? "세 개" : n + "개"} 동시</div>` +
-        `<div class="meta">추천 이평선 전체 보기</div>` +
-        `<div class="card-hint">${focusPeriod === null ? "지금 보는 중" : "클릭하면 전체 표시"}</div>`;
+        `<div class="period">${dots}${TR(`${n === 3 ? "세 개" : n + "개"} 동시`, `all ${n} together`)}</div>` +
+        `<div class="meta">${TR("추천 이평선 전체 보기", "Show every recommended MA")}</div>` +
+        `<div class="card-hint">${focusPeriod === null ? TR("지금 보는 중", "Now showing") : TR("클릭하면 전체 표시", "Click to show all")}</div>`;
       allCard.dataset.cardKey = "all";
       cardButton(allCard, focusPeriod === null, () => {
         focusPeriod = null;
@@ -357,14 +361,14 @@
         (e) => e.outcome === "break" && e.side === "resistance").length;
       card.innerHTML =
         `<div class="period"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>` +
-        `<div class="meta">터치 ${rec.touches}회 · 성공률 ${rate}%</div>` +
+        `<div class="meta">${TR(`터치 ${rec.touches}회 · 성공률 ${rate}%`, `${rec.touches} touches · ${rate}% success`)}</div>` +
         `<div class="meta">` +
-        `<span style="color:${T.events.support}">지지 ${rec.supportBounces}</span> · ` +
-        `<span style="color:${T.events.resistance}">저항 ${rec.resistanceBounces}</span> · ` +
-        `<span style="color:${T.events.breakDown}">이탈 ${breakDown}</span> · ` +
-        `<span style="color:${T.events.breakUp}">돌파 ${breakUp}</span></div>` +
-        (rec.qualified ? "" : `<div class="warn">⚠ 표본 부족 — 참고용</div>`) +
-        `<div class="card-hint">${focusPeriod === rec.period ? "클릭하면 전체 보기" : "클릭하면 이 선만 보기"}</div>`;
+        `<span style="color:${T.events.support}">${TR("지지", "Sup")} ${rec.supportBounces}</span> · ` +
+        `<span style="color:${T.events.resistance}">${TR("저항", "Res")} ${rec.resistanceBounces}</span> · ` +
+        `<span style="color:${T.events.breakDown}">${TR("이탈", "BrkDn")} ${breakDown}</span> · ` +
+        `<span style="color:${T.events.breakUp}">${TR("돌파", "BrkUp")} ${breakUp}</span></div>` +
+        (rec.qualified ? "" : `<div class="warn">${TR("⚠ 표본 부족 — 참고용", "⚠ Small sample — indicative only")}</div>`) +
+        `<div class="card-hint">${focusPeriod === rec.period ? TR("클릭하면 전체 보기", "Click to show all") : TR("클릭하면 이 선만 보기", "Click to isolate this line")}</div>`;
       card.dataset.cardKey = String(rec.period);
       cardButton(card, focusPeriod === rec.period, () => {
         focusPeriod = focusPeriod === rec.period ? null : rec.period;
@@ -374,13 +378,16 @@
     });
     if (!data.recommended.length) {
       el.recoCards.innerHTML =
-        `<div class="reco-card"><div class="warn">추천할 만한 이평선을 찾지 못했습니다 (데이터/터치 부족)</div></div>`;
+        `<div class="reco-card"><div class="warn">${TR("추천할 만한 이평선을 찾지 못했습니다 (데이터/터치 부족)", "No MA worth recommending (not enough data/touches)")}</div></div>`;
     }
 
-    el.windowNote.textContent =
+    el.windowNote.textContent = TR(
       `분석 구간: ${data.windowStart} ~ ${data.windowEnd} (${TF_LABEL[tf]} ${data.bars}개` +
-      (data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ", 전체 기간") +
-      `) · 최근 가중 반감기 ${data.halfLifeBars}봉`;
+        (data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ", 전체 기간") +
+        `) · 최근 가중 반감기 ${data.halfLifeBars}봉`,
+      `Window: ${data.windowStart} \u2013 ${data.windowEnd} (${data.bars} ${TF_LABEL[tf].toLowerCase()} bars` +
+        (data.lookbackYears ? `, ~${data.lookbackYears}y` : ", full history") +
+        `) \u00B7 recency half-life ${data.halfLifeBars} bars`);
 
     buildChart(data);
     buildTable(data);
@@ -488,7 +495,7 @@
       const rate = s.insufficientData ? "—" : (s.successRate * 100).toFixed(0) + "%";
       tr.innerHTML =
         `<td>MA ${s.period}${recoSet.has(s.period) ? " ★" : ""}</td>` +
-        `<td>${s.insufficientData ? "데이터 부족" : s.touches}</td>` +
+        `<td>${s.insufficientData ? TR("데이터 부족", "no data") : s.touches}</td>` +
         `<td>${s.supportBounces}</td><td>${s.resistanceBounces}</td>` +
         `<td>${s.breaks}</td><td>${s.undecided}</td>` +
         `<td>${rate}</td><td>${Number(s.score).toFixed(3)}</td>` +

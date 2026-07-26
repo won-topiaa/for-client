@@ -2,6 +2,9 @@
 (function () {
   "use strict";
 
+  // 한/영 분기 — i18n.js 가 head 에서 window.WT_T 를 정의한다 (없으면 한국어)
+  const TR = window.WT_T || function (ko) { return ko; };
+
   // 라이트/다크 자동 대응 차트 테마 (에메랄드=상승 · 빨강=하락, 사이트 공통 규약)
   const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
   function chartTheme() {
@@ -96,6 +99,43 @@
       "<span class='src'>기준 출처: William O'Neil, 「How to Make Money in Stocks」 · Bulkowski (2005)</span>",
   };
 
+  // EN 모드용 설명 — 한국어판을 요약 번역 (같은 기준·같은 출처, 문장만 압축)
+  const DESCRIPTIONS_EN = {
+    stage2:
+      "<b>What is Weinstein early Stage 2?</b> In Stan Weinstein's (1988) four-stage cycle — ① basing → ② advance → ③ topping → ④ decline — the best risk/reward sits <b>right after price breaks out of a Stage 1 base on strong volume while the 30-week MA turns up</b>. We apply his actual rules: ① first breakout above the base top within the last 60 days ② breakout volume ≥ 1.3× base average (2×+ is textbook) ③ the 30-week MA freshly turning up from flat/down ④ within +25% of the breakout level (no chasing) ⑤ bonus for relative strength vs. the index.<br>" +
+      "<b>Auto drop:</b> a close below the 30-week MA (Weinstein's sell rule), a slip of 3%+ back under the breakout level (failed breakout), or extension beyond +25% removes the stock at the next scan.<br>" +
+      "<b>Ranking = textbook-fit score (0–100):</b> breakout volume (2× base average = full marks) · positive and rising relative strength (Mansfield RS) · position 0–8% above a rising 30-week MA · within 5 weeks of the MA turn-up (early Stage 2 = best risk/reward) · within +5% of the pivot (O'Neil's 5% rule) · base tightness and dried-up volume. Geometric & arithmetic means are mixed so one fatal flaw can't hide in an average." +
+      "<span class='src'>Sources: Stan Weinstein, \u201CSecrets for Profiting in Bull and Bear Markets\u201D · William O'Neil, \u201CHow to Make Money in Stocks\u201D</span>",
+    triangle:
+      "<b>What is a triangle?</b> Highs step down and/or lows step up while the range narrows — buyers and sellers in balance until it <b>breaks near the apex, often with a sizable move in the breakout direction</b> ('energy compression'). Flat top + rising lows = ascending (upward bias) · falling highs + flat bottom = descending (downward bias) · both converging = symmetrical (neutral).<br>" +
+      "<b>Auto drop:</b> a close beyond a trendline by more than one ATR means the breakout already happened — removed. Triangles that squeeze past ~85% of the way to the apex without breaking are also removed: research puts typical breakouts at 73–75% of the apex distance, and late ones tend to fail.<br>" +
+      "<b>Ranking = textbook-fit score (0–100):</b> trendline touches (3+ per line = full marks) · shrinking volume through the pattern (seen in ~86% of symmetrical triangles) · progress 60–78% toward the apex (the breakout sweet spot) · pivots hugging the trendlines (within 0.5 ATR) · type conformity (slope balance / horizontal-line flatness) · last-5-day volume dry-up · empirical reliability by type (ascending > symmetrical > descending)." +
+      "<span class='src'>Sources: Bulkowski (2005) · Edwards &amp; Magee · Murphy, \u201CTechnical Analysis of the Financial Markets\u201D</span>",
+    head_shoulders:
+      "<b>What is a head &amp; shoulders?</b> The classic topping reversal at the end of an uptrend: three peaks with the middle one highest, and <b>a close below the neckline (the line through the two pullback lows) signals the reversal</b>. Its statistical information content is documented in Lo, Mamaysky &amp; Wang (2000). We only show shapes that are approaching or just broke the neckline — i.e. meaningful right now.<br>" +
+      "<b>Auto drop:</b> we track the completion (neckline break) moment — ① a close back above the head busts the pattern (Bulkowski 2005) ② 10+ bars after completion = signal spent (information concentrates right after completion — Lo·Mamaysky·Wang; pullbacks average ~10 days — Bulkowski) ③ a close 2%+ back above the neckline = failed break ④ 5%+ already moved = too late to enter (5% rule). Once dropped, it doesn't come back.<br>" +
+      "<b>Ranking = textbook-fit score (0–100):</b> prior uptrend into the left shoulder (something to reverse) · volume fading across the three peaks (the classics' favorite signal) · volume expanding on the neckline break · shoulder price/time symmetry · head prominence (1.5+ ATR) · neckline slope (flat-to-gently-down performs best) · no post-break recovery (no-throwback patterns travel further)." +
+      "<span class='src'>Sources: Bulkowski (2005) performance stats · Edwards &amp; Magee · Lo·Mamaysky·Wang (2000, Journal of Finance)</span>",
+    inv_head_shoulders:
+      "<b>What is an inverse head &amp; shoulders?</b> The H&amp;S flipped upside down — a bottoming reversal at the end of a downtrend: three troughs with the middle one deepest, and <b>a break up through the neckline signals the reversal</b>. Reliability improves when volume dries into the head and expands on the breakout.<br>" +
+      "<b>Auto drop:</b> completion (neckline breakout) is tracked — ① a close below the head busts it ② 10+ bars after completion = signal spent ③ a close 2%+ back below the neckline = failed breakout ④ 5%+ already moved = too late (5% rule).<br>" +
+      "<b>Ranking = textbook-fit score (0–100):</b> bottoms are different from tops — <b>breakout volume is mandatory</b> (Edwards &amp; Magee's top/bottom asymmetry: bottoms can't rise without demand). So neckline-breakout volume (2× base average = full marks) weighs most, then rally-off-the-head volume, the prior downtrend, head depth (1.5+ ATR), shoulder symmetry, neckline slope, and no post-break slip." +
+      "<span class='src'>Sources: Edwards &amp; Magee · Bulkowski (2005) performance stats · Lo·Mamaysky·Wang (2000)</span>",
+    cup_handle:
+      "<b>What is a cup &amp; handle?</b> A continuation pattern popularized by William O'Neil: a gentle decline that rounds out into a recovery (the cup) plus a shallow pullback near the prior high (the handle). <b>Breaking the handle top (cup rim) is the buy signal</b>. The rounder the bottom and the shallower the handle, the more textbook — we fit a quadratic to quantify roundness and filter out V-shapes.<br>" +
+      "<b>Auto drop:</b> a handle deeper than half the cup (or 15%) is invalid (O'Neil's handle rule — the handle must stay in the cup's upper half), a collapse 15% below the rim fails the pattern, and stocks already 5%+ above the rim are excluded (O'Neil: buy within +5% of the pivot only).<br>" +
+      "<b>Ranking = textbook-fit score (0–100):</b> prior uptrend into the cup (+30% = full marks) · cup depth 12–33% (O'Neil's ideal band) · U-shape fit and centered bottom · cup length 7–35 weeks · handle drifting gently down in the upper half (upward-wedging handles are faulty bases) · handle depth 5–15% · handle volume dry-up · rim-breakout volume (1.4×+; unscored before the breakout)." +
+      "<span class='src'>Sources: William O'Neil, \u201CHow to Make Money in Stocks\u201D · Bulkowski (2005)</span>",
+  };
+
+  // 오버레이 표시 이름 — EN 모드에서만 치환 (판정 로직은 원문 name 을 그대로 쓴다)
+  const OV_EN = { "넥라인": "Neckline", "골격": "Skeleton", "저항선": "Resistance", "지지선": "Support",
+    "컵 테두리": "Cup rim", "150일선(≈30주선)": "150d MA (\u224830w)", "베이스 상단": "Base top" };
+  function ovName(n) {
+    if (!n) return "";
+    return (window.WT_LANG === "en" && OV_EN[n]) ? OV_EN[n] : n;
+  }
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -122,7 +162,7 @@
   function showTip() {
     const t = window.LoadingTips && window.LoadingTips.next();
     if (!t) { // tips.js 로드 실패 시 안전한 기본 문구
-      el.partyCaption.textContent = "양봉이와 음봉이가 차트를 살펴보는 중…";
+      el.partyCaption.textContent = TR("양봉이와 음봉이가 차트를 살펴보는 중…", "Candle buddies are combing through the charts…");
       return;
     }
     el.partyCaption.innerHTML =
@@ -218,7 +258,7 @@
   }
 
   function renderDesc() {
-    el.desc.innerHTML = DESCRIPTIONS[pattern] || "";
+    el.desc.innerHTML = (window.WT_LANG === "en" ? DESCRIPTIONS_EN : DESCRIPTIONS)[pattern] || "";
   }
 
   // 보이는 매칭 내용 기준 지문 — 스캔 진행 중 매칭이 바뀔 때만 재렌더한다
@@ -231,25 +271,32 @@
 
   function statusText(body) {
     const shown = (body.matches || []).length;
-    return `${body.scanned}개 종목 ${body.partial ? "스캔" : "스캔 완료"} · 매칭 ${body.totalMatches}개` +
-      (body.totalMatches > shown ? ` (정석 부합도 상위 ${shown}개 표시)` : "") +
-      (body.partial ? " · 남은 종목 계속 확인 중…"
-        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+    return TR(
+      `${body.scanned}개 종목 ${body.partial ? "스캔" : "스캔 완료"} · 매칭 ${body.totalMatches}개` +
+        (body.totalMatches > shown ? ` (정석 부합도 상위 ${shown}개 표시)` : "") +
+        (body.partial ? " · 남은 종목 계속 확인 중…"
+          : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : ""),
+      `${body.scanned} stocks ${body.partial ? "scanned so far" : "scanned"} · ${body.totalMatches} matches` +
+        (body.totalMatches > shown ? ` (top ${shown} by textbook fit)` : "") +
+        (body.partial ? " · still checking the rest…"
+          : body.refreshing ? " · fresh scan running in background" : ""));
   }
 
   // 진행률 갱신: 기존 막대 DOM 을 재사용해야 폭 전환(transition)이 자연스럽고
   // 폴링마다 화면이 깜빡이지 않는다
   function updateProgress(body) {
     const label =
-      `${market === "kr" ? "국내" : "미국"} 종목 스캔 중… ` +
-      (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중");
+      TR(`${market === "kr" ? "국내" : "미국"} 종목 스캔 중… ` +
+           (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중"),
+         `Scanning ${market === "kr" ? "Korean" : "US"} stocks… ` +
+           (body.total ? `${body.done}/${body.total} stocks` : "picking the universe"));
     const pct = body.total ? Math.round((body.done / body.total) * 100) : 0;
     let bar = el.status.querySelector(".bar > div");
     if (!bar) {
       el.status.innerHTML =
         `<span class="scan-label"></span><div class="bar"><div style="width:0%"></div></div>`;
       bar = el.status.querySelector(".bar > div");
-      announce("종목 스캔을 시작했습니다. 완료되면 알려드립니다.");
+      announce(TR("종목 스캔을 시작했습니다. 완료되면 알려드립니다.", "Scan started. We\u2019ll let you know when it finishes."));
     }
     el.status.querySelector(".scan-label").textContent = label;
     bar.style.width = pct + "%";
@@ -278,7 +325,7 @@
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
-      el.status.innerHTML = '<span class="spinner"></span>패턴 스캔 중…';
+      el.status.innerHTML = '<span class="spinner"></span>' + TR("패턴 스캔 중…", "Scanning for patterns…");
     }
     try {
       const r = await fetch(`/api/patterns?pattern=${pattern}&market=${market}` +
@@ -314,7 +361,7 @@
         el.matches.innerHTML = "";
         lastBody = null; // 테마 변경 시 지워진 옛 결과가 되살아나지 않게
         lastFp = null;
-        el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
+        el.status.textContent = body.detail || TR("스캔 실패 — 잠시 후 다시 시도해 주세요.", "Scan failed — please try again in a moment.");
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000); // 서버 쿨다운 후 자동 재시도
         return;
@@ -385,7 +432,7 @@
       if (lastBody) lastBody.refreshing = false;
       renderedWhileRefreshing = false;
       lastFp = null; // 회복 폴이 실패 문구를 확실히 걷어내도록 재렌더 강제
-      el.status.textContent = "스캔 실패: " + err.message;
+      el.status.textContent = TR("스캔 실패: ", "Scan failed: ") + err.message;
       announce(el.status.textContent);
       // 체인을 죽이지 않고 느리게 재시도 (네트워크 복구 시 자동 회복)
       pollTimer = setTimeout(() => { pollFails = 0; load(true); }, 30000);
@@ -423,10 +470,10 @@
     if (!matches.length) {
       // 아직 스캔 중(부분)이면 '없음'을 성급히 단정하지 않는다
       el.matches.innerHTML = body.partial
-        ? `<div class="empty">남은 종목을 확인하는 중입니다…<br>` +
-          `<span style="font-size:12px">매칭되는 종목이 나오면 여기 채워집니다.</span></div>`
-        : `<div class="empty">지금 이 패턴에 해당하는 종목이 없습니다.<br>` +
-          `<span style="font-size:12px">패턴은 시장 상황에 따라 나타났다 사라집니다 — 다른 패턴/시장을 보거나 나중에 다시 확인해 보세요.</span></div>`;
+        ? `<div class="empty">${TR("남은 종목을 확인하는 중입니다…", "Still checking the remaining stocks…")}<br>` +
+          `<span style="font-size:12px">${TR("매칭되는 종목이 나오면 여기 채워집니다.", "Matches will appear here as they are found.")}</span></div>`
+        : `<div class="empty">${TR("지금 이 패턴에 해당하는 종목이 없습니다.", "No stock matches this pattern right now.")}<br>` +
+          `<span style="font-size:12px">${TR("패턴은 시장 상황에 따라 나타났다 사라집니다 — 다른 패턴/시장을 보거나 나중에 다시 확인해 보세요.", "Patterns come and go with the market — try another pattern/market or check back later.")}</span></div>`;
       return;
     }
     matches.forEach((m) => {
@@ -440,10 +487,10 @@
         `<div class="m-head">` +
         `<span><span class="m-name">${esc(m.name)}</span> ` +
         `<span class="m-code">${esc(m.symbol)}${m.market ? " · " + esc(m.market) : ""}</span></span>` +
-        `<span><span class="m-score ${tier}" title="교과서 이상형과의 근접도 (0~100점)">정석 부합도 ${sc}점</span> ` +
-        `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
+        `<span><span class="m-score ${tier}" title="${TR("교과서 이상형과의 근접도 (0~100점)", "Closeness to the textbook ideal (0\u2013100)")}">${TR(`정석 부합도 ${sc}점`, `Textbook fit ${sc}`)}</span> ` +
+        `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">${TR("이평선 분석 →", "MA analysis →")}</a></span>` +
         `</div>` +
-        `<div class="m-meter" role="img" aria-label="정석 부합도 ${sc}점 (100점 만점)"><span style="width:${sc}%"></span></div>` +
+        `<div class="m-meter" role="img" aria-label="${TR(`정석 부합도 ${sc}점 (100점 만점)`, `Textbook fit ${sc} out of 100`)}"><span style="width:${sc}%"></span></div>` +
         `<div class="m-summary">${esc(m.summary)}</div>` +
         `<div class="m-chart"></div>`;
       el.matches.appendChild(card);
@@ -473,7 +520,7 @@
         color: T.overlays[i % T.overlays.length],
         lineWidth: 2, lineStyle: ov.name && (ov.name.includes("넥") || ov.name.includes("상단")) ? 1 : 0,
         priceLineVisible: false, lastValueVisible: false,
-        crosshairMarkerVisible: false, title: ov.name || "",
+        crosshairMarkerVisible: false, title: ovName(ov.name),
       });
       line.setData(ov.points);
     });

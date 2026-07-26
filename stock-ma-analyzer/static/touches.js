@@ -2,6 +2,9 @@
 (function () {
   "use strict";
 
+  // 한/영 분기 — i18n.js 가 head 에서 window.WT_T 를 정의한다 (없으면 한국어)
+  const TR = window.WT_T || function (ko) { return ko; };
+
   // 라이트/다크 자동 대응 차트 테마 (사이트 공통 규약)
   const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
   function chartTheme() {
@@ -43,7 +46,7 @@
   function showTip() {
     const t = window.LoadingTips && window.LoadingTips.next();
     if (!t) { // tips.js 로드 실패 시 안전한 기본 문구
-      el.partyCaption.textContent = "양봉이와 음봉이가 지지선을 짚어보는 중…";
+      el.partyCaption.textContent = TR("양봉이와 음봉이가 지지선을 짚어보는 중…", "Candle buddies are checking the support lines…");
       return;
     }
     el.partyCaption.innerHTML =
@@ -125,23 +128,30 @@
 
   function statusText(body) {
     const shown = (body.matches || []).length;
-    return `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · 오늘 지지선 터치 ${body.totalMatches}개` +
-      (body.totalMatches > shown ? ` (상위 ${shown}개 표시)` : "") +
-      (body.partial ? " · 남은 종목 계속 확인 중…"
-        : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : "");
+    return TR(
+      `${body.scanned}개 종목 ${body.partial ? "백테스트" : "백테스트 완료"} · 오늘 지지선 터치 ${body.totalMatches}개` +
+        (body.totalMatches > shown ? ` (상위 ${shown}개 표시)` : "") +
+        (body.partial ? " · 남은 종목 계속 확인 중…"
+          : body.refreshing ? " · 백그라운드에서 새 스캔 진행 중" : ""),
+      `${body.scanned} stocks ${body.partial ? "backtested so far" : "backtested"} · ${body.totalMatches} touching support today` +
+        (body.totalMatches > shown ? ` (top ${shown} shown)` : "") +
+        (body.partial ? " · still checking the rest…"
+          : body.refreshing ? " · fresh scan running in background" : ""));
   }
 
   function updateProgress(body) {
     const label =
-      `${market === "kr" ? "국내" : "미국"} 종목 백테스트 중… ` +
-      (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중");
+      TR(`${market === "kr" ? "국내" : "미국"} 종목 백테스트 중… ` +
+           (body.total ? `${body.done}/${body.total} 종목` : "대상 선정 중"),
+         `Backtesting ${market === "kr" ? "Korean" : "US"} stocks… ` +
+           (body.total ? `${body.done}/${body.total} stocks` : "picking the universe"));
     const pct = body.total ? Math.round((body.done / body.total) * 100) : 0;
     let bar = el.status.querySelector(".bar > div");
     if (!bar) {
       el.status.innerHTML =
         `<span class="scan-label"></span><div class="bar"><div style="width:0%"></div></div>`;
       bar = el.status.querySelector(".bar > div");
-      announce("종목 스캔을 시작했습니다. 완료되면 알려드립니다.");
+      announce(TR("종목 스캔을 시작했습니다. 완료되면 알려드립니다.", "Scan started. We\u2019ll let you know when it finishes."));
     }
     el.status.querySelector(".scan-label").textContent = label;
     bar.style.width = pct + "%";
@@ -168,7 +178,7 @@
       revealed = false;
       loadStartMs = nowMs();
       showParty(true); // 처음부터 스캔 애니메이션 (최소 로딩 신뢰 효과)
-      el.status.innerHTML = '<span class="spinner"></span>지지선 터치 스캔 중…';
+      el.status.innerHTML = '<span class="spinner"></span>' + TR("지지선 터치 스캔 중…", "Scanning for support touches…");
     }
     try {
       const r = await fetch(`/api/touches?market=${market}` +
@@ -208,7 +218,7 @@
         el.matches.innerHTML = "";
         lastBody = null;
         lastFp = null;
-        el.status.textContent = body.detail || "스캔 실패 — 잠시 후 다시 시도해 주세요.";
+        el.status.textContent = body.detail || TR("스캔 실패 — 잠시 후 다시 시도해 주세요.", "Scan failed — please try again in a moment.");
         announce(el.status.textContent);
         pollTimer = setTimeout(() => load(true), 15000);
         return;
@@ -275,7 +285,7 @@
       if (lastBody) lastBody.refreshing = false;
       renderedWhileRefreshing = false;
       lastFp = null; // 회복 폴이 실패 문구를 확실히 걷어내도록 재렌더 강제
-      el.status.textContent = "스캔 실패: " + err.message;
+      el.status.textContent = TR("스캔 실패: ", "Scan failed: ") + err.message;
       announce(el.status.textContent);
       // 체인을 죽이지 않고 느리게 재시도 (네트워크 복구 시 자동 회복)
       pollTimer = setTimeout(() => { pollFails = 0; load(true); }, 30000);
@@ -313,10 +323,10 @@
     if (!matches.length) {
       // 아직 스캔 중(부분)이면 '없음'을 성급히 단정하지 않는다
       el.matches.innerHTML = body.partial
-        ? `<div class="empty">남은 종목을 확인하는 중입니다…<br>` +
-          `<span style="font-size:12px">오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.</span></div>`
-        : `<div class="empty">오늘 검증된 지지선에 닿아 있는 종목이 없습니다.<br>` +
-          `<span style="font-size:12px">터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.</span></div>`;
+        ? `<div class="empty">${TR("남은 종목을 확인하는 중입니다…", "Still checking the remaining stocks…")}<br>` +
+          `<span style="font-size:12px">${TR("오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.", "Stocks touching support today will appear here as they are found.")}</span></div>`
+        : `<div class="empty">${TR("오늘 검증된 지지선에 닿아 있는 종목이 없습니다.", "No stock is touching a verified support line today.")}<br>` +
+          `<span style="font-size:12px">${TR("터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.", "Touches change daily — check back tomorrow or try the other market.")}</span></div>`;
       return;
     }
     matches.forEach((m) => {
@@ -329,11 +339,13 @@
         `<span><span class="m-name">${esc(m.name)}</span> ` +
         `<span class="m-code">${esc(m.symbol)}${m.market ? " · " + esc(m.market) : ""}</span></span>` +
         `<span><span class="ma-chip">MA ${esc(m.period)}</span> ` +
-        `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">이평선 분석 →</a></span>` +
+        `<a class="m-link" href="/ma?symbol=${encodeURIComponent(m.symbol)}">${TR("이평선 분석 →", "MA analysis →")}</a></span>` +
         `</div>` +
-        `<div class="m-meter" role="img" aria-label="3년 지지 성공률 ${esc(rate)}%"><span style="width:${Math.max(0, Math.min(100, Number(rate) || 0))}%"></span></div>` +
-        `<div class="m-summary">3년 지지 성공률 <b>${esc(rate)}%</b> · 지지 성공 ${esc(m.supportBounces)}회 (터치 ${esc(m.touches)}회) · ` +
-        `오늘 종가는 선 대비 <b>${esc(dist)}</b> (선 ${esc(m.maValue)})</div>` +
+        `<div class="m-meter" role="img" aria-label="${TR("3년 지지 성공률", "3-yr support hold rate")} ${esc(rate)}%"><span style="width:${Math.max(0, Math.min(100, Number(rate) || 0))}%"></span></div>` +
+        TR(`<div class="m-summary">3년 지지 성공률 <b>${esc(rate)}%</b> · 지지 성공 ${esc(m.supportBounces)}회 (터치 ${esc(m.touches)}회) · ` +
+             `오늘 종가는 선 대비 <b>${esc(dist)}</b> (선 ${esc(m.maValue)})</div>`,
+           `<div class="m-summary">3-yr support hold rate <b>${esc(rate)}%</b> · held ${esc(m.supportBounces)}× (of ${esc(m.touches)} touches) · ` +
+             `close vs line <b>${esc(dist)}</b> (line ${esc(m.maValue)})</div>`) +
         `<div class="m-chart"></div>`;
       el.matches.appendChild(card);
       drawChart(card.querySelector(".m-chart"), m);
@@ -368,7 +380,7 @@
       LWC.createSeriesMarkers(candles, [{
         time: m.candles[m.candles.length - 1].time,
         position: "belowBar", shape: "arrowUp", color: T.marker, size: 1,
-        text: "터치",
+        text: TR("터치", "Touch"),
       }]);
     }
     chart.timeScale().fitContent();

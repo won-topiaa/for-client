@@ -37,13 +37,39 @@
     T("매크로", "달러 강세기에는 신흥국 증시에서 자금이 빠지기 쉽습니다 — 코스피가 미국보다 크게 흔들리는 배경 중 하나입니다."),
   ];
 
+  // EN 모드용 카드 — 같은 다섯 갈래를 영어로 (i18n.js 가 head 에서 먼저 실행돼
+  // window.WT_LANG 이 항상 정의돼 있다. 없으면 한국어 덱으로 동작)
+  const TIPS_EN = [
+    T("Patterns", "Head & shoulders: three peaks with the middle one highest — a neckline break below is the classic topping-reversal signal."),
+    T("Patterns", "Inverse head & shoulders: three troughs, middle one deepest — an upward neckline break signals a bottoming reversal."),
+    T("Patterns", "Triangles: highs and lows converge as energy compresses — breakouts statistically happen ~73–75% of the way to the apex."),
+    T("Patterns", "Cup & handle: a rounded base plus a shallow pullback — the handle should stay in the cup's upper half to be textbook."),
+    T("Patterns", "Weinstein Stage 2: the first breakout above a long base and a rising 30-week MA — his ideal entry window."),
+    T("Theory", "Academic work suggests chart patterns can carry real information — Lo, Mamaysky & Wang (2000, Journal of Finance)."),
+    T("Theory", "More than half of breakouts throw back to the neckline once — a second chance to check whether the break is real."),
+    T("Theory", "Distrust breakouts without volume — this screener requires 1.3× average volume (textbooks ask for 2×)."),
+    T("Theory", "Technical effects tend to be stronger in mid/small caps than mega-caps — that's why we exclude the biggest names."),
+    T("Theory", "Recency matters as much as frequency for support lines — our score weights recent big bounces more."),
+    T("Quotes", "“The market can stay irrational longer than you can stay solvent.” — Wall Street adage, attributed to Keynes"),
+    T("Quotes", "“In the short run the market is a voting machine; in the long run it is a weighing machine.” — Benjamin Graham"),
+    T("Quotes", "“Be fearful when others are greedy, and greedy when others are fearful.” — Warren Buffett"),
+    T("Quotes", "“Far more money has been lost preparing for corrections than in the corrections themselves.” — Peter Lynch"),
+    T("Quotes", "“The big money is not in the buying and selling, but in the waiting.” — Charlie Munger"),
+    T("Macro", "Rising rates discount future profits harder, so growth stocks wobble first — falling rates tend to do the reverse."),
+    T("Macro", "A 10y–2y yield-curve inversion is the classic recession warning — but the lag to an actual recession runs 1–2 years."),
+    T("Macro", "VIX spikes are often cited as short-term bottom signals, but they never guarantee a trend reversal."),
+    T("Macro", "CPI and jobs-report days bring extra volatility — breakouts on those days are more often fake."),
+    T("Macro", "A strong dollar tends to pull money out of emerging markets — one reason KOSPI can swing harder than the US."),
+  ];
+
   // 섞은 덱에서 한 장씩 뽑고, 덱이 떨어지면 다시 섞는다
+  const ALL = (window.WT_LANG === "en") ? TIPS_EN : TIPS;
   let deck = [];
   let lastText = "";
   const priority = []; // 도착하는 즉시 다음 순서로 보여줄 카드 (전일 시장 요약)
 
   function reshuffle() {
-    deck = TIPS.slice();
+    deck = ALL.slice();
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -62,17 +88,21 @@
     .then((body) => {
       const items = (body && body.indices) || [];
       if (!items.length) return;
+      const NAME_EN = { "코스피": "KOSPI", "코스닥": "KOSDAQ", "나스닥": "NASDAQ" };
       const parts = items.map((it) => {
         const pct = Number(it.changePct);
-        return `${it.name} ${pct > 0 ? "+" : ""}${pct.toFixed(2)}%`;
+        const nm = (window.WT_LANG === "en" && NAME_EN[it.name]) ? NAME_EN[it.name] : it.name;
+        return `${nm} ${pct > 0 ? "+" : ""}${pct.toFixed(2)}%`;
       });
       // 휴장일이 어긋나면(예: 국내 휴장 중 미국 개장) 지수마다 마지막 거래일이
       // 다를 수 있다 — 전부 같은 날일 때만 날짜를 못 박고, 아니면 두루뭉술하게
       const dates = new Set(items.map((it) => it.date));
-      const label = dates.size === 1 ? `${items[0].date} 기준` : "최근 지수";
-      const tip = T("시장 등락", `${label} — ${parts.join(" · ")}`);
+      const label = window.WT_LANG === "en"
+        ? (dates.size === 1 ? `as of ${items[0].date}` : "latest index levels")
+        : (dates.size === 1 ? `${items[0].date} 기준` : "최근 지수");
+      const tip = T(window.WT_LANG === "en" ? "Markets" : "시장 등락", `${label} — ${parts.join(" · ")}`);
       priority.push(tip); // 지금 로딩 중이면 다음 로테이션에서 바로 보여준다
-      TIPS.push(tip);     // 이후 덱에도 합류
+      ALL.push(tip);      // 이후 덱에도 합류
     })
     .catch(() => {});
 

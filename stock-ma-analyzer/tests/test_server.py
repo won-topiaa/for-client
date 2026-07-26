@@ -508,10 +508,13 @@ def test_loading_tips_fit_two_lines():
     total_calls = len(re.findall(r'T\("', src))
     dynamic_calls = len(re.findall(r'T\("[^"]+", `', src))
     assert len(tips) + dynamic_calls == total_calls, "규칙 검사를 비껴간 카드가 있음"
-    allowed = {"패턴 사전", "패턴 이론", "명언", "매크로"}
+    allowed_ko = {"패턴 사전", "패턴 이론", "명언", "매크로"}
+    allowed_en = {"Patterns", "Theory", "Quotes", "Macro"}
     for tag, text in tips:
-        assert tag in allowed, f"미정의 태그: {tag}"
-        assert len(text) <= 85, f"두 줄 규칙(85자) 초과 ({len(text)}자): {text}"
+        assert tag in allowed_ko | allowed_en, f"미정의 태그: {tag}"
+        # 한글은 전각(2배 폭)이라 85자 ≈ 두 줄 — 영문은 반각이라 130자까지 두 줄
+        limit = 130 if tag in allowed_en else 85
+        assert len(text) <= limit, f"두 줄 규칙({limit}자) 초과 ({len(text)}자): {text}"
     # 시장 등락 요약 카드(동적 생성)도 존재해야 한다
     assert '"시장 등락"' in src
 
@@ -765,6 +768,27 @@ def test_mobile_fold_wiring(client):
             assert ".mfold-btn" in html, f"{page} 에 접기 버튼 CSS 없음"
     finally:
         client.post("/api/auth/logout")
+
+
+def test_language_toggle_wiring(client):
+    """한/영 전환: i18n.js 가 서빙되고, 5개 도구 페이지에 토글 버튼과 스크립트가
+    연결돼 있어야 한다 (로그인 페이지는 스크립트만 — 번역은 되고 토글은 없음)."""
+    r = client.get("/static/i18n.js")
+    assert r.status_code == 200
+    assert "wt_lang" in r.text and "WT_T" in r.text
+    client.post("/api/auth/signup",
+                json={"email": "langcheck@example.com", "password": "password123"})
+    try:
+        for page in ("/", "/ma", "/patterns", "/touches", "/lines"):
+            html = client.get(page).text
+            assert "/static/i18n.js" in html, page
+            assert 'id="langToggle"' in html, page
+            assert "lang-toggle" in html, f"{page} 에 토글 CSS 클래스 없음"
+    finally:
+        client.post("/api/auth/logout")
+    login_html = client.get("/login").text
+    assert "/static/i18n.js" in login_html
+    assert 'id="langToggle"' not in login_html
 
 
 def test_production_mode_boot_with_prewarm(monkeypatch):

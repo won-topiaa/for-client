@@ -15,8 +15,12 @@
       item.el.classList.remove("mfold-hidden");
       return;
     }
-    item.btn.style.display = "";
-    item.btn.textContent = item.label + (item.open ? "  ▴ 접기" : "  ▾ 보기");
+    var TR = window.WT_T || function (ko) { return ko; };
+    // CSS 기본값이 display:none(데스크톱 깜빡임 방지)이라 "" 로 지우면
+    // 폰에서도 버튼이 사라진다 — 모바일에서는 block 을 명시해야 한다
+    item.btn.style.display = "block";
+    item.btn.textContent = item.label +
+      (item.open ? "  ▴ " + TR("접기", "hide") : "  ▾ " + TR("보기", "show"));
     item.btn.setAttribute("aria-expanded", item.open ? "true" : "false");
     item.el.classList.toggle("mfold-hidden", !item.open);
   }

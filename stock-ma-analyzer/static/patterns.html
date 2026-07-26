@@ -473,10 +473,14 @@
   }
   @media (max-width: 760px) {
     /* 좁은 화면: 제목·부제와 겹치지 않게 오른쪽 위 모서리로 (공간도 예약) */
-    .header-inner { padding-right: 62px; }
+    .header-inner { padding-right: 108px; }
     .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
+    .theme-toggle.lang-toggle { right: 58px; }
   }
 
+  /* 한/영 전환 버튼 — 테마 토글과 나란히 (i18n.js 가 라벨·동작 관리) */
+  .mid-toggles { display: inline-flex; gap: 8px; align-items: center; }
+  .lang-toggle { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
   /* ── 모바일 전용 설명 접기 (mfold.js) — 데스크톱은 버튼 숨김·본문 그대로 ── */
   .mfold-btn {
     display: none; width: 100%; text-align: left; cursor: pointer;
@@ -488,6 +492,7 @@
   @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
 </style>
 <script src="/static/theme.js"></script>
+<script src="/static/i18n.js"></script>
 </head>
 <body>
 <header class="site-header">
@@ -500,7 +505,7 @@
       </div>
       <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
     </div>
-    <button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button>
+    <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
     <span style="display:inline-flex; gap:10px;">
       <a class="nav-link" href="/">🏠 홈</a><a class="nav-link" href="/ma">📈 이평선 분석</a><a class="nav-link" href="/touches">🚨 오늘의 터치</a></span>
   </div>

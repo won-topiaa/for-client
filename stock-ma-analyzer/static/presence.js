@@ -31,7 +31,9 @@
         if (d && typeof d.active === "number" && d.active > 0) {
           out.textContent = d.active.toLocaleString("ko-KR");
           badge.style.display = "inline-flex";
-          badge.setAttribute("aria-label", "지금 " + d.active + "명 접속 중");
+          var TR = window.WT_T || function (ko) { return ko; };
+          badge.setAttribute("aria-label",
+            TR("지금 " + d.active + "명 접속 중", d.active + " visitors online now"));
         }
       })
       .catch(function () { /* 실패해도 조용히 — 다음 주기에 재시도 */ })

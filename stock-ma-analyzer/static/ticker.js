@@ -6,6 +6,11 @@
   const bar = document.getElementById("tickerBar");
   if (!wrap || !bar) return;
 
+  // EN 모드: 지수 이름만 영문 표기 (서버 응답은 그대로 — 표시만 바꾼다)
+  const NAME_EN = { "코스피": "KOSPI", "코스닥": "KOSDAQ", "나스닥": "NASDAQ" };
+  const dispName = (n) =>
+    (window.WT_LANG === "en" && NAME_EN[n]) ? NAME_EN[n] : n;
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -36,7 +41,7 @@
         const cls = flat ? "flat" : up ? "up" : "down";
         const arrow = flat ? "" : up ? "▲" : "▼";
         return (
-          `<span class="tk"><span class="tk-name">${esc(it.name)}</span>` +
+          `<span class="tk"><span class="tk-name">${esc(dispName(it.name))}</span>` +
           `<span class="tk-val">${esc(fmt(it.value))}</span>` +
           `<span class="tk-chg ${cls}">${arrow}${Math.abs(it.changePct).toFixed(2)}%</span></span>`
         );
