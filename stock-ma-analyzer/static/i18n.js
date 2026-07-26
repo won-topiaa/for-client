@@ -8,7 +8,17 @@
   "use strict";
 
   var LANG = "ko";
-  try { LANG = localStorage.getItem("wt_lang") === "en" ? "en" : "ko"; } catch (e) {}
+  try {
+    // ?lang=en|ko 로 접속하면 그 언어를 저장하고 바로 적용 — SNS 공유 링크가
+    // 외국인 방문자를 곧장 영어 화면으로 데려갈 수 있게 한다
+    var qs = new URLSearchParams(location.search).get("lang");
+    if (qs === "en" || qs === "ko") {
+      try { localStorage.setItem("wt_lang", qs); } catch (e2) {}
+      LANG = qs;
+    } else {
+      LANG = localStorage.getItem("wt_lang") === "en" ? "en" : "ko";
+    }
+  } catch (e) {}
   window.WT_LANG = LANG;
   window.WT_T = function (ko, en) { return LANG === "en" ? en : ko; };
 
