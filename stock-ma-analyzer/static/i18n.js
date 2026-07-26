@@ -45,6 +45,9 @@
       "This site shows historical statistics only — not investment advice. All investment decisions are your own responsibility.",
     "본 도구는 과거 데이터 통계이며 매수 추천·투자 권유가 아닙니다. 모든 투자 결정과 결과는 본인 책임입니다.":
       "This tool shows historical statistics only — not investment advice. All investment decisions are your own responsibility.",
+    "본 도구는 과거 데이터 통계이며 투자 권유가 아닙니다. 미래의 지지/저항을 보장하지 않으며, 모든 투자 결정과 결과는 본인 책임입니다.":
+      "This tool shows historical statistics only — not investment advice. Past support/resistance never guarantees the future; all investment decisions are your own responsibility.",
+    "(4th ed.). McGraw-Hill. (초판 1988)": "(4th ed.). McGraw-Hill. (first published 1988)",
 
     // 페이지 제목·부제
     "주식 레이더": "Stock Radar",
