@@ -57,6 +57,7 @@
     "📐 내 이평선": "📐 My MA Line", "내 이평선": "My MA Line",
     "🏢 원토피아 소개": "🏢 About", "🏢 소개": "🏢 About",
     "🔒 개인정보처리방침": "🔒 Privacy", "개인정보처리방침": "Privacy Policy",
+    "🔗 링크 모음": "🔗 Links", "링크 모음": "Links",
     "로그아웃": "Log out",
     "명 접속 중": " online",
     "지금 접속 중인 방문자 수": "Visitors online now",
@@ -291,6 +292,27 @@
       "#ab-contact .tip": "A short intro plus what you have in mind gets you a faster reply.",
       "footer p": "© Wontopia · The tools on this site are historical statistics, not investment advice.",
     },
+    "/links": {
+      ".head h1": "Stock Radar",
+      ".tagline": "Technical analysis you can check with data, not gut feeling",
+      ".sec-tools": "Tools",
+      ".sec-more": "Other projects",
+      ".sec-about": "About · Contact",
+      '.lk[href="/ma"] .t': "MA Radar",
+      '.lk[href="/ma"] .d': "Backtests 3 years to rank the moving averages that actually held as support/resistance",
+      '.lk[href="/patterns"] .t': "Chart Pattern Screener",
+      '.lk[href="/patterns"] .d': "Weinstein Stage 2, triangles, head &amp; shoulders and cup &amp; handle, auto-detected across 770+ stocks",
+      '.lk[href="/touches"] .t': 'Today\u2019s Support Touches<span class="badge">free signup</span>',
+      '.lk[href="/touches"] .d': "Stocks touching a verified support MA today — refreshed every morning",
+      '.lk[href="/lines"] .t': 'My MA Line Screener<span class="badge">free signup</span>',
+      '.lk[href="/lines"] .d': "Pick any period (5–250 days) and split stocks into holding-as-support vs. blocked-at-resistance",
+      ".lk[target] .t": "Earnings Volatility",
+      ".lk[target] .d": "How much US stocks actually moved on earnings day, from 5 years of data",
+      '.lk[href="/about"] .t': "About Wontopia",
+      '.lk[href="/about"] .d': "Who makes this, and how",
+      ".lk.mail .t": "Work with us · Contact",
+      "footer .disc": "All tools show historical statistics — not investment advice.",
+    },
     "/privacy": {
       "h1": "Privacy Policy",
       ".updated": "Wontopia treats your personal data with care and collects only the minimum required." +
@@ -334,6 +356,11 @@
   // ── ②-b 페이지별 '속성' 사전 (셀렉터 → {속성: 값}) ──
   // innerHTML 만 바꾸면 링크의 href 같은 속성은 한국어로 남는다.
   var ATTRS = {
+    "/links": {
+      ".lk.mail": {
+        href: "mailto:wontopiaaa@gmail.com?subject=%5BWontopia%5D%20Inquiry",
+      },
+    },
     "/about": {
       ".contact .mail": {
         href: "mailto:wontopiaaa@gmail.com?subject=%5BWontopia%5D%20Collaboration%20inquiry",
@@ -408,6 +435,7 @@
       .replace("내 이평선 스크리너", "My MA Line Screener")
       .replace("이평선 레이더 — 주요 지지/저항 이동평균선 분석기", "MA Radar — support/resistance MA analyzer")
       .replace("원토피아 소개", "About Wontopia")
+      .replace("링크 모음", "Links")
       .replace("개인정보처리방침", "Privacy Policy")
       .replace("로그인", "Log in");
   }

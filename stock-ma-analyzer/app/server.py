@@ -1117,6 +1117,12 @@ async def about_page():
     return FileResponse(STATIC_DIR / "about.html")
 
 
+@app.get("/links")
+async def links_page():
+    """링크 모음(link-in-bio) — SNS 프로필에 걸어 두는 한 장짜리 목차."""
+    return FileResponse(STATIC_DIR / "links.html")
+
+
 @app.get("/privacy")
 async def privacy_page():
     """개인정보처리방침 (회원 이메일 수집 고지)."""
