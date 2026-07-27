@@ -1150,22 +1150,23 @@ def test_revoked_token_map_prunes_by_age(monkeypatch):
 
 
 def test_links_page_served_and_wired(client):
-    """링크 모음(link-in-bio) 페이지 — SNS 프로필에 거는 한 장짜리 목차."""
+    """원토피아 작업물 모음(link-in-bio) — SNS 프로필에 거는 한 장짜리 목차."""
     r = client.get("/links")
     assert r.status_code == 200
     html = r.text
-    # 도구 4개 + 다른 프로젝트 + 소개 + 문의가 모두 링크로 있어야 한다
-    for href in ('href="/ma"', 'href="/patterns"', 'href="/touches"',
-                 'href="/lines"', 'href="/about"',
-                 "https://earnings-volatility.vercel.app",
-                 "mailto:wontopiaaa@gmail.com"):
-        assert href in html, f"링크 누락: {href}"
+    assert "<title>원토피아</title>" in html, "페이지 제목이 원토피아가 아니다"
+    # 작업물 3개가 '준 순서대로' 있어야 한다
+    order = ['href="/"', "won-topiaa.github.io/macro-calendar",
+             "earnings-volatility.vercel.app"]
+    pos = [html.index(x) for x in order]
+    assert pos == sorted(pos), f"작업물 순서가 어긋남: {pos}"
+    assert "mailto:wontopiaaa@gmail.com" in html
     # 언어·테마 토글과 면책 문구
     assert 'id="langToggle"' in html and 'id="themeToggle"' in html
     assert "/static/i18n.js" in html and "/static/theme.js" in html
     assert "투자 권유가 아닙니다" in html
     # 외부 링크는 새 탭 + noopener
-    assert 'target="_blank" rel="noopener"' in html
+    assert html.count('target="_blank" rel="noopener"') >= 2
 
 
 def test_links_page_has_no_dead_internal_links(client):

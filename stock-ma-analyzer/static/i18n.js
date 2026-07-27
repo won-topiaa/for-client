@@ -293,25 +293,18 @@
       "footer p": "© Wontopia · The tools on this site are historical statistics, not investment advice.",
     },
     "/links": {
-      ".head h1": "Stock Radar",
-      ".tagline": "Technical analysis you can check with data, not gut feeling",
-      ".sec-tools": "Tools",
-      ".sec-more": "Other projects",
-      ".sec-about": "About · Contact",
-      '.lk[href="/ma"] .t': "MA Radar",
-      '.lk[href="/ma"] .d': "Backtests 3 years to rank the moving averages that actually held as support/resistance",
-      '.lk[href="/patterns"] .t': "Chart Pattern Screener",
-      '.lk[href="/patterns"] .d': "Weinstein Stage 2, triangles, head &amp; shoulders and cup &amp; handle, auto-detected across 770+ stocks",
-      '.lk[href="/touches"] .t': 'Today\u2019s Support Touches<span class="badge">free signup</span>',
-      '.lk[href="/touches"] .d': "Stocks touching a verified support MA today — refreshed every morning",
-      '.lk[href="/lines"] .t': 'My MA Line Screener<span class="badge">free signup</span>',
-      '.lk[href="/lines"] .d': "Pick any period (5–250 days) and split stocks into holding-as-support vs. blocked-at-resistance",
-      ".lk[target] .t": "Earnings Volatility",
-      ".lk[target] .d": "How much US stocks actually moved on earnings day, from 5 years of data",
-      '.lk[href="/about"] .t': "About Wontopia",
-      '.lk[href="/about"] .d': "Who makes this, and how",
+      ".head h1": "Wontopia",
+      ".tagline": "We check ideas against data — and when they hold up, we ship them as web tools",
+      ".sec-works": "Works",
+      ".sec-contact": "Contact",
+      '.lk[href="/"] .t': "Stock Radar",
+      '.lk[href="/"] .d': "MA backtests · chart-pattern screener · today's support touches",
+      '.lk[href*="macro-calendar"] .t': "Macro Calendar",
+      '.lk[href*="macro-calendar"] .d': "Key economic releases and events at a glance",
+      '.lk[href*="earnings-volatility"] .t': "Earnings Volatility",
+      '.lk[href*="earnings-volatility"] .d': "How much US stocks actually moved on earnings day, from 5 years of data",
       ".lk.mail .t": "Work with us · Contact",
-      "footer .disc": "All tools show historical statistics — not investment advice.",
+      "footer .disc": "Each tool shows historical statistics — not investment advice.",
     },
     "/privacy": {
       "h1": "Privacy Policy",
@@ -435,6 +428,7 @@
       .replace("내 이평선 스크리너", "My MA Line Screener")
       .replace("이평선 레이더 — 주요 지지/저항 이동평균선 분석기", "MA Radar — support/resistance MA analyzer")
       .replace("원토피아 소개", "About Wontopia")
+      .replace("원토피아", "Wontopia")   // 포트폴리오 페이지 제목
       .replace("링크 모음", "Links")
       .replace("개인정보처리방침", "Privacy Policy")
       .replace("로그인", "Log in");

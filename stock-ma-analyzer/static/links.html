@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>링크 모음 · 주식 레이더</title>
-<meta name="description" content="주식 레이더(원토피아)의 도구와 링크 모음 — 이평선 레이더, 차트 패턴 스크리너, 오늘의 지지선 터치, 내 이평선 스크리너.">
+<title>원토피아</title>
+<meta name="description" content="원토피아(Wontopia)가 만든 것들 — 주식 레이더, 매크로 캘린더, 실적 발표 변동성.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ma-radar.onrender.com/links">
-<meta property="og:title" content="주식 레이더 — 링크 모음">
-<meta property="og:description" content="감이 아니라 데이터로 확인하는 기술적 분석 도구 모음.">
+<meta property="og:title" content="원토피아 — 만든 것들">
+<meta property="og:description" content="아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다.">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
@@ -52,7 +52,23 @@
   .lk:hover, .lk:focus-visible {
     border-color: var(--text); transform: translateY(-1px); outline: none;
   }
-  .lk .ico { font-size: 21px; line-height: 1; flex: none; width: 26px; text-align: center; }
+  .lk .num {
+    flex: none; width: 34px; height: 34px; border-radius: 11px;
+    display: grid; place-items: center;
+    background: var(--panel2); border: 1px solid var(--hairline);
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .lk .u {
+    color: var(--faint); font-size: 11.5px; margin-top: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .head .en-name {
+    font-size: 11px; letter-spacing: .22em; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin: 0 0 10px;
+  }
   .lk .txt { min-width: 0; }
   .lk .t { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
   .lk .d { color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.45; }
@@ -383,71 +399,47 @@
   <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
   <div class="wrap">
     <div class="head">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg>
-      <h1>주식 레이더</h1>
-      <p class="tagline">감이 아니라 데이터로 확인하는 기술적 분석</p>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="원토피아 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg>
+      <h1>원토피아</h1>
+      <div class="en-name">WONTOPIA</div>
+      <p class="tagline">아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다</p>
     </div>
 
-    <div class="sec sec-tools">도구</div>
+    <div class="sec sec-works">작업물</div>
     <div class="links">
-      <a class="lk" href="/ma">
-        <span class="ico" aria-hidden="true">📈</span>
+      <a class="lk" href="/">
+        <span class="num" aria-hidden="true">01</span>
         <span class="txt">
-          <span class="t">이평선 레이더</span>
-          <div class="d">종목별로 실제 지지·저항이 된 이동평균선을 3년 백테스트로 찾아 순위화</div>
+          <span class="t">주식 레이더</span>
+          <div class="d">이평선 백테스트 · 차트 패턴 스크리너 · 오늘의 지지선 터치</div>
+          <div class="u">ma-radar.onrender.com</div>
         </span>
         <span class="arw" aria-hidden="true">→</span>
       </a>
-      <a class="lk" href="/patterns">
-        <span class="ico" aria-hidden="true">🔍</span>
+      <a class="lk" href="https://won-topiaa.github.io/macro-calendar/" target="_blank" rel="noopener">
+        <span class="num" aria-hidden="true">02</span>
         <span class="txt">
-          <span class="t">차트 패턴 스크리너</span>
-          <div class="d">와인스타인 2단계·삼각수렴·헤드앤숄더·컵앤핸들을 770여 종목에서 자동 탐지</div>
+          <span class="t">매크로 캘린더</span>
+          <div class="d">주요 경제지표·이벤트 발표 일정을 한눈에</div>
+          <div class="u">won-topiaa.github.io/macro-calendar</div>
         </span>
-        <span class="arw" aria-hidden="true">→</span>
+        <span class="arw" aria-hidden="true">↗</span>
       </a>
-      <a class="lk" href="/touches">
-        <span class="ico" aria-hidden="true">🚨</span>
-        <span class="txt">
-          <span class="t">오늘의 지지선 터치<span class="badge">무료 가입</span></span>
-          <div class="d">검증된 지지 이평선에 오늘 가격이 닿은 종목 — 매일 아침 갱신</div>
-        </span>
-        <span class="arw" aria-hidden="true">→</span>
-      </a>
-      <a class="lk" href="/lines">
-        <span class="ico" aria-hidden="true">📐</span>
-        <span class="txt">
-          <span class="t">내 이평선 스크리너<span class="badge">무료 가입</span></span>
-          <div class="d">원하는 기간(5~250일)의 선에서 지지받는 종목과 저항받는 종목을 구분</div>
-        </span>
-        <span class="arw" aria-hidden="true">→</span>
-      </a>
-    </div>
-
-    <div class="sec sec-more">다른 프로젝트</div>
-    <div class="links">
-      <a class="lk" href="https://earnings-volatility.vercel.app" target="_blank" rel="noopener">
-        <span class="ico" aria-hidden="true">📉</span>
+      <a class="lk" href="https://earnings-volatility.vercel.app/" target="_blank" rel="noopener">
+        <span class="num" aria-hidden="true">03</span>
         <span class="txt">
           <span class="t">실적 발표 변동성</span>
-          <div class="d">미국 주식이 분기 실적일에 얼마나 움직였는지 5년 데이터로 확인</div>
+          <div class="d">미국 주식이 분기 실적일에 얼마나 움직였는지 5년 데이터로</div>
+          <div class="u">earnings-volatility.vercel.app</div>
         </span>
         <span class="arw" aria-hidden="true">↗</span>
       </a>
     </div>
 
-    <div class="sec sec-about">소개 · 문의</div>
+    <div class="sec sec-contact">연락</div>
     <div class="links">
-      <a class="lk" href="/about">
-        <span class="ico" aria-hidden="true">🏢</span>
-        <span class="txt">
-          <span class="t">원토피아 소개</span>
-          <div class="d">만드는 사람과 일하는 방식</div>
-        </span>
-        <span class="arw" aria-hidden="true">→</span>
-      </a>
       <a class="lk mail" href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%EB%AC%B8%EC%9D%98">
-        <span class="ico" aria-hidden="true">✉️</span>
+        <span class="num" aria-hidden="true">✉</span>
         <span class="txt">
           <span class="t">협업 · 문의</span>
           <div class="d">wontopiaaa@gmail.com</div>
@@ -457,7 +449,7 @@
     </div>
 
     <footer>
-      <p class="disc" style="margin:0">모든 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
+      <p class="disc" style="margin:0">각 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
       <p style="margin:4px 0 0">© 원토피아 · <a href="/privacy">개인정보처리방침</a></p>
     </footer>
   </div>
