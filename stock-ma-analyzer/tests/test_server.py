@@ -1161,6 +1161,11 @@ def test_links_page_served_and_wired(client):
     pos = [html.index(x) for x in order]
     assert pos == sorted(pos), f"작업물 순서가 어긋남: {pos}"
     assert "mailto:wontopiaaa@gmail.com" in html
+    # 푸터 링크는 실제 계정으로 이어져야 한다 (오타 나면 조용히 404 로 간다)
+    for url in ("https://blog.naver.com/information_provider",
+                "https://www.threads.com/@tooja_in",
+                "https://github.com/won-topiaa"):
+        assert url in html, f"푸터 링크 누락: {url}"
     # 언어·테마 토글과 면책 문구
     assert 'id="langToggle"' in html and 'id="themeToggle"' in html
     assert "/static/i18n.js" in html and "/static/theme.js" in html
