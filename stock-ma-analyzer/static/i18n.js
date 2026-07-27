@@ -300,7 +300,7 @@
       '.lk[href="/"] .t': "Stock Radar",
       '.lk[href="/"] .d': "MA backtests · chart-pattern screener · today's support touches",
       '.lk[href*="macro-calendar"] .t': "Macro Calendar",
-      '.lk[href*="macro-calendar"] .d': "Key economic releases and events at a glance",
+      '.lk[href*="macro-calendar"] .d': "A dashboard for reading the macro picture at a glance",
       '.lk[href*="earnings-volatility"] .t': "Earnings Volatility",
       '.lk[href*="earnings-volatility"] .d': "How much US stocks actually moved on earnings day, from 5 years of data",
       ".lk.mail .t": "Work with us · Contact",
