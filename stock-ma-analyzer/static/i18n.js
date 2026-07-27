@@ -305,6 +305,7 @@
       '.lk[href*="earnings-volatility"] .d': "How much US stocks actually moved on earnings day, from 5 years of data",
       ".lk.mail .t": "Work with us · Contact",
       "footer .disc": "Each tool shows historical statistics — not investment advice.",
+      "footer .copy": '© Wontopia · <a href="/privacy">Privacy Policy</a>',
     },
     "/privacy": {
       "h1": "Privacy Policy",

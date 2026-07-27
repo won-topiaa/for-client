@@ -390,7 +390,7 @@ _MEMBER_PAGES = frozenset({"/touches", "/lines", "/login"})
 
 _RATE_LIMITED_PATHS = frozenset(
     {"/api/analyze", "/api/search", "/api/presence", "/api/lines",
-     "/api/touches", "/api/patterns",
+     "/api/touches", "/api/patterns", "/api/indices/spark",
      "/api/auth/login", "/api/auth/signup", "/api/auth/me", "/api/auth/logout"}
     | _MEMBER_PAGES
 )
@@ -413,6 +413,8 @@ def _rate_bucket(path: str) -> str:
         return "touches"
     if path == "/api/patterns":
         return "patterns"
+    if path == "/api/indices/spark":
+        return "page"
     if path in _MEMBER_PAGES:
         return "page"
     return "analyze"
@@ -873,6 +875,51 @@ async def _refresh_indices(now: float):
         # 쿨다운이 그만큼 일찍 풀린다
         _indices_cache["fail_ts"] = time.monotonic()
     return data
+
+
+# 배경 그래프용 지수 시계열 — 값만 주는 /api/indices 와 달리 '모양'을 그린다.
+# 장식이지만 데이터는 진짜여야 하므로 실제 일봉 종가를 쓴다.
+_SPARK_TTL_SEC = 900.0          # 15분 (일봉이라 더 자주 받을 이유가 없다)
+_SPARK_BARS = 90                # 약 4개월치 — 배경 곡선으로 보기 좋은 길이
+_spark_cache: dict[str, Any] = {"data": None, "ts": 0.0, "fail_ts": 0.0}
+_spark_lock = asyncio.Lock()
+
+
+@app.get("/api/indices/spark")
+async def indices_spark():
+    """주요 지수의 최근 종가 시계열 (배경 그래프용).
+
+    실패해도 화면이 깨지지 않게 빈 목록을 준다 — 호출자는 장식으로만 쓴다."""
+    now = time.monotonic()
+    if (_spark_cache["data"] is not None
+            and now - _spark_cache["ts"] < _SPARK_TTL_SEC):
+        return _spark_cache["data"]
+    async with _spark_lock:
+        now = time.monotonic()
+        if (_spark_cache["data"] is not None
+                and now - _spark_cache["ts"] < _SPARK_TTL_SEC):
+            return _spark_cache["data"]
+        if now - _spark_cache["fail_ts"] < _INDICES_FAIL_COOLDOWN_SEC:
+            return {"indices": []}
+
+        async def one(sym: str, name: str):
+            try:
+                df = await app.state.provider.candles(sym, "day", _SPARK_BARS + 10)
+                closes = [round(float(v), 2) for v in df["close"].tail(_SPARK_BARS)]
+                if len(closes) >= 10:
+                    return {"key": sym, "name": name, "closes": closes}
+            except Exception:  # noqa: BLE001 — 하나 실패해도 나머지로 그린다
+                logger.info("지수 시계열 조회 실패: %s", sym)
+            return None
+
+        rows = await asyncio.gather(*(one(s, n) for s, n in INDEX_TICKER))
+        data = {"indices": [r for r in rows if r]}
+        if data["indices"]:
+            _spark_cache["data"] = data
+            _spark_cache["ts"] = time.monotonic()
+        else:
+            _spark_cache["fail_ts"] = time.monotonic()
+        return data
 
 
 @app.get("/api/touches")
