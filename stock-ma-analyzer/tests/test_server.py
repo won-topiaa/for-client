@@ -955,3 +955,103 @@ def test_logout_not_undone_by_inflight_lookup(monkeypatch):
     assert got is None, "로그아웃된 토큰이 되살아났다"
     assert "tok-race" not in server_mod._session_cache, "무효 토큰이 캐시에 남았다"
     server_mod._session_revoked.clear()
+
+
+def test_naver_index_parsers():
+    """네이버 실시간 지수 응답 파서 — 값·등락률·부호를 정확히 뽑아야 한다.
+
+    FDR 의 지수 경로는 GitHub 정적 CSV(완성 일봉만)라 장중에 값이 멈춘다.
+    이 파서가 티커를 실제로 움직이게 하는 부분이라 형식 변화에 민감하다."""
+    from app.providers.free_data import parse_naver_basic, parse_naver_polling
+
+    # m.stock.naver.com /api/index/KOSPI/basic (상승)
+    up = parse_naver_basic({
+        "closePrice": "2,650.12", "fluctuationsRatio": "0.46",
+        "compareToPreviousClosePrice": "12.10",
+        "compareToPreviousPrice": {"code": "2", "text": "상승"},
+    })
+    assert up == {"value": 2650.12, "changePct": 0.46}
+
+    # 하락은 비율이 양수로 오고 방향이 따로 표시되는 경우가 있다 → 부호 보정
+    down = parse_naver_basic({
+        "closePrice": "2,600.00", "fluctuationsRatio": "0.85",
+        "compareToPreviousClosePrice": "-22.30",
+        "compareToPreviousPrice": {"code": "5", "text": "하락"},
+    })
+    assert down["value"] == 2600.0
+    assert down["changePct"] == -0.85, "하락인데 등락률이 양수로 표시됨"
+
+    # 체결 시각이 오면 그 날짜를 쓴다 (휴장일에 '오늘'로 잘못 붙지 않게)
+    dated = parse_naver_basic({
+        "closePrice": "2,650.12", "fluctuationsRatio": "0.46",
+        "localTradedAt": "2026-07-24T15:30:00+09:00",
+    })
+    assert dated["date"] == "07/24"
+
+    # 값이 없거나 이상하면 None (호출자가 일봉 경로로 폴백)
+    assert parse_naver_basic({}) is None
+    assert parse_naver_basic({"closePrice": "0", "fluctuationsRatio": "1"}) is None
+    assert parse_naver_basic({"closePrice": "abc", "fluctuationsRatio": "1"}) is None
+
+    # polling API: 지수는 100배 정수 (265012 → 2650.12)
+    poll = parse_naver_polling({"datas": [{"nv": 265012, "cr": 0.46, "rf": "2"}]})
+    assert poll == {"value": 2650.12, "changePct": 0.46}
+    poll_down = parse_naver_polling({"datas": [{"nv": 260000, "cr": 0.85, "rf": "5"}]})
+    assert poll_down["changePct"] == -0.85
+    assert parse_naver_polling({"datas": []}) is None
+    assert parse_naver_polling({}) is None
+
+
+def test_indices_fall_back_when_live_quote_fails(client, monkeypatch):
+    """실시간 지수 소스가 죽어도 티커는 기존 일봉 경로로 계속 나와야 한다."""
+    import app.server as server_mod
+
+    async def boom(sym, name):
+        return None            # 실시간 조회 실패 상황
+
+    monkeypatch.setattr(server_mod, "_live_kr_index", boom)
+    server_mod._indices_cache["data"] = None
+    server_mod._indices_cache["ts"] = 0.0
+    server_mod._indices_cache["fail_ts"] = 0.0
+    r = client.get("/api/indices")
+    assert r.status_code == 200
+    assert len(r.json()["indices"]) == 4, "폴백 경로가 티커를 못 채웠다"
+
+
+def test_indices_cache_shorter_than_frontend_poll():
+    """서버 캐시가 프런트 폴링 주기(60초)보다 길면 폴링 두 번에 한 번은 같은
+    값이 와서 '멈춘 것처럼' 보인다."""
+    import app.server as server_mod
+
+    assert server_mod._INDICES_TTL_SEC < 60.0
+
+
+def test_live_index_quote_never_raises(monkeypatch):
+    """실시간 지수 조회는 어떤 실패에도 예외를 던지지 않고 None 을 돌려줘야
+    한다 — 던지면 티커 전체가 죽는다 (폴백 경로가 바로 이 지점이다)."""
+    from app.providers import free_data
+
+    class Boom:
+        def get(self, *a, **kw):
+            raise RuntimeError("네트워크 차단")
+
+    monkeypatch.setattr(free_data, "_stooq_client", lambda: Boom())
+    assert free_data.fetch_kr_index_quote_sync("KS11") is None
+
+    # 응답은 오는데 형식이 바뀐 경우도 조용히 None
+    class Weird:
+        def get(self, *a, **kw):
+            class R:
+                @staticmethod
+                def raise_for_status():
+                    return None
+
+                @staticmethod
+                def json():
+                    return {"unexpected": "shape"}
+            return R()
+
+    monkeypatch.setattr(free_data, "_stooq_client", lambda: Weird())
+    assert free_data.fetch_kr_index_quote_sync("KS11") is None
+    # 지수가 아닌 심볼은 아예 시도하지 않는다
+    assert free_data.fetch_kr_index_quote_sync("005930") is None

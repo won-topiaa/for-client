@@ -755,7 +755,9 @@ INDEX_TICKER = [
 # 티커 지수는 30분 캔들 캐시를 우회해 짧게(2분) 따로 캐시한다 — 장중에 지수가
 # 실제로 움직이는 것을 보여주기 위함(무료 소스의 일봉 마지막 값은 장중에 현재가로
 # 갱신된다). 2분 간격이면 저빈도라 야후 등 소스에 부담도 없다.
-_INDICES_TTL_SEC = 120.0
+# 실시간 지수를 쓰므로 캐시는 프런트 폴링 주기(60초)보다 짧게 잡는다 —
+# 120초면 폴링 두 번에 한 번은 같은 값이라 '멈춘 것처럼' 보인다.
+_INDICES_TTL_SEC = 45.0
 _INDICES_FAIL_COOLDOWN_SEC = 30.0  # 전부 실패 직후 이 시간 동안은 재조회하지 않는다
 _indices_cache: dict[str, Any] = {"ts": -1e9, "data": None, "fail_ts": -1e9}
 _indices_last_good: dict[str, dict] = {}  # 실패한 지수는 직전 값을 유지(티커 안정)
@@ -789,11 +791,44 @@ async def indices():
         return await _refresh_indices(now)
 
 
+async def _live_kr_index(sym: str, name: str) -> dict | None:
+    """국내 지수 실시간 시세 행 — 실패하면 None (호출자가 일봉 경로로 폴백)."""
+    try:
+        from .providers.free_data import fetch_kr_index_quote_sync
+    except Exception:  # noqa: BLE001 — 샘플/토스 모드 등 모듈이 없을 수 있다
+        return None
+    if sym.upper() not in ("KS11", "KQ11"):
+        return None
+    if getattr(app.state, "settings", None) is not None and \
+            app.state.settings.provider == "sample":
+        return None                      # 샘플 모드는 합성 데이터만 (테스트 결정성)
+    try:
+        quote = await asyncio.wait_for(
+            asyncio.to_thread(fetch_kr_index_quote_sync, sym), 8)
+    except Exception:  # noqa: BLE001 — 실시간 실패는 조용히 폴백
+        return None
+    if not quote:
+        return None
+    import datetime as _dt
+    kst = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9)))
+    row = {"key": sym, "name": name, "value": quote["value"],
+           "changePct": quote["changePct"],
+           "date": quote.get("date") or kst.strftime("%m/%d"),
+           "live": True}   # 진단용 — 실시간 소스에서 온 값인지 구분
+    _indices_last_good[sym] = row
+    return row
+
+
 async def _refresh_indices(now: float):
     # 30분 캔들 캐시를 우회해 원 공급자에서 최신 일봉을 직접 받는다 (장중 갱신 반영)
     inner = getattr(app.state.provider, "inner", app.state.provider)
 
     async def one(sym: str, name: str):
+        # 국내 지수는 실시간 시세를 먼저 시도한다. FDR 의 지수 경로는 GitHub
+        # 정적 CSV 캐시(완성된 일봉만)라 장중에 값이 전혀 움직이지 않았다.
+        live = await _live_kr_index(sym, name)
+        if live is not None:
+            return live
         try:
             df = await inner.candles(sym, "day", 10)
             if len(df) >= 2:

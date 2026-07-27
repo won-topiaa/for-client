@@ -576,3 +576,105 @@ def _load_listing_sync() -> pd.DataFrame:
 def _load_us_listing_sync() -> pd.DataFrame:
     import FinanceDataReader as fdr
     return fdr.StockListing("S&P500")
+
+
+# ── 국내 지수 실시간 시세 ──────────────────────────────────────────────
+# FDR 은 지수(KS11/KQ11)를 GitHub 정적 CSV 캐시
+# (raw.githubusercontent.com/FinanceData/fdr_krx_data_cache)에서 읽는다.
+# 그 파일에는 '완성된 일봉'만 들어 있고 갱신도 하루 단위라, 헤더 티커가
+# 장중 내내 같은 숫자로 멈춰 있었다(개별 종목은 fchart.stock.naver.com 라이브
+# 소스라 정상). 지수만 네이버 실시간 API 로 직접 받아 해결한다.
+_index_logger = logging.getLogger("ma-analyzer")
+_KR_INDEX_CODE = {"KS11": "KOSPI", "KQ11": "KOSDAQ"}
+_INDEX_QUOTE_TIMEOUT_SEC = 6.0
+
+
+def _to_float(raw: Any) -> float | None:
+    """"2,650.12" · "+1.23%" 같은 표기를 float 로. 실패하면 None."""
+    if raw is None:
+        return None
+    try:
+        return float(str(raw).replace(",", "").replace("%", "").replace("+", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_naver_basic(payload: dict) -> dict | None:
+    """m.stock.naver.com /api/index/{code}/basic 응답 → 시세 dict."""
+    value = _to_float(payload.get("closePrice"))
+    if value is None or value <= 0:
+        return None
+    pct = _to_float(payload.get("fluctuationsRatio"))
+    if pct is None:
+        return None
+    # 하락은 별도 필드로만 표시된다 — 부호를 잃지 않게 방향을 반영
+    direction = str(payload.get("compareToPreviousPrice", {}).get("code", "")
+                    if isinstance(payload.get("compareToPreviousPrice"), dict)
+                    else payload.get("compareToPreviousPrice", ""))
+    if direction in ("4", "5") and pct > 0:      # 4=하락, 5=하한
+        pct = -pct
+    diff = _to_float(payload.get("compareToPreviousClosePrice"))
+    if diff is not None and diff < 0 and pct > 0:
+        pct = -pct
+    out = {"value": round(value, 2), "changePct": round(pct, 2)}
+    # 체결 시각이 오면 그대로 쓴다 — 휴장일에 '오늘 날짜'가 붙는 것을 막는다
+    traded = str(payload.get("localTradedAt") or "")[:10]
+    if len(traded) == 10 and traded[4] == "-":
+        out["date"] = f"{traded[5:7]}/{traded[8:10]}"
+    return out
+
+
+def parse_naver_polling(payload: dict) -> dict | None:
+    """polling.finance.naver.com 실시간 응답 → 시세 dict.
+
+    지수는 값이 100배 정수로 온다 (nv=265012 → 2650.12)."""
+    datas = payload.get("datas") or []
+    if not datas:
+        return None
+    d = datas[0]
+    nv, cr = d.get("nv"), d.get("cr")
+    if nv is None or cr is None:
+        return None
+    try:
+        value = float(nv) / 100.0
+        pct = float(cr)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    if str(d.get("rf", "")) in ("4", "5") and pct > 0:   # 하락 방향 보정
+        pct = -pct
+    return {"value": round(value, 2), "changePct": round(pct, 2)}
+
+
+def fetch_kr_index_quote_sync(symbol: str) -> dict | None:
+    """국내 지수 실시간 시세 {value, changePct} — 실패하면 None (호출자가 폴백).
+
+    두 소스를 순서대로 시도한다. 어느 쪽이 형식을 바꾸거나 막혀도 나머지가
+    받고, 둘 다 실패하면 기존 일봉 경로가 그대로 화면을 채운다."""
+    code = _KR_INDEX_CODE.get(symbol.upper())
+    if not code:
+        return None
+    # 브라우저처럼 보이는 헤더가 없으면 거절하는 경우가 있어 UA·Referer 를 붙인다.
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
+    sources = (
+        (f"https://m.stock.naver.com/api/index/{code}/basic", parse_naver_basic,
+         {"Referer": f"https://m.stock.naver.com/domestic/index/{code}/total"}),
+        (f"https://polling.finance.naver.com/api/realtime/domestic/index/{code}",
+         parse_naver_polling, {"Referer": "https://finance.naver.com/sise/"}),
+    )
+    client = _stooq_client()      # 공유 커넥션 풀 재사용 (범용 httpx.Client)
+    for url, parse, extra in sources:
+        try:
+            r = client.get(url, timeout=_INDEX_QUOTE_TIMEOUT_SEC,
+                           headers={"User-Agent": ua, "Accept": "application/json",
+                                    **extra})
+            r.raise_for_status()
+            quote = parse(r.json())
+            if quote:
+                return quote
+            _index_logger.debug("지수 응답 형식 불일치 %s", url)
+        except Exception as exc:  # noqa: BLE001 — 소스 하나 실패는 폴백으로 흡수
+            _index_logger.debug("지수 실시간 조회 실패 %s: %s", url, exc)
+    return None
