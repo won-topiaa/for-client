@@ -1169,60 +1169,17 @@ def test_links_page_served_and_wired(client):
     assert html.count('target="_blank" rel="noopener"') >= 2
 
 
-def test_links_page_draws_index_background(client):
-    """배경 그래프는 links.js 가 그린다 — 붙일 자리와 스크립트가 둘 다 있어야 한다.
+def test_links_page_is_self_contained(client):
+    """작업물 페이지는 스크립트 없이도 완성돼야 한다.
 
-    CSP 가 인라인 스크립트를 막으므로 별도 파일이어야 하고, 호스트 엘리먼트가
-    사라지면 배경이 조용히 없어진다(오류도 안 난다)."""
+    배경 그래프를 걷어낸 뒤 남은 건 정적 HTML 뿐 — CSP 가 인라인 스크립트를
+    막으므로 페이지 전용 JS 를 다시 인라인으로 끼워 넣으면 조용히 죽는다."""
     html = client.get("/links").text
-    assert 'id="bgChart"' in html, "배경 그래프를 붙일 자리가 없다"
-    assert "/static/links.js" in html, "배경을 그리는 스크립트가 안 실려 있다"
-    assert 'id="idxStrip"' in html, "지수 요약 줄(범례) 자리가 없다"
     assert "<script>" not in html, "인라인 스크립트는 CSP 에 막힌다"
-
-
-def test_indices_spark_returns_real_series(client):
-    """배경 곡선은 장식이지만 데이터는 진짜여야 한다 — 실제 종가 시계열."""
-    import app.server as server_mod
-
-    server_mod._spark_cache.update({"data": None, "ts": 0.0, "fail_ts": 0.0})
-    body = client.get("/api/indices/spark").json()
-    rows = body["indices"]
-    assert rows, "지수 시계열이 하나도 없다"
-    keys = {r["key"] for r in rows}
-    assert keys <= {s for s, _ in server_mod.INDEX_TICKER}, f"모르는 지수 키: {keys}"
-    for r in rows:
-        closes = r["closes"]
-        assert 10 <= len(closes) <= server_mod._SPARK_BARS, f"{r['key']} 길이 이상"
-        assert all(isinstance(v, float) and v == v and v > 0 for v in closes), \
-            f"{r['key']} 종가에 NaN/음수가 있다"
-        assert min(closes) < max(closes), f"{r['key']} 가 상수 — 그래프가 직선이 된다"
-
-
-def test_indices_spark_is_cached(client):
-    """무료 티어에선 방문마다 90일치를 새로 받으면 안 된다 — TTL 안에선 재사용."""
-    import app.server as server_mod
-
-    calls = []
-    provider = server_mod.app.state.provider
-    orig = provider.candles
-
-    async def counting(sym, *a, **kw):
-        calls.append(sym)
-        return await orig(sym, *a, **kw)
-
-    provider.candles = counting
-    try:
-        server_mod._spark_cache.update({"data": None, "ts": 0.0, "fail_ts": 0.0})
-        first = client.get("/api/indices/spark").json()
-        n = len(calls)
-        assert n > 0, "첫 호출이 프로바이더를 안 탔다 — 캐시 테스트가 무의미하다"
-        second = client.get("/api/indices/spark").json()
-        assert len(calls) == n, "TTL 안인데 다시 받아왔다"
-        assert first == second
-    finally:
-        provider.candles = orig
-        server_mod._spark_cache.update({"data": None, "ts": 0.0, "fail_ts": 0.0})
+    # 카드마다 번호·분류 배지·화살표가 다 있어야 카드 꼴이 유지된다
+    assert html.count('class="num"') == 3, "작업물 번호(01·02·03)가 3개가 아니다"
+    assert html.count('class="badge"') == 3, "분류 배지가 3개가 아니다"
+    assert html.count('class="ico"') == 3, "아이콘이 3개가 아니다"
 
 
 def test_links_page_has_no_dead_internal_links(client):

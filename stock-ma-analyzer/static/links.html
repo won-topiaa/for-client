@@ -9,252 +9,277 @@
 <meta property="og:url" content="https://ma-radar.onrender.com/links">
 <meta property="og:title" content="원토피아 — 만든 것들">
 <meta property="og:description" content="아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다.">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
 <style>
-  /* ── 토큰: 다크 대시보드가 기본 감각, 라이트도 그대로 성립 ── */
+  /* ── 토큰 ──
+     밝은 회색 한 벌 + 강조색 하나(에메랄드). 그라데이션·유리효과 없음.
+     다크는 '반전'이 아니라 같은 절제를 어두운 쪽에서 반복한 것. */
   :root {
-    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
-    --border: rgba(9,11,12,.10); --hairline: rgba(9,11,12,.07);
-    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
-    --accent: #00913f; --up: #00913f; --down: #e03131;
-    --glow: rgba(0,200,5,.05);
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.09); --hairline: rgba(9,11,12,.07);
+    --grid: rgba(9,11,12,.035);
+    --text: #0a0b0c; --muted: #565e66; --faint: #68707a;
+    --accent: #16a34a;
+    --shadow: 0 1px 2px rgba(9,11,12,.04);
+    --shadow-hover: 0 10px 30px -14px rgba(9,11,12,.22), 0 2px 6px rgba(9,11,12,.04);
+    --border-hover: rgba(9,11,12,.18);
+    --markbg: #0a0b0c; --markfg: #2fbf6b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
-      --border: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.08);
-      --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
-      --accent: #00d95a; --up: #00d95a; --down: #ff5f56;
-      --glow: rgba(0,200,5,.07);
+      --bg: #0a0a0b; --panel: #101113; --soft: #141517;
+      --border: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.07);
+      --grid: rgba(255,255,255,.045);
+      --text: #f4f6f7; --muted: #9198a0; --faint: #7d848c;
+      --accent: #22c55e;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-hover: 0 10px 30px -14px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.3);
+      --markbg: #1c1f23; --markfg: #22c55e;
     }
   }
   :root[data-theme="light"] {
-    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
-    --border: rgba(9,11,12,.10); --hairline: rgba(9,11,12,.07);
-    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
-    --accent: #00913f; --up: #00913f; --down: #e03131;
-    --glow: rgba(0,200,5,.05);
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.09); --hairline: rgba(9,11,12,.07);
+    --grid: rgba(9,11,12,.035);
+    --text: #0a0b0c; --muted: #565e66; --faint: #68707a;
+    --accent: #16a34a;
+    --shadow: 0 1px 2px rgba(9,11,12,.04);
+    --shadow-hover: 0 10px 30px -14px rgba(9,11,12,.22), 0 2px 6px rgba(9,11,12,.04);
+    --border-hover: rgba(9,11,12,.18);
+    --markbg: #0a0b0c; --markfg: #2fbf6b;
   }
   :root[data-theme="dark"] {
-    --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
-    --border: rgba(255,255,255,.11); --hairline: rgba(255,255,255,.08);
-    --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
-    --accent: #00d95a; --up: #00d95a; --down: #ff5f56;
-    --glow: rgba(0,200,5,.07);
+    --bg: #0a0a0b; --panel: #101113; --soft: #141517;
+    --border: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.07);
+    --grid: rgba(255,255,255,.045);
+    --text: #f4f6f7; --muted: #9198a0; --faint: #7d848c;
+    --accent: #22c55e;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-hover: 0 10px 30px -14px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.3);
+    --border-hover: rgba(255,255,255,.19);
+    --markbg: #1c1f23; --markfg: #22c55e;
   }
 
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
-      "Noto Sans KR", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo",
+      "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
     font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     min-height: 100vh; position: relative; overflow-x: hidden;
-    padding: 72px 20px 56px;
+    padding: 104px 24px 80px;
   }
 
-  /* ── 배경: 실제 지수 곡선 (links.js 가 SVG 를 채운다) ──
-     화면 위쪽에 넓게 깔고 아래로 사라지게 마스크 — 본문 가독성이 먼저다. */
-  .bg {
-    position: fixed; inset: 0 0 auto; height: min(56vh, 460px);
-    z-index: 0; pointer-events: none; opacity: 0;
-    transition: opacity .7s ease;
-    -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,.85) 0%, rgba(0,0,0,.55) 45%, transparent 92%);
-    mask-image: linear-gradient(180deg, rgba(0,0,0,.85) 0%, rgba(0,0,0,.55) 45%, transparent 92%);
-  }
-  .bg.on { opacity: 1; }
-  .bg svg { width: 100%; height: 100%; display: block; }
-  /* 중앙 컬럼 뒤쪽을 살짝 어둡게(밝게) 깔아 곡선 위 글자가 항상 읽히게 */
-  .bg::after {
-    content: ""; position: absolute; inset: 0;
-    background: radial-gradient(52% 62% at 50% 26%, var(--bg) 42%, transparent 82%);
+  /* ── 배경: 눈에 겨우 걸리는 격자 하나. 그림도, 형광 덩어리도 없다. ── */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(88% 52% at 50% 0%, #000 0%, transparent 72%);
+    mask-image: radial-gradient(88% 52% at 50% 0%, #000 0%, transparent 72%);
   }
 
-  .wrap { max-width: 560px; margin: 0 auto; position: relative; z-index: 1; }
+  .wrap { max-width: 880px; margin: 0 auto; position: relative; z-index: 1; }
 
-  /* ── 머리 ── */
-  .head { text-align: center; margin-bottom: 26px; }
-  .head .mark {
-    width: 58px; height: 58px; border-radius: 17px; display: block; margin: 0 auto 16px;
-    box-shadow: 0 0 0 1px var(--hairline), 0 18px 40px -22px var(--glow);
+  /* ── 히어로 ── */
+  .hero { text-align: center; margin-bottom: 76px; }
+  .hero .mark {
+    width: 64px; height: 64px; border-radius: 50%; display: block; margin: 0 auto 26px;
+    background: var(--markbg); box-shadow: var(--shadow);
   }
-  .head h1 {
-    font-size: 27px; margin: 0 0 7px; letter-spacing: -.035em; font-weight: 700;
+  .hero .mark g { fill: var(--markfg); }
+  .hero h1 {
+    font-size: 32px; margin: 0 0 12px; font-weight: 700; letter-spacing: -.032em;
+    line-height: 1.2;
   }
-  .head .en-name {
-    font-size: 10.5px; letter-spacing: .28em; color: var(--faint);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-bottom: 12px;
+  .role {
+    font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase;
+    font-weight: 600; color: var(--faint); margin-bottom: 20px;
   }
-  /* 영문 모드에선 h1 이 이미 "Wontopia" — 아래 로마자 줄은 중복이라 감춘다 */
-  html[lang="en"] .en-name { display: none; }
-  html[lang="en"] .head h1 { margin-bottom: 14px; }
-  .head .tagline {
-    margin: 0 auto; color: var(--muted); font-size: 14px; max-width: 430px;
-    line-height: 1.65;
+  .hero .tagline {
+    margin: 0 auto; color: var(--muted); font-size: 15px; max-width: 460px;
+    line-height: 1.65; letter-spacing: -.004em; word-break: keep-all;
   }
 
-  /* ── 지수 요약 줄 (배경 그래프의 범례 역할) ──
-     560px 컬럼에 네 지수를 한 줄로 넣으면 3+1 로 어색하게 접힌다.
-     2×2 격자로 고정해 값 길이와 무관하게 항상 대칭으로 보이게 한다. */
-  .idx-strip {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-    justify-items: center; gap: 9px 14px;
-    /* 본문(560px)보다 좁게 묶어 네 지수가 가운데로 모이게 */
-    max-width: 460px; margin: 20px auto 34px; font-size: 11.5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .idx { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .idx .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; }
-  .idx b { font-weight: 600; color: var(--muted); }
-  .idx .v { color: var(--text); font-variant-numeric: tabular-nums; }
-  .idx .c { font-variant-numeric: tabular-nums; }
-  .idx .c.up { color: var(--up); }
-  .idx .c.down { color: var(--down); }
-  .idx .c.flat { color: var(--faint); }
-
-  /* ── 구역 라벨 ── */
+  /* ── 구역 머리: 얇은 선 + 아주 작은 대문자 라벨 ── */
   .sec {
-    margin: 0 0 12px; font-size: 10.5px; color: var(--faint);
-    letter-spacing: .16em; text-transform: uppercase; font-weight: 600;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border-top: 1px solid var(--hairline); padding-top: 18px; margin: 0 0 20px;
+    font-size: 10.5px; color: var(--faint); letter-spacing: .18em;
+    text-transform: uppercase; font-weight: 600;
   }
-  .sec.mt { margin-top: 28px; }
 
   /* ── 작업물 카드 (이 페이지의 주인공) ── */
-  .links { display: flex; flex-direction: column; gap: 11px; }
+  .cards { display: flex; flex-direction: column; gap: 12px; }
   .lk {
-    display: flex; align-items: center; gap: 15px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
-    padding: 19px 20px; text-decoration: none; color: var(--text);
-    transition: border-color .18s, transform .18s, background .18s;
+    display: grid; align-items: center; gap: 0 20px;
+    grid-template-columns: auto 46px 1fr auto 18px;
+    grid-template-areas: "num ico body badge arw";
+    background: var(--panel); border: 1px solid var(--border); border-radius: 22px;
+    padding: 26px 28px; text-decoration: none; color: var(--text);
+    box-shadow: var(--shadow);
+    transition: transform .25s cubic-bezier(.2,.7,.3,1),
+                box-shadow .25s cubic-bezier(.2,.7,.3,1),
+                border-color .25s ease;
   }
   .lk:hover, .lk:focus-visible {
-    border-color: var(--text); transform: translateY(-2px); outline: none;
+    transform: translateY(-3px); box-shadow: var(--shadow-hover);
+    border-color: var(--border-hover); outline: none;
   }
   .lk .num {
-    flex: none; width: 38px; height: 38px; border-radius: 12px;
-    display: grid; place-items: center;
-    background: var(--panel2); border: 1px solid var(--hairline);
-    font-size: 12px; font-weight: 700; color: var(--muted);
+    grid-area: num; font-size: 11px; font-weight: 600; color: var(--faint);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .04em; font-variant-numeric: tabular-nums;
   }
-  .lk .txt { min-width: 0; }
-  .lk .t { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
-  .lk .d { color: var(--muted); font-size: 13px; margin-top: 3px; line-height: 1.5; }
-  .lk .u {
-    color: var(--faint); font-size: 11px; margin-top: 5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .lk .ico {
+    grid-area: ico; width: 46px; height: 46px; border-radius: 14px;
+    background: var(--soft); border: 1px solid var(--hairline);
+    display: grid; place-items: center; color: var(--muted);
   }
-  .lk .arw { margin-left: auto; color: var(--faint); flex: none; font-size: 15px; }
-  .lk:hover .arw { color: var(--text); }
-  .lk.mail .num { font-size: 14px; }
+  .lk .ico svg { width: 20px; height: 20px; display: block; }
+  .lk .body { grid-area: body; min-width: 0; }
+  .lk .t { display: block; font-weight: 700; font-size: 17px; letter-spacing: -.017em; }
+  .lk .d {
+    display: block; color: var(--muted); font-size: 14px; margin-top: 4px;
+    line-height: 1.5; letter-spacing: -.004em; word-break: keep-all;
+  }
+  .lk .badge {
+    grid-area: badge; justify-self: end;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+    color: var(--faint); background: var(--soft); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 5px 9px; white-space: nowrap; line-height: 1.2;
+  }
+  .lk .arw {
+    grid-area: arw; justify-self: end; color: var(--faint); font-size: 15px; line-height: 1;
+    transition: transform .25s cubic-bezier(.2,.7,.3,1), color .25s ease;
+  }
+  .lk:hover .arw, .lk:focus-visible .arw { color: var(--accent); transform: translate(2px, -2px); }
 
-  footer {
-    margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--hairline);
-    text-align: center; color: var(--muted); font-size: 11.5px; line-height: 1.75;
+  /* ── 푸터: 링크 한 줄 + 최소한의 고지 ── */
+  footer { margin-top: 76px; }
+  .social {
+    border-top: 1px solid var(--hairline); padding-top: 26px;
+    display: flex; flex-wrap: wrap; gap: 8px 26px; justify-content: center;
   }
-  footer a { color: var(--muted); }
+  .social a {
+    color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 500;
+    letter-spacing: -.005em; transition: color .25s ease;
+  }
+  .social a:hover { color: var(--text); }
+  .legal {
+    margin-top: 30px; text-align: center; color: var(--faint);
+    font-size: 11.5px; line-height: 1.8;
+  }
+  .legal p { margin: 0; }
+  .legal a { color: var(--faint); }
 
-  /* ── 토글 (오른쪽 위 고정) ── */
+  /* ── 토글 (오른쪽 위) ── */
   .theme-toggle {
-    width: 40px; height: 29px; border-radius: 999px;
+    width: 38px; height: 30px; border-radius: 999px;
     border: 1px solid var(--border); background: var(--panel);
-    color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+    color: var(--text); font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
     display: inline-flex; align-items: center; justify-content: center;
-    transition: border-color .15s;
+    box-shadow: var(--shadow); transition: border-color .25s ease;
   }
-  .theme-toggle:hover { border-color: var(--text); }
-  .lang-toggle { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; }
+  .theme-toggle:hover { border-color: var(--border-hover); }
+  .lang-toggle { width: auto; padding: 0 11px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
   .mid-toggles {
-    position: fixed; right: 16px; top: 14px; z-index: 50;
+    position: fixed; right: 20px; top: 18px; z-index: 50;
     display: inline-flex; gap: 8px; align-items: center;
   }
   a:focus-visible, button:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .bg, .lk, .theme-toggle { transition: none; }
-    .lk:hover, .lk:focus-visible { transform: none; }
+    outline: 2px solid var(--accent); outline-offset: 3px;
   }
 
-  @media (max-width: 520px) {
-    body { padding: 60px 16px 44px; }
-    .mid-toggles { position: absolute; right: 12px; }
-    .head h1 { font-size: 24px; }
-    .head .mark { width: 52px; height: 52px; }
-    .lk { padding: 17px 16px; gap: 13px; border-radius: 18px; }
-    .lk .t { font-size: 15px; }
-    .idx-strip { gap: 7px 10px; font-size: 11px; max-width: none; }
+  @media (max-width: 640px) {
+    body { padding: 72px 18px 56px; }
+    .mid-toggles { position: absolute; right: 14px; top: 14px; }
+    .hero { margin-bottom: 56px; }
+    .hero h1 { font-size: 26px; }
+    .hero .mark { width: 56px; height: 56px; margin-bottom: 22px; }
+    .hero .tagline { font-size: 14.5px; }
+    footer { margin-top: 56px; }
+    .lk {
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "num arw" "body body" "badge badge";
+      gap: 0; padding: 22px 22px 20px; border-radius: 20px;
+    }
+    .lk .ico { display: none; }
+    .lk .body { margin-top: 10px; }
+    .lk .t { font-size: 16px; }
+    .lk .badge { justify-self: start; margin-top: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lk, .lk .arw, .theme-toggle, .social a { transition: none; }
+    .lk:hover, .lk:focus-visible { transform: none; }
+    .lk:hover .arw, .lk:focus-visible .arw { transform: none; }
   }
 </style>
 <script src="/static/theme.js"></script>
 <script src="/static/i18n.js"></script>
 </head>
 <body>
-  <div class="bg" id="bgChart" aria-hidden="true"></div>
+  <div class="grid-bg" aria-hidden="true"></div>
   <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
 
-  <div class="wrap">
-    <div class="head">
-      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="원토피아 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg>
+  <main class="wrap">
+    <header class="hero">
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="원토피아 로고"><g><rect x="18.5" y="34" width="4" height="14" rx="1.4" opacity=".62"/><rect x="19.6" y="31" width="1.8" height="20" rx=".9" opacity=".62"/><rect x="29.5" y="26" width="4" height="16" rx="1.4" opacity=".8"/><rect x="30.6" y="22" width="1.8" height="24" rx=".9" opacity=".8"/><rect x="40.5" y="18" width="4" height="18" rx="1.4"/><rect x="41.6" y="14" width="1.8" height="26" rx=".9"/></g></svg>
       <h1>원토피아</h1>
-      <div class="en-name">WONTOPIA</div>
+      <div class="role">Finance Developer</div>
       <p class="tagline">아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다</p>
-    </div>
+    </header>
 
-    <div class="idx-strip" id="idxStrip" style="display:none"></div>
-
-    <div class="sec sec-works">작업물</div>
-    <div class="links">
-      <a class="lk" href="/">
-        <span class="num" aria-hidden="true">01</span>
-        <span class="txt">
-          <span class="t">주식 레이더</span>
-          <div class="d">이평선 백테스트 · 차트 패턴 스크리너 · 오늘의 지지선 터치</div>
-          <div class="u">ma-radar.onrender.com</div>
-        </span>
-        <span class="arw" aria-hidden="true">→</span>
-      </a>
-      <a class="lk" href="https://won-topiaa.github.io/macro-calendar/" target="_blank" rel="noopener">
-        <span class="num" aria-hidden="true">02</span>
-        <span class="txt">
-          <span class="t">매크로 캘린더</span>
-          <div class="d">거시경제 지표를 한눈에 읽는 분석 대시보드</div>
-          <div class="u">won-topiaa.github.io/macro-calendar</div>
-        </span>
-        <span class="arw" aria-hidden="true">↗</span>
-      </a>
-      <a class="lk" href="https://earnings-volatility.vercel.app/" target="_blank" rel="noopener">
-        <span class="num" aria-hidden="true">03</span>
-        <span class="txt">
-          <span class="t">실적 발표 변동성</span>
-          <div class="d">미국 주식이 분기 실적일에 얼마나 움직였는지 5년 데이터로</div>
-          <div class="u">earnings-volatility.vercel.app</div>
-        </span>
-        <span class="arw" aria-hidden="true">↗</span>
-      </a>
-    </div>
-
-    <div class="sec sec-contact mt">연락</div>
-    <div class="links">
-      <a class="lk mail" href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%EB%AC%B8%EC%9D%98">
-        <span class="num" aria-hidden="true">✉</span>
-        <span class="txt">
-          <span class="t">협업 · 문의</span>
-          <div class="d">wontopiaaa@gmail.com</div>
-        </span>
-        <span class="arw" aria-hidden="true">→</span>
-      </a>
-    </div>
+    <section>
+      <h2 class="sec sec-works">작업물</h2>
+      <div class="cards">
+        <a class="lk" href="/">
+          <span class="num" aria-hidden="true">01</span>
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M6 16V9"/><path d="M12 16V5"/><path d="M18 16v-4"/></svg></span>
+          <span class="body">
+            <span class="t">주식 레이더</span>
+            <span class="d">이평선 지지·저항과 차트 패턴을 매일 스크리닝</span>
+          </span>
+          <span class="badge">스크리너</span>
+          <span class="arw" aria-hidden="true">↗</span>
+        </a>
+        <a class="lk" href="https://won-topiaa.github.io/macro-calendar/" target="_blank" rel="noopener">
+          <span class="num" aria-hidden="true">02</span>
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+          <span class="body">
+            <span class="t">매크로 캘린더</span>
+            <span class="d">거시경제 지표를 한눈에 읽는 분석 대시보드</span>
+          </span>
+          <span class="badge">대시보드</span>
+          <span class="arw" aria-hidden="true">↗</span>
+        </a>
+        <a class="lk" href="https://earnings-volatility.vercel.app/" target="_blank" rel="noopener">
+          <span class="num" aria-hidden="true">03</span>
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l3 7 5-16 3 9h4"/></svg></span>
+          <span class="body">
+            <span class="t">실적 발표 변동성</span>
+            <span class="d">미국 주식이 실적일에 얼마나 움직였는지 5년 데이터로</span>
+          </span>
+          <span class="badge">데이터 분석</span>
+          <span class="arw" aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </section>
 
     <footer>
-      <p class="disc" style="margin:0">각 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
-      <p class="copy" style="margin:4px 0 0">© 원토피아 · <a href="/privacy">개인정보처리방침</a></p>
+      <nav class="social" aria-label="연락처">
+        <a href="https://github.com/won-topiaa" target="_blank" rel="noopener">GitHub</a>
+        <a href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%EB%AC%B8%EC%9D%98">Email</a>
+      </nav>
+      <div class="legal">
+        <p class="disc">각 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
+        <p class="copy">© 원토피아 · <a href="/privacy">개인정보처리방침</a></p>
+      </div>
     </footer>
-  </div>
-<script src="/static/links.js"></script>
+  </main>
 </body>
 </html>
