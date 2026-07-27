@@ -178,7 +178,16 @@ class AuthStore:
             self._engine = create_engine(
                 self.url, pool_pre_ping=True, pool_recycle=300,
                 pool_size=5, max_overflow=5, future=True,
-                connect_args={"prepare_threshold": None, "connect_timeout": 10})
+                # keepalives/tcp_user_timeout 은 순수 클라이언트측 설정이라
+                # 풀러(PgBouncer)로 전달되지 않는다 — 서버가 응답을 멈춘 뒤
+                # (연결은 살아 있는데 답이 없는 상태) 커널이 끊어주게 만들어,
+                # 재시도 루프가 볼 수 있는 예외로 바뀐다. startup 파라미터인
+                # options=-c statement_timeout 은 쓰지 않는다: Neon 풀러가
+                # 알 수 없는 startup 파라미터를 거부해 로그인 전면 장애가 된다.
+                connect_args={"prepare_threshold": None, "connect_timeout": 10,
+                              "keepalives": 1, "keepalives_idle": 10,
+                              "keepalives_interval": 5, "keepalives_count": 3,
+                              "tcp_user_timeout": 15000})
         self._create_schema()
 
     def _create_schema(self, attempts: int = 5) -> None:

@@ -724,6 +724,7 @@ def test_line_eviction_protects_frozen_results(client):
     cooldowns = srv.app.state.line_cooldowns
     saved_reg, saved_cd = dict(reg), dict(cooldowns)
     reg.clear(); cooldowns.clear()
+    srv.app.state.line_frozen_evict_ts = 0.0
     try:
         for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
             reg[("kr", p)] = FrozenIdle()
@@ -738,13 +739,25 @@ def test_line_eviction_protects_frozen_results(client):
         assert ("kr", 40) in reg, "고정 결과가 먼저 희생됐다"
 
         # 전부 '신선한 고정'뿐이면: 교착 대신 가장 오래된 슬롯을 내준다
-        reg.clear()
+        reg.clear(); cooldowns.clear()
+        srv.app.state.line_frozen_evict_ts = 0.0
         for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
             reg[("kr", p)] = FrozenIdle()
         sc = srv._line_scanner("kr", 99)
         assert sc is not None, "전부 고정이라고 429 로 잠그면 하루 종일 안 풀린다"
         assert ("kr", 40) not in reg, "LRU(가장 오래된) 슬롯이 회수돼야 한다"
-        assert ("kr", 40) in cooldowns, "쿨다운 승계가 없으면 재스캔 churn 이 열린다"
+
+        # 회수된 키의 휴지는 '회수 시각' 기준이어야 한다 — 몇 시간 전인
+        # _scan_ended 를 그대로 물려주면 재생성 즉시 전체 재스캔이 돈다
+        ended, wait = cooldowns[("kr", 40)]
+        assert _t.monotonic() - ended < 5, "회수 시각이 아니라 옛 시각을 승계했다"
+        assert wait >= srv.LINE_EVICT_COOLDOWN_SEC, "회수 후 휴지가 너무 짧다"
+
+        # 연속 회수는 전역 간격 제한에 막혀야 한다 — 안 그러면 기간을 바꿔가며
+        # 부르는 것만으로 요청당 전체 재스캔이 하나씩 쌓인다
+        reg[("kr", 99)] = FrozenIdle()      # 등록소를 다시 가득 채움
+        assert srv._line_scanner("kr", 98) is None, \
+            "고정 결과 회수가 요청마다 허용되면 재스캔 churn 이 열린다"
 
         # 전부 '실제 스캔 중'이면 그때는 정당한 429
         class Running(FrozenIdle):
@@ -761,6 +774,7 @@ def test_line_eviction_protects_frozen_results(client):
     finally:
         reg.clear(); reg.update(saved_reg)
         cooldowns.clear(); cooldowns.update(saved_cd)
+        srv.app.state.line_frozen_evict_ts = 0.0
 
 
 def test_polling_unchanged_short_circuit(client):
@@ -853,6 +867,22 @@ def test_production_mode_boot_with_prewarm(monkeypatch):
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("MA_PROVIDER", "free")
+    # 이 테스트는 모듈 전역 app 위에서 두 번째 lifespan 을 연다. 그 lifespan 이
+    # app.state(공급자·스캐너·인증)를 통째로 갈아끼우고 나가면서 닫아버리기
+    # 때문에, 모듈 스코프 client 를 쓰는 '이후 모든 테스트'가 샘플 공급자가
+    # 아니라 실제 네트워크 공급자를 보게 된다. 상태를 저장했다 되돌린다.
+    # (starlette State 는 값을 _state 딕셔너리에 담는다 — __dict__ 복사는 무의미)
+    saved_state = dict(server_mod.app.state._state)
+    try:
+        _run_production_boot_checks(server_mod)
+    finally:
+        server_mod.app.state._state.clear()
+        server_mod.app.state._state.update(saved_state)
+
+
+def _run_production_boot_checks(server_mod):
+    from fastapi.testclient import TestClient
+
     with TestClient(server_mod.app) as c:
         assert c.get("/api/health").json()["provider"] == "free"
         task = server_mod.app.state.prewarm_task
@@ -1055,3 +1085,65 @@ def test_live_index_quote_never_raises(monkeypatch):
     assert free_data.fetch_kr_index_quote_sync("KS11") is None
     # 지수가 아닌 심볼은 아예 시도하지 않는다
     assert free_data.fetch_kr_index_quote_sync("005930") is None
+
+
+def test_nested_lifespan_does_not_leak_provider(client):
+    """중첩 lifespan 테스트가 끝난 뒤에도 공유 client 는 샘플 공급자를 봐야 한다.
+
+    안 그러면 그 뒤 모든 테스트가 조용히 실제 네트워크 공급자로 돌아, 결정적
+    이어야 할 스위트가 외부 상태에 좌우된다."""
+    import app.server as server_mod
+
+    before = server_mod.app.state.provider.name
+    assert client.get("/api/health").json()["provider"] == "sample"
+    assert server_mod.app.state.provider.name == before
+    # 스캐너·인증도 살아 있어야 한다 (중첩 lifespan 이 닫고 나갔다면 죽어 있다)
+    assert server_mod.app.state.scanners["kr"] is not None
+    assert client.get("/api/patterns",
+                      params={"pattern": "stage2", "market": "kr"}).status_code == 200
+
+
+def test_logout_blocks_lookup_that_started_before_delete(monkeypatch):
+    """로그아웃은 '무효화 기록 → DB 삭제' 순서다. 그 사이에 시작된 조회는
+    DB 에서 아직 살아 있는 행을 보는데, 시각을 비교해 판정하면 그 결과가
+    통과해 30초(캐시 TTL) 동안 세션이 되살아난다."""
+    import asyncio
+
+    import app.server as server_mod
+
+    server_mod._session_cache.clear()
+    server_mod._session_revoked.clear()
+    # 로그아웃이 '먼저' 기록된 상태 (DB 삭제는 아직 진행 중)
+    server_mod._session_cache_evict("tok-pre")
+
+    class _Req:
+        cookies = {server_mod.COOKIE_NAME: "tok-pre"}
+
+        class app:  # noqa: N801
+            class state:
+                class auth:
+                    @staticmethod
+                    def user_for_token(_t):
+                        return {"id": 7, "email": "pre@example.com"}  # 아직 살아 있는 행
+
+    got = asyncio.new_event_loop().run_until_complete(server_mod._current_user(_Req()))
+    assert got is None, "로그아웃 직후 시작된 조회가 세션을 되살렸다"
+    assert "tok-pre" not in server_mod._session_cache
+    server_mod._session_revoked.clear()
+
+
+def test_revoked_token_map_prunes_by_age(monkeypatch):
+    """무효화 목록은 나이 기준으로 정리돼야 한다 — 개수 임계값 아래에서
+    오래된 항목이 영원히 남으면 메모리가 새고, 임계값을 넘겨도 최근 항목뿐이면
+    아무것도 못 지운다."""
+    import time as _t
+
+    import app.server as server_mod
+
+    server_mod._session_revoked.clear()
+    old_ts = _t.monotonic() - server_mod._SESSION_CACHE_TTL_SEC - 10
+    server_mod._session_revoked["stale"] = old_ts
+    server_mod._session_cache_evict("fresh")     # 정리를 유발
+    assert "stale" not in server_mod._session_revoked, "TTL 지난 항목이 안 지워졌다"
+    assert "fresh" in server_mod._session_revoked
+    server_mod._session_revoked.clear()

@@ -142,7 +142,14 @@ async def lifespan(app: FastAPI):
     try:
         app.state.auth = await asyncio.wait_for(asyncio.to_thread(AuthStore), 90)
     except asyncio.TimeoutError:
-        raise RuntimeError("인증 DB 초기화 90초 초과 — DATABASE_URL 대상 응답 없음")
+        # raise 만으로는 프로세스가 안 죽는다: to_thread 워커가 libpq 안에서
+        # 계속 블록돼 있고, 종료 경로(loop.shutdown_default_executor 와
+        # threading._shutdown)가 그 스레드를 join 하며 매달린다 — 리슨 소켓도
+        # 못 연 채 영원히 살아 있는 좀비가 되어 플랫폼이 재시작도 못 시킨다.
+        # 로그를 남기고 즉시 죽여 재시작을 받는다.
+        logger.critical("인증 DB 초기화 90초 초과 — DATABASE_URL 대상 응답 없음. "
+                        "프로세스를 종료해 재시작을 유도합니다.")
+        os._exit(1)
     # 시작 시 만료 세션 정리 — 부가 작업이므로 실패해도 부팅을 막지 않는다.
     try:
         await asyncio.wait_for(asyncio.to_thread(app.state.auth.purge_expired), 15)
@@ -176,6 +183,8 @@ async def lifespan(app: FastAPI):
     # 초기화해, 키를 바꿔가며 요청하는 것만으로 무한 스캔을 돌릴 수 있다.
     # 키 공간이 유한(시장 2 × 기간 246)해 크기도 자연히 유계다.
     app.state.line_cooldowns = {}
+    # 마지막 '고정 결과 회수' 시각 — 3순위 회수의 전역 간격 제한용
+    app.state.line_frozen_evict_ts = 0.0
 
     # 하루 한 번(아침) 자동 예열: 갱신 시각이 지나면 패턴·터치 스캐너(국내+미국
     # 전부)를 미리 돌려둔다 → 아침 첫 방문자가 몇 분짜리 스캔을 기다리지 않는다.
@@ -552,11 +561,14 @@ def _session_cache_evict(token: str | None) -> None:
     토큰이 캐시 TTL(30초) 동안 되살아난다."""
     if token:
         _session_cache.pop(token, None)
-        _session_revoked[token] = time.monotonic()
-        if len(_session_revoked) > _SESSION_CACHE_MAX:
-            cutoff = time.monotonic() - _SESSION_CACHE_TTL_SEC
-            for k in [k for k, t in _session_revoked.items() if t < cutoff]:
-                _session_revoked.pop(k, None)
+        now = time.monotonic()
+        _session_revoked[token] = now
+        # TTL 이 지난 항목은 항상 정리한다 — 개수 임계값으로만 정리하면 그
+        # 아래에서는 오래된 항목이 무한정 남고, 임계값을 넘는 순간에도
+        # '최근 로그아웃'뿐이면 아무것도 못 지워 계속 자란다.
+        cutoff = now - _SESSION_CACHE_TTL_SEC
+        for k in [k for k, t in _session_revoked.items() if t < cutoff]:
+            _session_revoked.pop(k, None)
 
 
 async def _current_user(request: Request) -> dict | None:
@@ -571,11 +583,16 @@ async def _current_user(request: Request) -> dict | None:
     hit = _session_cache.get(token)
     if hit is not None and now - hit[0] < _SESSION_CACHE_TTL_SEC:
         return hit[1]
-    started = time.monotonic()
-    user = await asyncio.to_thread(request.app.state.auth.user_for_token, token)
-    # 조회하는 동안 이 토큰이 로그아웃됐으면 결과를 버린다 (캐시에도 안 넣는다)
+    # 로그아웃된 토큰은 DB 를 볼 필요조차 없다. 세션 토큰은 로그인마다 새로
+    # 발급되므로(재사용 없음) '무효화 목록에 있다'는 사실만으로 충분하다.
     revoked_at = _session_revoked.get(token)
-    if revoked_at is not None and revoked_at >= started:
+    if revoked_at is not None and now - revoked_at < _SESSION_CACHE_TTL_SEC:
+        return None
+    user = await asyncio.to_thread(request.app.state.auth.user_for_token, token)
+    # 조회 중에 로그아웃됐어도 결과를 버린다. 시각을 비교하면 안 된다 —
+    # 로그아웃은 '무효화 기록 → DB 삭제' 순서라, 그 사이에 시작된 조회는
+    # revoked_at < started 가 되어 통과하고 30초 동안 세션이 되살아난다.
+    if token in _session_revoked:
         return None
     if len(_session_cache) > _SESSION_CACHE_MAX:
         # 통째로 비우면 위조 쿠키 폭주가 정상 사용자 캐시까지 지워 전원이 DB 를
@@ -891,6 +908,15 @@ async def touches_api(request: Request,
 # 메모리·페치 예산을 잠식하지 않게 유휴 스캐너부터 비운다. 스캐너당 결과가
 # 수백 KB 수준이라 16개여도 몇 MB — 하루 고정 결과를 지키는 쪽이 이득이다.
 _MAX_LINE_SCANNERS = 16
+# '신선한 고정 결과'를 희생하는 3순위 회수는 전역으로 드물게만 허용한다.
+# 이게 없으면 기간을 5~250 으로 바꿔가며 요청하는 것만으로 요청 한 번당 전체
+# 유니버스 재스캔이 하나씩 생기고(0.1 vCPU 인스턴스), 그때마다 다른 사용자의
+# 하루 고정 결과가 사라져 '오늘은 목록이 안 바뀐다'는 약속이 깨진다.
+# 간격을 두면 17번째 조합은 몇 분 안에 들어오되(교착 해소 유지) 남용은 막힌다.
+LINE_FROZEN_EVICT_MIN_INTERVAL_SEC = 180.0
+# 회수당한 키가 곧바로 재스캔되지 않도록 '지금'을 기준으로 부여하는 휴지.
+# 승계한 _scan_ended 는 몇 시간 전이라 그대로 물려주면 휴지가 즉시 만료된다.
+LINE_EVICT_COOLDOWN_SEC = 120.0
 
 
 def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
@@ -927,13 +953,23 @@ def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
     # 3순위: 남은 게 전부 '신선한 고정 결과'뿐이면 가장 오래 안 쓴 것을 내준다.
     # 이 단계가 없으면 서로 다른 (시장, 기간) 16개가 고정되는 순간부터 다음
     # 아침까지 17번째 조합은 하루 종일 429 만 받는다 — 기다려도 절대 안 풀리는
-    # 교착이다. 쿨다운을 승계시키므로 키를 돌려가며 재스캔을 유발하는 churn 은
-    # 여전히 막힌다 (재생성된 스캐너가 이전 휴지·백오프를 그대로 물려받는다).
+    # 교착이다.
+    #
+    # 단, 요청마다 허용하면 안 된다. 승계하는 (_scan_ended, _retry_wait) 는
+    # 고정 결과의 경우 '몇 시간 전 + 60초'라 휴지가 이미 만료된 값이어서,
+    # 재생성된 스캐너가 즉시 전체 재스캔을 시작한다 — 기간을 바꿔가며 부르는
+    # 것만으로 재스캔이 계속 쌓이고, 그때마다 남의 하루 고정 결과가 사라진다.
+    # 그래서 ① 전역 간격 제한을 두고 ② 회수 시각 기준으로 휴지를 새로 부여한다.
+    now_evict = time.monotonic()
+    if now_evict - getattr(app.state, "line_frozen_evict_ts", 0.0) \
+            < LINE_FROZEN_EVICT_MIN_INTERVAL_SEC:
+        return False              # 잠시 후 다시 — 그동안은 429 백프레셔
     for k in list(reg):
         cand = reg[k]
         if cand._task is None or cand._task.done():
-            cooldowns[k] = (cand._scan_ended, cand._retry_wait)
+            cooldowns[k] = (now_evict, max(cand._retry_wait, LINE_EVICT_COOLDOWN_SEC))
             reg.pop(k, None)
+            app.state.line_frozen_evict_ts = now_evict
             logger.info("맞춤선 슬롯 부족 — 고정 결과 %s 를 LRU 로 회수", k)
             return True
     return False   # 전부 실제 스캔 중 — 이때의 429 는 정당한 백프레셔

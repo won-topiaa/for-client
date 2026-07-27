@@ -651,7 +651,7 @@
   table { border-collapse: collapse; }
   th {
     font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
-    color: var(--faint); font-weight: 600; border-bottom: 1px solid var(--border);
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border);
   }
   td { border-bottom: 1px solid var(--hairline); }
 
@@ -669,7 +669,8 @@
   }
 
   /* ── 푸터: 조용하게 ── */
-  footer { border-top: 1px solid var(--hairline); color: var(--faint); }
+  /* 본문급 작은 글씨라 --faint(라이트 모드 3.4:1)는 대비 미달 — --muted 사용 */
+  footer { border-top: 1px solid var(--hairline); color: var(--muted); }
   .f-nav a { border-radius: 999px; }
 
   /* ── 정보 박스: 파란 '알림' 느낌을 걷어내고 중립 패널로 ──
@@ -723,6 +724,23 @@
   .hero h2 .em {
     background: none; -webkit-background-clip: border-box; background-clip: border-box;
     color: var(--accent);
+  }
+
+  /* ── 폰(≤640px): 페이지 고유의 모바일 튜닝을 이 레이어가 덮지 않게 ──
+     이 레이어는 파일 맨 끝이라 같은 특이도면 항상 이긴다. 그래서 위쪽
+     무조건부 규칙(.hero/.stat/.tool-card …)이 페이지의 @media 640px 값을
+     되돌려, 전체폭 CTA 버튼 같은 모바일 배려가 사라졌었다. 다시 명시한다. */
+  @media (max-width: 640px) {
+    .hero { padding: 34px 0 26px; }
+    .hero h2 { font-size: 30px; line-height: 1.16; letter-spacing: -.03em; }
+    .hero p { font-size: 14.5px; }
+    .eyebrow { font-size: 9.5px; letter-spacing: .12em; padding: 5px 12px; }
+    .stat { padding: 14px 15px; }
+    .stat .k { font-size: 22px; }
+    .tool-card { padding: 22px 20px 20px; border-radius: 18px; gap: 11px; }
+    .tool-card h3 { font-size: 19px; }
+    /* 엄지로 누르기 좋은 전체폭 버튼 (페이지 원래 의도) */
+    .tool-card .go { width: 100%; text-align: center; padding: 13px 20px; }
   }
 
   /* ── 한/영 버튼: 아이콘 토글보다 글자가 작으니 색은 또렷하게 ── */

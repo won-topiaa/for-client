@@ -349,7 +349,10 @@ class BaseScanner:
                 # 스캐너가 퇴출됐다 재생성돼 이전 쿨다운을 승계한 직후가 여기다.
                 # '실패(None)' 같은 거짓 오류 대신 준비 중으로 답해 프런트가
                 # 짧은 간격으로 폴링하다 휴지가 끝나면 자연히 스캔을 시작한다.
-                return {"status": "running", "done": 0, "total": 0, "errors": 0}
+                # total 을 None 으로 보내 프런트가 '0/0 종목'이라는 멈춘 듯한
+                # 진행률 대신 '대상 선정 중'으로 표시하게 한다 (휴지는 최대 몇 분).
+                return {"status": "running", "done": 0, "total": None,
+                        "errors": 0, "waiting": True}
             # 쿨다운 중 + 보여줄 과거 결과도 없음
             return {"status": "error",
                     "detail": f"스캔 실패 ({self._error}) — 잠시 후 자동으로 다시 시도합니다."}

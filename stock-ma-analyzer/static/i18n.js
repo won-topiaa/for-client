@@ -331,6 +331,16 @@
     },
   };
 
+  // ── ②-b 페이지별 '속성' 사전 (셀렉터 → {속성: 값}) ──
+  // innerHTML 만 바꾸면 링크의 href 같은 속성은 한국어로 남는다.
+  var ATTRS = {
+    "/about": {
+      ".contact .mail": {
+        href: "mailto:wontopiaaa@gmail.com?subject=%5BWontopia%5D%20Collaboration%20inquiry",
+      },
+    },
+  };
+
   // data-mfold 제목(모바일 접기 버튼) 번역
   var MFOLD = {
     "📖 처음이신가요? 이용법": "📖 New here? How to use",
@@ -377,6 +387,15 @@
       Object.keys(page).forEach(function (sel) {
         var el = document.querySelector(sel);
         if (el) el.innerHTML = page[sel];
+      });
+    }
+    var pageAttrs = ATTRS[location.pathname];
+    if (pageAttrs) {
+      Object.keys(pageAttrs).forEach(function (sel) {
+        var el = document.querySelector(sel);
+        if (!el) return;
+        var spec = pageAttrs[sel];
+        Object.keys(spec).forEach(function (a) { el.setAttribute(a, spec[a]); });
       });
     }
     translateAttrs();
