@@ -183,8 +183,12 @@ async def lifespan(app: FastAPI):
     # 초기화해, 키를 바꿔가며 요청하는 것만으로 무한 스캔을 돌릴 수 있다.
     # 키 공간이 유한(시장 2 × 기간 246)해 크기도 자연히 유계다.
     app.state.line_cooldowns = {}
-    # 마지막 '고정 결과 회수' 시각 — 3순위 회수의 전역 간격 제한용
-    app.state.line_frozen_evict_ts = 0.0
+    # 마지막 '고정 결과 회수' 시각 — 3순위 회수의 전역 간격 제한용.
+    # None = "아직 한 번도 없음". time.monotonic() 의 기준점은 임의(이 샌드박스처럼
+    # 프로세스 시작이 0에 가까울 수도 있다)라 0.0 을 "충분히 오래 전"으로 가정하면
+    # 프로세스 시작 후 180초 안에는 방금 회수한 것으로 오판해 회수 자체가 막힌다 —
+    # Render 무료 티어는 유휴 후 콜드스타트하므로 재시작마다 이 창이 반복된다.
+    app.state.line_frozen_evict_ts = None
 
     # 하루 한 번(아침) 자동 예열: 갱신 시각이 지나면 패턴·터치 스캐너(국내+미국
     # 전부)를 미리 돌려둔다 → 아침 첫 방문자가 몇 분짜리 스캔을 기다리지 않는다.
@@ -961,8 +965,8 @@ def _evict_line_slot(reg: dict, cooldowns: dict) -> bool:
     # 것만으로 재스캔이 계속 쌓이고, 그때마다 남의 하루 고정 결과가 사라진다.
     # 그래서 ① 전역 간격 제한을 두고 ② 회수 시각 기준으로 휴지를 새로 부여한다.
     now_evict = time.monotonic()
-    if now_evict - getattr(app.state, "line_frozen_evict_ts", 0.0) \
-            < LINE_FROZEN_EVICT_MIN_INTERVAL_SEC:
+    last_evict = getattr(app.state, "line_frozen_evict_ts", None)
+    if last_evict is not None and now_evict - last_evict < LINE_FROZEN_EVICT_MIN_INTERVAL_SEC:
         return False              # 잠시 후 다시 — 그동안은 429 백프레셔
     for k in list(reg):
         cand = reg[k]
@@ -991,9 +995,11 @@ def _line_scanner(market: str, period: int):
         sc = LineScanner(app.state.provider, app.state.universe_fns[market], period,
                          market=market)
         # 같은 키의 이전 인스턴스가 남긴 휴지·백오프를 승계한다 — 퇴출→재생성이
-        # 쿨다운을 초기화하면 스캔 churn 방지 장치 전체가 우회된다
+        # 쿨다운을 초기화하면 스캔 churn 방지 장치 전체가 우회된다.
+        # 처음 보는 키의 기본값은 None(아직 한 번도 안 끝남) — BaseScanner 의
+        # 새 인스턴스 기본값과 동일해야 "방금 끝남"으로 오판하지 않는다.
         sc._scan_ended, sc._retry_wait = cooldowns.get(
-            key, (0.0, PARTIAL_RESCAN_COOLDOWN_SEC))
+            key, (None, PARTIAL_RESCAN_COOLDOWN_SEC))
     reg[key] = sc                          # 재삽입으로 '최근 사용'을 맨 뒤로
     return sc
 

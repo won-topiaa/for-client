@@ -267,7 +267,11 @@ class BaseScanner:
         # 이 휴지(rest) 하한이 없으면 그런 스캔이 쉼 없이 반복(churn)되며
         # 업스트림과 CPU 를 계속 두들긴다. 미달 완주가 거듭되면 publish 가
         # 간격을 지수적으로 늘리고, 정상 발행이 되면 기본값으로 되돌린다.
-        self._scan_ended = 0.0
+        # None = "아직 한 번도 안 끝남". time.monotonic() 의 기준점은 임의라
+        # (컨테이너 재기동 직후엔 0에 가까울 수 있다) 0.0 을 시각으로 쓰면 부팅
+        # 직후 첫 스캔이 "방금 막 끝난 것"으로 오판돼 최대 _retry_wait 만큼
+        # 밀린다 — Render 콜드스타트마다 반복되는 창이라 None 으로 구분한다.
+        self._scan_ended: float | None = None
         self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC
         # 완주(양호 커버리지)한 결과인지 + 그 결과의 벽시계 생성 시각.
         # 이런 결과는 다음 아침 갱신 시각까지 고정하고, 부분/저커버리지 결과만
@@ -331,8 +335,10 @@ class BaseScanner:
         cooling = (self._error is not None
                    and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
         # 직전 스캔이 끝난 지 _retry_wait 이 지나기 전에는 새 스캔을 시작하지
-        # 않는다 — 어떤 경로로 끝났든 스캔 사이 최소 휴지를 보장하는 하한선
-        resting = time.monotonic() - self._scan_ended < self._retry_wait
+        # 않는다 — 어떤 경로로 끝났든 스캔 사이 최소 휴지를 보장하는 하한선.
+        # 아직 한 번도 안 끝났으면(None) 휴지 대상이 아니다.
+        resting = (self._scan_ended is not None
+                   and time.monotonic() - self._scan_ended < self._retry_wait)
         if idle and not cooling and not resting:
             self._done = 0
             self._total = 0   # 유니버스 선정 동안 이전 스캔의 total 이 비치지 않게

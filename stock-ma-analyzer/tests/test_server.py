@@ -724,7 +724,7 @@ def test_line_eviction_protects_frozen_results(client):
     cooldowns = srv.app.state.line_cooldowns
     saved_reg, saved_cd = dict(reg), dict(cooldowns)
     reg.clear(); cooldowns.clear()
-    srv.app.state.line_frozen_evict_ts = 0.0
+    srv.app.state.line_frozen_evict_ts = None
     try:
         for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
             reg[("kr", p)] = FrozenIdle()
@@ -740,7 +740,7 @@ def test_line_eviction_protects_frozen_results(client):
 
         # 전부 '신선한 고정'뿐이면: 교착 대신 가장 오래된 슬롯을 내준다
         reg.clear(); cooldowns.clear()
-        srv.app.state.line_frozen_evict_ts = 0.0
+        srv.app.state.line_frozen_evict_ts = None
         for p in range(40, 40 + srv._MAX_LINE_SCANNERS):
             reg[("kr", p)] = FrozenIdle()
         sc = srv._line_scanner("kr", 99)
@@ -774,7 +774,7 @@ def test_line_eviction_protects_frozen_results(client):
     finally:
         reg.clear(); reg.update(saved_reg)
         cooldowns.clear(); cooldowns.update(saved_cd)
-        srv.app.state.line_frozen_evict_ts = 0.0
+        srv.app.state.line_frozen_evict_ts = None
 
 
 def test_polling_unchanged_short_circuit(client):

@@ -458,6 +458,49 @@ def test_scanner_error_cooldown_and_recovery():
     asyncio.new_event_loop().run_until_complete(go())
 
 
+def test_fresh_scanner_never_rests_on_a_scan_that_never_happened():
+    """time.monotonic() 의 기준점은 임의다 — 컨테이너가 막 재기동돼 값이
+    0에 가까운 시점일 수 있다. 한 번도 스캔한 적 없는 새 스캐너는 그런
+    시점에도 즉시 스캔을 시작해야 한다. _scan_ended 의 '한 번도 안 끝남'을
+    0.0 으로 표현하던 시절엔 그 값이 '방금 막 끝난 스캔'으로 오독돼 최대
+    _retry_wait(60초)만큼 첫 스캔이 밀렸다 — Render 는 유휴 후 콜드스타트
+    하므로 재시작마다 반복되는 창이었다.
+
+    time.monotonic() 자체를 고정하면 asyncio 의 내부 시계(loop.time() 도
+    같은 함수)까지 멈춰 sleep/타임아웃이 전부 걸린다. 대신 _retry_wait 를
+    '지금 시각보다 큰 값'으로 잡아 문제의 산술(now - _scan_ended < retry_wait)
+    을 실제 시각은 건드리지 않고 재현한다."""
+    import time as _t
+
+    import app.pattern_scan as ps
+    from app.providers.base import SymbolInfo, validate_candles
+
+    class OkProvider:
+        name = "fake"
+
+        async def candles(self, symbol, timeframe, max_bars, use_fail_cache=False):
+            return validate_candles(_df(_stage2_series()[0]))
+
+        async def search(self, q):
+            return []
+
+    async def universe_fn():
+        return [SymbolInfo("A", "a", "T")]
+
+    scanner = ps.PatternScanner(OkProvider(), universe_fn)
+    assert scanner._scan_ended is None, "새 스캐너의 초기값은 None 이어야 한다"
+    scanner._retry_wait = _t.monotonic() + 3600  # 지금이 언제든 조건을 재현
+
+    async def go():
+        snap = await scanner.snapshot()
+        assert snap["status"] == "running"
+        assert scanner._task is not None, \
+            "한 번도 안 끝난 스캐너가 '휴지 중'으로 오판돼 스캔을 못 시작함"
+        await scanner._task
+
+    asyncio.new_event_loop().run_until_complete(go())
+
+
 def test_scanner_stale_while_revalidate():
     """TTL 만료 후에도 이전 결과를 먼저 내주고 뒤에서 재스캔한다."""
     from app.pattern_scan import PatternScanner
