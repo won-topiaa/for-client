@@ -76,6 +76,7 @@
     "대표 종목 바로 분석": "Quick picks",
     "이동평균선 기간 (5~250일)": "MA period (5–250 days)",
     "주식 레이더 로고": "Stock Radar logo",
+    "원토피아 로고": "Wontopia logo",
     "참고용 데이터 시각화입니다.": "For informational purposes only.",
     "본 사이트는 과거 데이터 통계이며 매수 추천·투자 권유가 아닙니다. 모든 투자 결정과 결과는 본인 책임입니다.":
       "This site shows historical statistics only — not investment advice. All investment decisions are your own responsibility.",
@@ -352,7 +353,7 @@
   // innerHTML 만 바꾸면 링크의 href 같은 속성은 한국어로 남는다.
   var ATTRS = {
     "/links": {
-      ".lk.mail": {
+      '.social a[href^="mailto:"]': {
         href: "mailto:wontopiaaa@gmail.com?subject=%5BWontopia%5D%20Inquiry",
       },
     },

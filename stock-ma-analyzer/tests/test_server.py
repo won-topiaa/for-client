@@ -1187,6 +1187,64 @@ def test_links_page_is_self_contained(client):
     assert html.count('class="ico"') == 3, "아이콘이 3개가 아니다"
 
 
+def test_links_page_theme_tokens_match_across_all_four_blocks(client):
+    """다크/라이트 토큰 네 벌(기본 :root, OS 자동 다크, 수동 [data-theme=light],
+    수동 [data-theme=dark])은 정확히 같은 변수 이름 집합을 정의해야 한다.
+
+    한 곳에서만 변수를 빠뜨리면(예: --border-hover 가 OS 자동 다크 블록에만
+    없었던 회귀) 수동으로 토글해본 사람은 못 보고, 시스템이 다크인데 한
+    번도 토글을 안 누른 방문자만 조용히 잘못된(라이트용) 값을 물려받는다."""
+    import re
+
+    html = client.get("/links").text
+
+    def vars_in(css_body):
+        return set(re.findall(r"(--[\w-]+)\s*:", css_body))
+
+    m_root = re.search(r":root\s*\{([^}]*)\}", html)
+    m_dark_media = re.search(
+        r'@media \(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([^}]*)\}\s*\}', html)
+    m_light_attr = re.search(r':root\[data-theme="light"\]\s*\{([^}]*)\}', html)
+    m_dark_attr = re.search(r':root\[data-theme="dark"\]\s*\{([^}]*)\}', html)
+    assert m_root and m_dark_media and m_light_attr and m_dark_attr, \
+        "테마 토큰 블록 4개(기본/OS다크/수동라이트/수동다크)를 못 찾음"
+
+    base = vars_in(m_root.group(1))
+    assert base, "기본 :root 에 변수가 하나도 없다"
+    for label, m in (("OS 자동 다크", m_dark_media),
+                     ("수동 [data-theme=light]", m_light_attr),
+                     ("수동 [data-theme=dark]", m_dark_attr)):
+        missing = base - vars_in(m.group(1))
+        assert not missing, f"{label} 블록에서 빠진 변수: {missing}"
+
+
+def test_links_email_selector_matches_a_real_element(client):
+    """/links 의 이메일 mailto 속성 사전은 실제로 존재하는 요소를 가리켜야
+    한다 — 페이지를 다시 만들며 지운 클래스(.lk.mail)를 사전이 계속
+    가리키면, 셀렉터가 아무 것도 못 찾아 영어 모드에서도 제목이 한국어로
+    남는데 오류조차 안 난다(요소가 없으면 조용히 스킵되므로)."""
+    html = client.get("/links").text
+    i18n = client.get("/static/i18n.js").text
+    assert ".lk.mail" not in i18n, \
+        "삭제된 메일 카드 클래스를 가리키는 죽은 셀렉터가 되살아났다"
+    assert 'class="social"' in html
+    assert 'href="mailto:wontopiaaa@gmail.com' in html
+
+
+def test_links_logo_aria_label_is_translatable(client):
+    """히어로 로고의 aria-label 은 다른 페이지의 로고와 마찬가지로 영문
+    사전에 등록돼 있어야 한다 — 없으면 페이지 전체가 영어로 바뀐 뒤에도
+    스크린리더만 한국어 라벨을 계속 읽는다."""
+    import re
+
+    html = client.get("/links").text
+    i18n = client.get("/static/i18n.js").text
+    m = re.search(r'aria-label="([^"]*로고)"', html)
+    assert m, "히어로 로고의 aria-label(...로고)을 못 찾음"
+    assert f'"{m.group(1)}"' in i18n, \
+        f"{m.group(1)!r} 이 i18n.js TEXT 사전에 없어 영어 모드에서도 한국어로 남는다"
+
+
 def test_links_page_has_no_dead_internal_links(client):
     """링크 모음의 내부 링크는 전부 실제로 열려야 한다 (오타 난 경로 방지)."""
     import re
