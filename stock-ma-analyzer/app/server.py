@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import logging
 import os
 import secrets
@@ -16,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
@@ -31,6 +33,7 @@ from .auth import (
     InvalidCredentials,
 )
 from .config import DEFAULT_LOOKBACK_YEARS, Settings, load_settings
+from .portfolio import PortfolioError, PortfolioStore
 from .providers.base import Provider
 from .providers.cache import CachingProvider
 from .providers.sample import SampleProvider
@@ -121,6 +124,53 @@ async def _prewarm_until_frozen(targets, deadline_sec: float = 5400.0,
         await asyncio.sleep(round_gap_sec)
 
 
+# /links 를 처음(DB 가 비어 있을 때) 채우는 기본 작업물 — 지금까지 하드코딩돼
+# 있던 3장 그대로. icon_svg 는 관리 API 로는 절대 못 받는 필드라(portfolio.py
+# 참고) 여기 신뢰된 값만 넣는다. 이후 관리자가 손대기 시작하면 다시는
+# 덮어쓰지 않는다(seed_if_empty).
+_PORTFOLIO_SEED = [
+    dict(
+        title="주식 레이더", title_en="Stock Radar",
+        description="이평선 지지·저항과 차트 패턴을 매일 스크리닝",
+        description_en="MA support levels and chart patterns, screened daily",
+        badge="스크리너", badge_en="Screener", url="/",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+                 '<path d="M3 20h18"/><path d="M6 16V9"/><path d="M12 16V5"/>'
+                 '<path d="M18 16v-4"/></svg>',
+    ),
+    dict(
+        title="매크로 캘린더", title_en="Macro Calendar",
+        description="거시경제 지표를 한눈에 읽는 분석 대시보드",
+        description_en="Reading the macro picture at a glance",
+        badge="대시보드", badge_en="Dashboard",
+        url="https://won-topiaa.github.io/macro-calendar/",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+                 '<rect x="3" y="5" width="18" height="16" rx="3"/>'
+                 '<path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    ),
+    dict(
+        title="실적 발표 변동성", title_en="Earnings Volatility",
+        description="미국 주식이 실적일에 얼마나 움직였는지 5년 데이터로",
+        description_en="How much US stocks move on earnings day, from 5 years of data",
+        badge="데이터 분석", badge_en="Analytics",
+        url="https://earnings-volatility.vercel.app/",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+                 '<path d="M3 12h3l3 7 5-16 3 9h4"/></svg>',
+    ),
+]
+
+# 관리자가 추가한 새 카드(icon_svg 없음)에 쓰는 공용 아이콘 — 화살표가
+# 상자를 빠져나가는 모양으로, '어딘가로 이어지는 링크'를 뜻한다.
+_DEFAULT_PORTFOLIO_ICON_SVG = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" '
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/>'
+    '<path d="M8 7h9v9"/></svg>'
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .pattern_scan import INDEX_SYMBOL, US_FALLBACK, PatternScanner, make_universe_fn
@@ -155,6 +205,15 @@ async def lifespan(app: FastAPI):
         await asyncio.wait_for(asyncio.to_thread(app.state.auth.purge_expired), 15)
     except Exception:  # noqa: BLE001
         logger.warning("시작 시 만료 세션 정리 실패 (계속 진행)", exc_info=True)
+    # 포트폴리오 카드 저장소 — AuthStore 와 엔진(운영은 Postgres)을 공유한다.
+    # DB 가 비어 있으면(최초 배포) 지금까지 하드코딩돼 있던 3장을 그대로 심고,
+    # 관리자가 이미 손댔으면(비어 있지 않으면) 절대 덮어쓰지 않는다.
+    app.state.portfolio = PortfolioStore(app.state.auth._engine)
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(app.state.portfolio.seed_if_empty, _PORTFOLIO_SEED), 15)
+    except Exception:  # noqa: BLE001
+        logger.warning("포트폴리오 기본값 심기 실패 (계속 진행)", exc_info=True)
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
     provider = CachingProvider(build_provider(settings))
     app.state.provider = provider
@@ -289,6 +348,12 @@ def _password_ok(auth_header: str | None) -> bool:
         return False
 
 
+# /links 포트폴리오 카드를 직접 추가·수정·삭제·순서변경할 수 있는 유일한 계정.
+# 회원가입은 누구나 할 수 있으므로, 이 이메일로 로그인한 세션만 관리 API 를
+# 쓸 수 있게 별도로 확인한다(일반 회원 계정과 구분).
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "wontopiaaa@gmail.com").strip().lower()
+
+
 # /api/analyze·/api/search 는 요청마다 업스트림 페치/CPU 스캔이 도는 증폭
 # 지점이라 IP 당 분당 호출 수를 제한한다 (같은 종목 반복은 어차피 캐시가 흡수).
 # 버킷별 상한: 로그인 무차별대입·분석은 30/분, 검색은 자동완성이라 좀 더 넉넉히.
@@ -390,7 +455,7 @@ async def security_headers(request: Request, call_next):
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 # 세션 조회(캐시 미스 시 DB SELECT)를 유발하는 HTML 페이지들
-_MEMBER_PAGES = frozenset({"/touches", "/lines", "/login"})
+_MEMBER_PAGES = frozenset({"/touches", "/lines", "/login", "/links/admin"})
 
 _RATE_LIMITED_PATHS = frozenset(
     {"/api/analyze", "/api/search", "/api/presence", "/api/lines",
@@ -608,18 +673,38 @@ async def _current_user(request: Request) -> dict | None:
     return user
 
 
-async def _auth_json(request: Request) -> tuple[str, str]:
+async def _read_json(request: Request) -> dict:
+    """본문을 JSON 객체로 읽는다 — 인증/포트폴리오 관리 API 공용.
+
+    시간 상한 필수: Content-Length 헤더만 보내고 본문을 안 보내는 클라이언트
+    (slowloris)가 있으면 본문 읽기가 영원히 대기해, IP 하나가 미결 핸들러
+    태스크·소켓을 시간당 수천 개까지 쌓을 수 있다 (uvicorn 은 요청 '사이'
+    keep-alive 타임아웃만 있고 본문 읽기 중 타임아웃은 없다)."""
     try:
-        # 시간 상한 필수: Content-Length 헤더만 보내고 본문을 안 보내는 클라이언트
-        # (slowloris)가 있으면 본문 읽기가 영원히 대기해, IP 하나가 미결 핸들러
-        # 태스크·소켓을 시간당 수천 개까지 쌓을 수 있다 (uvicorn 은 요청 '사이'
-        # keep-alive 타임아웃만 있고 본문 읽기 중 타임아웃은 없다).
         body = await asyncio.wait_for(request.json(), timeout=10)
     except Exception:  # noqa: BLE001 — 잘못된 JSON·시간 초과 모두 400 으로
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
     if not isinstance(body, dict):
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
+    return body
+
+
+async def _auth_json(request: Request) -> tuple[str, str]:
+    body = await _read_json(request)
     return str(body.get("email", "")), str(body.get("password", ""))
+
+
+async def _require_admin(request: Request) -> dict:
+    """포트폴리오 관리 API 공통 게이트 — ADMIN_EMAIL 로 로그인한 세션만 통과.
+
+    로그인 자체를 안 했으면 401(로그인부터 하라는 뜻), 다른 계정으로
+    로그인했으면 403(자격은 있지만 권한이 없다는 뜻)으로 구분한다."""
+    user = await _current_user(request)
+    if not user:
+        raise HTTPException(401, "로그인이 필요합니다.")
+    if str(user.get("email", "")).strip().lower() != ADMIN_EMAIL:
+        raise HTTPException(403, "이 작업을 할 권한이 없습니다.")
+    return user
 
 
 def _session_response(email: str, token: str, request: Request) -> JSONResponse:
@@ -1123,10 +1208,138 @@ async def about_page():
     return FileResponse(STATIC_DIR / "about.html")
 
 
+_LINKS_CARDS_MARKER = "<!-- PORTFOLIO_CARDS -->"
+
+
+def _render_portfolio_card(idx: int, item) -> str:
+    """작업물 카드 하나를 HTML 로 렌더링한다.
+
+    title/description/badge/url 은 관리자가 입력한 값이라도 항상 이스케이프
+    한다 — '신뢰된 관리자'라도 XSS 는 그대로 XSS 다. icon_svg 만 예외인데,
+    관리 API 의 어떤 엔드포인트도 icon_svg 를 받지 않아(portfolio.py 참고)
+    seed_if_empty 로 심은 신뢰된 문자열만 여기 올 수 있다."""
+    esc = html.escape
+    external = not item.url.startswith("/")
+    target = ' target="_blank" rel="noopener"' if external else ""
+    arrow = "↗" if external else "→"
+    icon = item.icon_svg or _DEFAULT_PORTFOLIO_ICON_SVG
+    badge = (
+        f'<span class="badge" data-en="{esc(item.badge_en)}">{esc(item.badge)}</span>'
+        if item.badge else ""
+    )
+    return (
+        f'<a class="lk" href="{esc(item.url)}"{target}>'
+        f'<span class="num" aria-hidden="true">{idx:02d}</span>'
+        f'<span class="ico" aria-hidden="true">{icon}</span>'
+        f'<span class="body">'
+        f'<span class="t" data-en="{esc(item.title_en)}">{esc(item.title)}</span>'
+        f'<span class="d" data-en="{esc(item.description_en)}">{esc(item.description)}</span>'
+        f'</span>'
+        f'{badge}'
+        f'<span class="arw" aria-hidden="true">{arrow}</span>'
+        f'</a>'
+    )
+
+
 @app.get("/links")
 async def links_page():
-    """링크 모음(link-in-bio) — SNS 프로필에 걸어 두는 한 장짜리 목차."""
-    return FileResponse(STATIC_DIR / "links.html")
+    """링크 모음(link-in-bio) — SNS 프로필에 걸어 두는 한 장짜리 목차.
+
+    작업물 카드만 DB(포트폴리오 스토어)에서 읽어 서버가 직접 렌더링한다 —
+    나머지(헤더·푸터 등)는 그대로 정적 HTML. 관리자가 /links/admin 에서
+    카드를 추가·수정해도 코드 배포 없이 바로 반영된다."""
+    items = await asyncio.to_thread(app.state.portfolio.list_items)
+    cards_html = "".join(_render_portfolio_card(i, it) for i, it in enumerate(items, 1))
+    template = (STATIC_DIR / "links.html").read_text(encoding="utf-8")
+    return HTMLResponse(template.replace(_LINKS_CARDS_MARKER, cards_html))
+
+
+@app.get("/links/admin")
+async def links_admin_page(request: Request):
+    """작업물 카드 관리 — 소유자(ADMIN_EMAIL)만 접근 가능.
+
+    /touches·/lines 와 같은 규칙(로그인 안 함 -> 로그인 페이지로), 단
+    로그인은 했는데 소유자가 아니면(다른 회원 계정) 리다이렉트 대신 권한
+    없음을 명확히 보여준다 — 그래야 로그인 페이지로 도돌이표가 안 된다."""
+    user = await _current_user(request)
+    if not user:
+        return RedirectResponse(url=_login_redirect("/links/admin", request),
+                                status_code=302)
+    if str(user.get("email", "")).strip().lower() != ADMIN_EMAIL:
+        return HTMLResponse(
+            "<!doctype html><meta charset=utf-8>"
+            "<title>권한 없음</title>"
+            "<body style='font-family:-apple-system,sans-serif;max-width:32em;"
+            "margin:15vh auto;padding:0 20px;color:#111'>"
+            "<h1 style='font-size:20px'>이 페이지에 대한 권한이 없어요</h1>"
+            "<p style='color:#666'>다른 계정으로 로그인돼 있습니다.</p>"
+            "<p><a href='/links'>← 작업물 페이지로</a></p></body>",
+            status_code=403)
+    return FileResponse(STATIC_DIR / "links_admin.html")
+
+
+def _portfolio_fields_from(body: dict) -> dict:
+    return dict(
+        title=body.get("title", ""), description=body.get("description", ""),
+        badge=body.get("badge", ""), url=body.get("url", ""),
+        title_en=body.get("titleEn", ""), description_en=body.get("descriptionEn", ""),
+        badge_en=body.get("badgeEn", ""),
+    )
+
+
+@app.get("/api/portfolio")
+async def portfolio_list(request: Request):
+    """관리 페이지 전용 목록(수정용 id 포함) — 공개 /links 는 이 API 를
+    거치지 않고 서버가 직접 렌더링하므로, 이 엔드포인트도 소유자 전용이다."""
+    await _require_admin(request)
+    items = await asyncio.to_thread(app.state.portfolio.list_items)
+    return {"items": [it.to_dict() for it in items]}
+
+
+@app.post("/api/portfolio")
+async def portfolio_create(request: Request):
+    await _require_admin(request)
+    body = await _read_json(request)
+    try:
+        item = await asyncio.to_thread(
+            app.state.portfolio.create, **_portfolio_fields_from(body))
+    except PortfolioError as exc:
+        raise HTTPException(400, str(exc))
+    return item.to_dict()
+
+
+@app.put("/api/portfolio/{item_id}")
+async def portfolio_update(item_id: int, request: Request):
+    await _require_admin(request)
+    body = await _read_json(request)
+    try:
+        item = await asyncio.to_thread(
+            app.state.portfolio.update, item_id, **_portfolio_fields_from(body))
+    except PortfolioError as exc:
+        raise HTTPException(400, str(exc))
+    return item.to_dict()
+
+
+@app.delete("/api/portfolio/{item_id}")
+async def portfolio_delete(item_id: int, request: Request):
+    await _require_admin(request)
+    try:
+        await asyncio.to_thread(app.state.portfolio.delete, item_id)
+    except PortfolioError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
+
+
+@app.post("/api/portfolio/{item_id}/move")
+async def portfolio_move(item_id: int, request: Request):
+    await _require_admin(request)
+    body = await _read_json(request)
+    direction = str(body.get("direction", ""))
+    try:
+        await asyncio.to_thread(app.state.portfolio.move, item_id, direction)
+    except PortfolioError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
 
 
 @app.get("/privacy")

@@ -1258,3 +1258,132 @@ def test_links_page_has_no_dead_internal_links(client):
             assert client.get(path).status_code == 200, f"죽은 링크: {path}"
     finally:
         client.post("/api/auth/logout")
+
+
+def test_links_page_renders_portfolio_from_db(client):
+    """/links 의 작업물 카드는 이제 정적 HTML 이 아니라 포트폴리오 스토어(DB)
+    에서 서버가 직접 렌더링한다 — data-en 속성(렌더링 시점에만 붙는다)으로
+    하드코딩이 아님을 확인한다."""
+    html = client.get("/links").text
+    assert 'data-en="Stock Radar"' in html
+    assert 'data-en="Macro Calendar"' in html
+    assert 'data-en="Earnings Volatility"' in html
+
+
+def test_portfolio_api_requires_login_then_admin_email(client, monkeypatch):
+    """/api/portfolio 관리 API: 로그인 안 하면 401, 다른 계정으로 로그인하면
+    403(자격은 있지만 권한 없음), ADMIN_EMAIL 계정이어야 통과한다."""
+    import app.server as server_mod
+
+    monkeypatch.setattr(server_mod, "ADMIN_EMAIL", "onlyowner@example.com")
+    payload = {"title": "t", "description": "", "badge": "", "url": "/"}
+
+    assert client.post("/api/portfolio", json=payload).status_code == 401
+    assert client.get("/api/portfolio").status_code == 401
+
+    _signup(client, "notowner@example.com")
+    try:
+        assert client.post("/api/portfolio", json=payload).status_code == 403
+    finally:
+        client.post("/api/auth/logout")
+
+
+def test_portfolio_admin_full_lifecycle(client, monkeypatch):
+    """소유자가 직접 추가·수정·순서변경·삭제하는 전체 흐름 — 매 단계가 공개
+    /links 페이지에 그대로 반영되는지까지 확인한다."""
+    import app.server as server_mod
+
+    monkeypatch.setattr(server_mod, "ADMIN_EMAIL", "lifecycleowner@example.com")
+    _signup(client, "lifecycleowner@example.com")
+    created_id = None
+    extra_id = None
+    try:
+        before = client.get("/api/portfolio").json()["items"]
+        assert len(before) == 3, "시드된 기본 3개가 아님 — 다른 테스트가 오염시켰을 수 있음"
+        assert "id" in before[0]
+
+        # 생성 — 맨 뒤에 붙고, 외부 링크라 새 탭이어야 한다
+        r = client.post("/api/portfolio", json={
+            "title": "라이프사이클 테스트", "description": "d", "badge": "배지",
+            "url": "https://example.com/lifecycle",
+            "titleEn": "Lifecycle Test", "descriptionEn": "", "badgeEn": "",
+        })
+        assert r.status_code == 200, r.text
+        created_id = r.json()["id"]
+
+        html = client.get("/links").text
+        assert "라이프사이클 테스트" in html
+        assert html.index("실적 발표 변동성") < html.index("라이프사이클 테스트"), \
+            "새 항목이 맨 뒤에 붙어야 함"
+        assert 'href="https://example.com/lifecycle" target="_blank" rel="noopener"' in html, \
+            "외부 링크인데 새 탭이 아님"
+
+        # 수정 — 내부 경로로 바꾸면 새 탭 표시가 사라져야 한다
+        r = client.put(f"/api/portfolio/{created_id}", json={
+            "title": "수정됨", "description": "d2", "badge": "", "url": "/",
+        })
+        assert r.status_code == 200, r.text
+        html = client.get("/links").text
+        assert "수정됨" in html and "라이프사이클 테스트" not in html
+
+        # 위로 이동 — 4번째(맨 뒤)에서 3번째로
+        assert client.post(f"/api/portfolio/{created_id}/move",
+                           json={"direction": "up"}).status_code == 200
+        items = client.get("/api/portfolio").json()["items"]
+        assert items[2]["id"] == created_id, "한 칸 위로 이동해야 함"
+
+        # 잘못된 입력은 400 + 한국어 메시지
+        r = client.post("/api/portfolio", json={"title": "", "url": "/"})
+        assert r.status_code == 400
+        r = client.post("/api/portfolio", json={"title": "t", "url": "ftp://bad"})
+        assert r.status_code == 400
+
+        # icon_svg 는 관리 API 로 절대 주입 못 한다(모듈 자체가 필드를 안 받음)
+        r = client.post("/api/portfolio", json={
+            "title": "아이콘테스트", "url": "/", "iconSvg": "<script>bad</script>",
+        })
+        assert r.status_code == 200
+        extra_id = r.json()["id"]
+        assert "<script>bad</script>" not in client.get("/links").text
+        client.delete(f"/api/portfolio/{extra_id}")
+        extra_id = None
+
+        # 삭제 — 정리 후 원래 3개로 돌아온다
+        assert client.delete(f"/api/portfolio/{created_id}").status_code == 200
+        created_id = None
+        html = client.get("/links").text
+        assert "수정됨" not in html
+        after = client.get("/api/portfolio").json()["items"]
+        assert len(after) == 3
+    finally:
+        if extra_id is not None:
+            client.delete(f"/api/portfolio/{extra_id}")
+        if created_id is not None:
+            client.delete(f"/api/portfolio/{created_id}")
+        client.post("/api/auth/logout")
+
+
+def test_links_admin_page_access_control(client, monkeypatch):
+    """/links/admin: 비로그인은 로그인 페이지로, 다른 계정은 403, 소유자는 200."""
+    import app.server as server_mod
+
+    monkeypatch.setattr(server_mod, "ADMIN_EMAIL", "pageowner@example.com")
+
+    r = client.get("/links/admin", follow_redirects=False)
+    assert r.status_code == 302
+    assert "/login" in r.headers["location"]
+
+    _signup(client, "notpageowner@example.com")
+    try:
+        assert client.get("/links/admin").status_code == 403
+    finally:
+        client.post("/api/auth/logout")
+
+    _signup(client, "pageowner@example.com")
+    try:
+        r = client.get("/links/admin")
+        assert r.status_code == 200
+        assert 'id="addHost"' in r.text
+        assert "/static/links_admin.js" in r.text
+    finally:
+        client.post("/api/auth/logout")

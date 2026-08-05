@@ -105,6 +105,10 @@ def _resolve_url(db_path: Path | str | None, url: str | None) -> str:
     return f"sqlite:///{_default_sqlite_path()}"
 
 
+# portfolio.py 도 이 MetaData 에 자기 테이블을 등록해 같은 엔진(운영은 Postgres)을
+# 공유한다 — AuthStore._create_schema() 의 create_all() 이 두 모듈의 테이블을
+# 한 번에 만든다. portfolio.py 는 app 시작 시 반드시 AuthStore 생성 전에
+# import 돼 있어야 한다(server.py 상단 import 순서로 보장).
 _metadata = MetaData()
 # 큰 자동증가 값도 담기게 BigInteger — SQLite 에선 INTEGER, Postgres 에선 BIGSERIAL
 _users = Table(

@@ -297,15 +297,9 @@
       ".hero h1": "Wontopia",
       ".tagline": "We check ideas against data — and when they hold up, we ship them as web tools",
       ".sec-works": "Selected Works",
-      '.lk[href="/"] .t': "Stock Radar",
-      '.lk[href="/"] .d': "MA support levels and chart patterns, screened daily",
-      '.lk[href="/"] .badge': "Screener",
-      '.lk[href*="macro-calendar"] .t': "Macro Calendar",
-      '.lk[href*="macro-calendar"] .d': "Reading the macro picture at a glance",
-      '.lk[href*="macro-calendar"] .badge': "Dashboard",
-      '.lk[href*="earnings-volatility"] .t': "Earnings Volatility",
-      '.lk[href*="earnings-volatility"] .d': "How much US stocks move on earnings day, from 5 years of data",
-      '.lk[href*="earnings-volatility"] .badge': "Analytics",
+      // 작업물 카드는 서버가 DB 에서 렌더링(관리자가 /links/admin 에서 직접
+      // 추가/수정)하므로 여기 하드코딩하지 않는다 — 카드 각 요소의
+      // data-en 속성을 translateDataAttrs() 가 범용으로 치환한다.
       "footer .disc": "Each tool shows historical statistics — not investment advice.",
       "footer .copy": '© Wontopia · <a href="/privacy">Privacy Policy</a>',
     },
@@ -403,6 +397,18 @@
     });
   }
 
+  // 서버가 DB 에서 렌더링하는 콘텐츠(예: /links 작업물 카드)는 페이지별
+  // 사전에 미리 써 둘 수 없다 — 관리자가 나중에 새로 추가하는 항목까지는
+  // 코드가 알 도리가 없기 때문. 대신 요소 자신에게 영문을 data-en 속성으로
+  // 실어 보내면(서버 렌더링 시점에 함께) 여기서 범용으로 치환한다. 값이
+  // 비어 있으면(관리자가 영문을 안 채움) 원문(한국어) 그대로 둔다.
+  function translateDataAttrs() {
+    document.querySelectorAll("[data-en]").forEach(function (el) {
+      var en = el.getAttribute("data-en");
+      if (en) el.textContent = en;
+    });
+  }
+
   function applyEnglish() {
     document.documentElement.lang = "en";
     var page = HTML[location.pathname];
@@ -422,6 +428,7 @@
       });
     }
     translateAttrs();
+    translateDataAttrs();
     translateTextNodes(document.body);
     document.title = document.title
       .replace("주식 레이더 — 데이터로 보는 기술적 분석", "Stock Radar — technical analysis, backed by data")

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업물 관리 — 원토피아</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.12); --hairline: rgba(9,11,12,.08);
+    --text: #0a0b0c; --muted: #565e66; --faint: #8b9299;
+    --accent: #16a34a; --danger: #dc2626;
+    --shadow: 0 1px 2px rgba(9,11,12,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0b; --panel: #101113; --soft: #16181b;
+      --border: rgba(255,255,255,.13); --hairline: rgba(255,255,255,.09);
+      --text: #f4f6f7; --muted: #9198a0; --faint: #6e757c;
+      --accent: #22c55e; --danger: #f87171;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.12); --hairline: rgba(9,11,12,.08);
+    --text: #0a0b0c; --muted: #565e66; --faint: #8b9299;
+    --accent: #16a34a; --danger: #dc2626;
+    --shadow: 0 1px 2px rgba(9,11,12,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0b; --panel: #101113; --soft: #16181b;
+    --border: rgba(255,255,255,.13); --hairline: rgba(255,255,255,.09);
+    --text: #f4f6f7; --muted: #9198a0; --faint: #6e757c;
+    --accent: #22c55e; --danger: #f87171;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo",
+      "Malgun Gothic", "Noto Sans KR", sans-serif;
+    font-size: 14.5px; line-height: 1.55; padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; gap: 12px; flex-wrap: wrap;
+  }
+  h1 { font-size: 19px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+  .top nav { display: flex; gap: 14px; font-size: 13px; }
+  .top nav a, .top nav button {
+    color: var(--muted); text-decoration: none; background: none; border: none;
+    font: inherit; cursor: pointer; padding: 0;
+  }
+  .top nav a:hover, .top nav button:hover { color: var(--text); }
+
+  h2.sec {
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); font-weight: 700; margin: 0 0 12px;
+  }
+  section { margin-bottom: 36px; }
+
+  .msg {
+    display: none; border-radius: 10px; padding: 10px 14px; font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .msg.show { display: block; }
+  .msg.error { background: rgba(220,38,38,.1); color: var(--danger); }
+  .msg.ok { background: rgba(22,163,74,.12); color: var(--accent); }
+
+  .rows { display: flex; flex-direction: column; gap: 10px; }
+  .row {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .row .summary { display: flex; align-items: center; gap: 12px; }
+  .row .num {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--faint);
+    flex: none; width: 22px;
+  }
+  .row .info { flex: 1; min-width: 0; }
+  .row .info .t { font-weight: 700; font-size: 14.5px; }
+  .row .info .d { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .row .info .u {
+    color: var(--faint); font-size: 11px; margin-top: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row .actions { display: flex; gap: 4px; flex: none; align-items: center; }
+  .row .actions button {
+    border: 1px solid var(--border); background: var(--soft); color: var(--text);
+    border-radius: 8px; font-size: 12px; padding: 5px 9px; cursor: pointer;
+    font-family: inherit;
+  }
+  .row .actions button:hover { border-color: var(--accent); }
+  .row .actions button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .row .actions button:disabled { opacity: .35; cursor: default; }
+  .row .actions button:disabled:hover { border-color: var(--border); color: var(--text); }
+
+  form.item-form {
+    display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline);
+  }
+  form.item-form.show { display: block; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field { margin-bottom: 10px; }
+  .field label {
+    display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px;
+  }
+  .field input, .field textarea {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--soft); color: var(--text);
+    font: inherit; font-size: 13.5px;
+  }
+  .field textarea { resize: vertical; min-height: 46px; }
+  details.en-fields { margin: 4px 0 12px; }
+  details.en-fields summary {
+    font-size: 12px; color: var(--muted); cursor: pointer; margin-bottom: 8px;
+  }
+  .form-actions { display: flex; gap: 8px; }
+  .form-actions button {
+    border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer;
+    font-family: inherit; border: 1px solid var(--border);
+  }
+  .form-actions button.primary {
+    background: var(--accent); color: #06210f; border-color: var(--accent); font-weight: 600;
+  }
+  .form-actions button.secondary { background: var(--soft); color: var(--text); }
+
+  .add-card {
+    background: var(--panel); border: 1px dashed var(--border); border-radius: 14px;
+    padding: 16px;
+  }
+  .empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
+
+  @media (max-width: 640px) {
+    body { padding: 24px 16px 60px; }
+    .row .summary { flex-wrap: wrap; }
+    .row .num { order: 0; }
+    .row .info { order: 1; flex-basis: 100%; }
+    .row .actions { order: 2; flex-basis: 100%; margin-top: 10px; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+<script src="/static/theme.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <h1>작업물 관리</h1>
+      <nav>
+        <a href="/links">← 작업물 페이지</a>
+        <button id="logoutBtn" type="button">로그아웃</button>
+      </nav>
+    </header>
+
+    <div id="msg" class="msg" role="status"></div>
+
+    <section>
+      <h2 class="sec">작업물 목록</h2>
+      <div id="rows" class="rows"><p class="empty">불러오는 중…</p></div>
+    </section>
+
+    <section>
+      <h2 class="sec">새 작업물 추가</h2>
+      <div class="add-card" id="addHost"></div>
+    </section>
+  </div>
+<script src="/static/links_admin.js"></script>
+</body>
+</html>
