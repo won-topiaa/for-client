@@ -6,7 +6,7 @@
 회원 인증과 동일한 Postgres 에 함께 저장돼 재배포에도 지워지지 않는다.
 
 아이콘은 관리 API 로 받지 않는다(이 모듈의 어떤 공개 함수도 icon_svg 를
-인자로 받지 않는다) — seed_if_empty 로만 심어지는 신뢰된 문자열이라 그대로
+인자로 받지 않는다) — sync_seed 로만 심어지는 신뢰된 문자열이라 그대로
 HTML 에 꽂아도 안전하다. 반대로 title/description/badge/url 은 관리자
 입력이라도 서버가 렌더링할 때 항상 이스케이프한다(server.py 참고).
 """
@@ -49,10 +49,19 @@ _portfolio = Table(
     Column("badge", String(MAX_BADGE_LEN), nullable=False, server_default=""),
     Column("badge_en", String(MAX_BADGE_LEN), nullable=False, server_default=""),
     Column("url", String(MAX_URL_LEN), nullable=False),
-    # 관리 API 로는 절대 못 받는 필드 — seed_if_empty 전용(모듈 docstring 참고)
+    # 관리 API 로는 절대 못 받는 필드 — sync_seed 전용(모듈 docstring 참고)
     Column("icon_svg", Text, nullable=False, server_default=""),
     Column("sort_order", Integer, nullable=False),
     Column("created_at", Float, nullable=False),
+)
+
+# 코드에 정의된 '기본 작업물(seed)'을 이미 반영했는지 기록하는 장부.
+# sync_seed 가 각 seed 항목을 URL 키로 '한 번만' 반영하게 해, 사용자가 관리
+# 페이지에서 지운 항목이 배포 때마다 되살아나는 것을 막는다(부활 방지).
+_seed_applied = Table(
+    "portfolio_seed_applied", _metadata,
+    Column("seed_key", String(MAX_URL_LEN), primary_key=True),
+    Column("applied_at", Float, nullable=False),
 )
 
 
@@ -212,14 +221,33 @@ class PortfolioStore:
             conn.execute(sa_update(_portfolio).where(_portfolio.c.id == ids[other])
                         .values(sort_order=orders[idx]))
 
-    def seed_if_empty(self, items: list[dict]) -> None:
-        """DB 가 비어 있을 때만(최초 배포) 기본 작업물을 심는다 — 이미 뭔가
-        있으면(관리자가 손댄 뒤) 절대 덮어쓰지 않는다."""
+    def sync_seed(self, items: list[dict]) -> None:
+        """코드에 정의된 '기본 작업물'을 DB 에 반영한다 — 각 항목을 URL 키로
+        '딱 한 번'만 반영하는 멱등(idempotent) 동기화.
+
+        - 아직 장부에 없고(=처음 보는 seed) 같은 URL 이 DB 에 없으면 맨 뒤에
+          추가한다. 그 뒤 장부에 기록해 다시는 건드리지 않는다.
+        - 이미 장부에 있으면(=한 번 반영했던 seed) 아무 것도 하지 않는다 —
+          그래서 사용자가 관리 페이지에서 지운 항목이 다음 배포 때 되살아나지
+          않고, 제목 등 사용자 편집도 절대 덮어쓰지 않는다.
+        - 비어 있던 DB 든, 이미 몇 개 들어 있던 DB(구버전 seed 로 심긴 3개 등)든
+          똑같이 안전하게 동작한다: 이미 있는 URL 은 추가하지 않고 장부에만
+          올려, 새로 추가된 seed 만 실제로 삽입된다."""
         with self._engine.begin() as conn:
-            count = conn.execute(
-                select(func.count()).select_from(_portfolio)).scalar_one()
-            if count:
-                return
-            now = time.time()
-            for i, it in enumerate(items):
-                conn.execute(insert(_portfolio).values(sort_order=i, created_at=now, **it))
+            applied = {row[0] for row in
+                       conn.execute(select(_seed_applied.c.seed_key))}
+            for it in items:
+                key = it["url"]
+                if key in applied:
+                    continue
+                exists = conn.execute(
+                    select(_portfolio.c.id).where(_portfolio.c.url == it["url"])
+                ).first()
+                if exists is None:
+                    next_order = conn.execute(
+                        select(func.coalesce(func.max(_portfolio.c.sort_order), -1) + 1)
+                    ).scalar_one()
+                    conn.execute(insert(_portfolio).values(
+                        sort_order=next_order, created_at=time.time(), **it))
+                conn.execute(insert(_seed_applied).values(
+                    seed_key=key, applied_at=time.time()))

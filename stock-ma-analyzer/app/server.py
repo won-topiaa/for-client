@@ -160,6 +160,16 @@ _PORTFOLIO_SEED = [
                  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
                  '<path d="M3 12h3l3 7 5-16 3 9h4"/></svg>',
     ),
+    dict(
+        title="비트코인 코어 전략", title_en="Bitcoin Core Strategies",
+        description="비트코인 투자·매매의 핵심 전략 정리",
+        description_en="Core strategies for investing and trading Bitcoin",
+        badge="전략", badge_en="Strategy",
+        url="https://won-topiaa.github.io/Bitcoin-Core-Strategies/",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+                 '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="M3 13l9 5 9-5"/></svg>',
+    ),
 ]
 
 # 관리자가 추가한 새 카드(icon_svg 없음)에 쓰는 공용 아이콘 — 화살표가
@@ -206,14 +216,16 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001
         logger.warning("시작 시 만료 세션 정리 실패 (계속 진행)", exc_info=True)
     # 포트폴리오 카드 저장소 — AuthStore 와 엔진(운영은 Postgres)을 공유한다.
-    # DB 가 비어 있으면(최초 배포) 지금까지 하드코딩돼 있던 3장을 그대로 심고,
-    # 관리자가 이미 손댔으면(비어 있지 않으면) 절대 덮어쓰지 않는다.
+    # 코드에 정의된 기본 작업물(_PORTFOLIO_SEED)을 멱등 동기화한다: 새로 추가된
+    # 항목만 심고, 이미 반영했던 항목은 다시 건드리지 않는다(관리자가 지운 걸
+    # 되살리거나 편집을 덮어쓰지 않음). 이미 3장이 들어 있는 운영 DB 에도
+    # 안전하게 '늘어난 부분만' 반영된다.
     app.state.portfolio = PortfolioStore(app.state.auth._engine)
     try:
         await asyncio.wait_for(
-            asyncio.to_thread(app.state.portfolio.seed_if_empty, _PORTFOLIO_SEED), 15)
+            asyncio.to_thread(app.state.portfolio.sync_seed, _PORTFOLIO_SEED), 15)
     except Exception:  # noqa: BLE001
-        logger.warning("포트폴리오 기본값 심기 실패 (계속 진행)", exc_info=True)
+        logger.warning("포트폴리오 기본값 동기화 실패 (계속 진행)", exc_info=True)
     # 캐시 래퍼: 같은 종목 반복/동시 조회 시 실제 API 호출은 TTL 당 1회
     provider = CachingProvider(build_provider(settings))
     app.state.provider = provider

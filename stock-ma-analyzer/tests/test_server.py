@@ -1179,12 +1179,14 @@ def test_links_page_is_self_contained(client):
 
     배경 그래프를 걷어낸 뒤 남은 건 정적 HTML 뿐 — CSP 가 인라인 스크립트를
     막으므로 페이지 전용 JS 를 다시 인라인으로 끼워 넣으면 조용히 죽는다."""
+    import app.server as server_mod
+
+    n = len(server_mod._PORTFOLIO_SEED)
     html = client.get("/links").text
     assert "<script>" not in html, "인라인 스크립트는 CSP 에 막힌다"
-    # 카드마다 번호·분류 배지·화살표가 다 있어야 카드 꼴이 유지된다
-    assert html.count('class="num"') == 3, "작업물 번호(01·02·03)가 3개가 아니다"
-    assert html.count('class="badge"') == 3, "분류 배지가 3개가 아니다"
-    assert html.count('class="ico"') == 3, "아이콘이 3개가 아니다"
+    # 시드된 카드마다 번호·아이콘이 다 있어야 카드 꼴이 유지된다 (배지는 선택)
+    assert html.count('class="num"') == n, f"작업물 번호가 {n}개가 아니다"
+    assert html.count('class="ico"') == n, f"아이콘이 {n}개가 아니다"
 
 
 def test_links_page_theme_tokens_match_across_all_four_blocks(client):
@@ -1263,11 +1265,57 @@ def test_links_page_has_no_dead_internal_links(client):
 def test_links_page_renders_portfolio_from_db(client):
     """/links 의 작업물 카드는 이제 정적 HTML 이 아니라 포트폴리오 스토어(DB)
     에서 서버가 직접 렌더링한다 — data-en 속성(렌더링 시점에만 붙는다)으로
-    하드코딩이 아님을 확인한다."""
+    하드코딩이 아님을 확인한다. 시드 목록의 모든 항목이 순서대로 나와야 한다."""
+    import app.server as server_mod
+
     html = client.get("/links").text
-    assert 'data-en="Stock Radar"' in html
-    assert 'data-en="Macro Calendar"' in html
-    assert 'data-en="Earnings Volatility"' in html
+    seed = server_mod._PORTFOLIO_SEED
+    positions = []
+    for it in seed:
+        assert it["title"] in html, f"시드 항목이 안 보임: {it['title']}"
+        if it["title_en"]:
+            assert f'data-en="{it["title_en"]}"' in html, \
+                f"영문 제목이 data-en 으로 안 실림: {it['title_en']}"
+        positions.append(html.index(it["title"]))
+    assert positions == sorted(positions), f"시드 항목이 정의 순서대로 안 나옴: {positions}"
+
+
+def test_portfolio_sync_seed_adds_only_new_items(client):
+    """sync_seed 는 '늘어난 seed 만' 추가하고, 이미 있는 URL 은 중복 삽입하지
+    않으며, 사용자가 지운 항목을 배포(재sync) 때 되살리지 않는다 — 이미 3개가
+    들어 있는 운영 DB 에 4번째를 안전하게 붙이기 위한 핵심 성질."""
+    import app.server as server_mod
+    from app.portfolio import PortfolioStore, _portfolio, _seed_applied
+    from sqlalchemy import create_engine, delete, insert, select
+    from app.auth import _metadata
+    import time as _t
+
+    seed = server_mod._PORTFOLIO_SEED
+    eng = create_engine("sqlite:///:memory:", future=True)
+    _metadata.create_all(eng)
+    store = PortfolioStore(eng)
+
+    # 구버전 방식으로 앞 3개만 심긴(장부 없음) 운영 DB 를 흉내
+    with eng.begin() as conn:
+        for i, d in enumerate(seed[:3]):
+            conn.execute(insert(_portfolio).values(sort_order=i, created_at=_t.time(), **d))
+
+    store.sync_seed(seed)                    # 새 코드로 동기화 → 4번째만 추가
+    items = store.list_items()
+    assert len(items) == len(seed)
+    urls = [i.url for i in items]
+    assert len(urls) == len(set(urls)), f"URL 중복 발생: {urls}"
+    assert items[-1].url == seed[-1]["url"], "새 seed 는 맨 뒤에 붙어야 함"
+
+    store.sync_seed(seed)                    # 재실행 멱등 — 변화 없음
+    assert len(store.list_items()) == len(seed)
+
+    # 사용자가 맨 뒤 항목을 지운 뒤 재배포(재sync) → 되살아나지 않아야 한다
+    with eng.begin() as conn:
+        conn.execute(delete(_portfolio).where(_portfolio.c.url == seed[-1]["url"]))
+    store.sync_seed(seed)
+    assert seed[-1]["url"] not in [i.url for i in store.list_items()], \
+        "사용자가 지운 항목이 재sync 로 부활함"
 
 
 def test_portfolio_api_requires_login_then_admin_email(client, monkeypatch):
@@ -1297,9 +1345,10 @@ def test_portfolio_admin_full_lifecycle(client, monkeypatch):
     _signup(client, "lifecycleowner@example.com")
     created_id = None
     extra_id = None
+    seed_n = len(server_mod._PORTFOLIO_SEED)
     try:
         before = client.get("/api/portfolio").json()["items"]
-        assert len(before) == 3, "시드된 기본 3개가 아님 — 다른 테스트가 오염시켰을 수 있음"
+        assert len(before) == seed_n, "시드된 기본 개수와 다름 — 다른 테스트가 오염시켰을 수 있음"
         assert "id" in before[0]
 
         # 생성 — 맨 뒤에 붙고, 외부 링크라 새 탭이어야 한다
@@ -1313,8 +1362,9 @@ def test_portfolio_admin_full_lifecycle(client, monkeypatch):
 
         html = client.get("/links").text
         assert "라이프사이클 테스트" in html
-        assert html.index("실적 발표 변동성") < html.index("라이프사이클 테스트"), \
-            "새 항목이 맨 뒤에 붙어야 함"
+        last_seed_title = server_mod._PORTFOLIO_SEED[-1]["title"]
+        assert html.index(last_seed_title) < html.index("라이프사이클 테스트"), \
+            "새 항목이 맨 뒤(마지막 시드 뒤)에 붙어야 함"
         assert 'href="https://example.com/lifecycle" target="_blank" rel="noopener"' in html, \
             "외부 링크인데 새 탭이 아님"
 
@@ -1326,11 +1376,11 @@ def test_portfolio_admin_full_lifecycle(client, monkeypatch):
         html = client.get("/links").text
         assert "수정됨" in html and "라이프사이클 테스트" not in html
 
-        # 위로 이동 — 4번째(맨 뒤)에서 3번째로
+        # 위로 이동 — 맨 뒤(방금 추가, index=seed_n)에서 한 칸 위(seed_n-1)로
         assert client.post(f"/api/portfolio/{created_id}/move",
                            json={"direction": "up"}).status_code == 200
         items = client.get("/api/portfolio").json()["items"]
-        assert items[2]["id"] == created_id, "한 칸 위로 이동해야 함"
+        assert items[seed_n - 1]["id"] == created_id, "한 칸 위로 이동해야 함"
 
         # 잘못된 입력은 400 + 한국어 메시지
         r = client.post("/api/portfolio", json={"title": "", "url": "/"})
@@ -1348,13 +1398,13 @@ def test_portfolio_admin_full_lifecycle(client, monkeypatch):
         client.delete(f"/api/portfolio/{extra_id}")
         extra_id = None
 
-        # 삭제 — 정리 후 원래 3개로 돌아온다
+        # 삭제 — 정리 후 원래 시드 개수로 돌아온다
         assert client.delete(f"/api/portfolio/{created_id}").status_code == 200
         created_id = None
         html = client.get("/links").text
         assert "수정됨" not in html
         after = client.get("/api/portfolio").json()["items"]
-        assert len(after) == 3
+        assert len(after) == seed_n
     finally:
         if extra_id is not None:
             client.delete(f"/api/portfolio/{extra_id}")
