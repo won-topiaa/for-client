@@ -254,7 +254,12 @@
       ".party-note": "We fetch and backtest 3 years of data per stock, so a cold start can take a few seconds up to 2–3 minutes. Results fill in as they are found.",
     },
     "/lines": {
-      ".method": "<b>Criteria (all must hold):</b><br><b>Holding as support</b> = ① 70%+ of the last 20 closes above the line (trend anchored above) ② the low touched the line's band within the last 5 bars (band = max(0.5×ATR14, 0.15%)) ③ no confirmed break — today's close above line−band and no engine-confirmed breakdown in the last 5 bars ④ 10-bar slope ≥ −0.2% (declining-MA support excluded — Weinstein) ⑤ 3-year backtest: 2+ decided support episodes with a weighted hold rate ≥ 50%.<br><b>Blocked at resistance</b> is the exact mirror. Ranked by confidence (Wilson lower bound × log(1+weighted holds)), top 6 each.<br><b>Caution:</b> “the line is being tested” is an observation, not a direction call — breaks can accelerate moves either way." + SRC_NOTE,
+      ".method": '<p class="method-lead"><b>The criteria?</b> Only stocks that meet <b>every</b> backtest-verified quant rule, split into two lists — holding as support vs. blocked at resistance, top 6 each.</p>' +
+        '<details class="method-more"><summary>Criteria &amp; cautions</summary><div class="method-body">' +
+        "<p><b>Holding as support</b> = ① 70%+ of the last 20 closes above the line (trend anchored above) ② the low touched the line's band within the last 5 bars (band = max(0.5×ATR14, 0.15%)) ③ no confirmed break — today's close above line−band and no engine-confirmed breakdown in the last 5 bars ④ 10-bar slope ≥ −0.2% (declining-MA support excluded — Weinstein) ⑤ 3-year backtest: 2+ decided support episodes with a weighted hold rate ≥ 50%.</p>" +
+        '<p><b>Blocked at resistance</b> is the exact mirror. Ranked by confidence (Wilson lower bound × log(1+weighted holds)), top 6 each.</p>' +
+        '<p class="method-caution"><b>Caution:</b> “the line is being tested” is an observation, not a direction call — breaks can accelerate moves either way.</p>' +
+        SRC_NOTE + "</div></details>",
       ".note": "Universe — 🇰🇷 KR: top 300 by trading value (mega-caps excluded) · 🇺🇸 US: S&amp;P 500 ex-mega-caps · judged on the last completed trading day.",
       ".party-note": "We fetch and backtest 3 years of data per stock, so a cold start can take a few seconds up to 2–3 minutes. Results fill in as they are found.",
     },

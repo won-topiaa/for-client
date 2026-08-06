@@ -85,6 +85,25 @@
   }
   .method b { color: var(--info); }
   .method .src { color: var(--muted); font-size: 11.5px; display: block; margin-top: 6px; }
+  /* 중요한 한 줄만 항상 보이고, 판정 기준·주의는 펼쳐서 — 모든 화면 공통 */
+  .method-lead { margin: 0; }
+  .method-more { margin-top: 9px; }
+  .method-more > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .method-more > summary::-webkit-details-marker { display: none; }
+  .method-more > summary::after {
+    content: "▾"; font-size: 10px; transition: transform .15s ease;
+  }
+  .method-more[open] > summary::after { transform: rotate(180deg); }
+  .method-body { margin-top: 11px; }
+  .method-body > p { margin: 0 0 9px; }
+  .method-body > p:last-of-type { margin-bottom: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .method-more > summary::after { transition: none; }
+  }
 
   .status { margin: 4px 0 8px; color: var(--muted); }
   .bar {
@@ -820,18 +839,17 @@
     <button type="button" class="preset" data-period="200">200일</button>
   </div>
 
-  <div class="method" data-mfold="ℹ️ 판정 기준 (지지/저항)">
-    <b>판정 기준 (퀀트 규칙 — 전부 만족해야 목록에 오릅니다)</b><br>
-    <b>지지를 받는 중</b> = ① 직전 20봉(당일 제외) 종가의 70% 이상이 선 위(추세가 선 위에 정박)
-    ② 최근 5봉 안에 저가가 허용 밴드(max(0.5×ATR14, 종가의 0.15%) — 사이트 공통)까지 선에 닿음
-    ③ 확정 이탈 아님 — 오늘 종가가 선−밴드 위 + 최근 5봉 안에 확정 이탈(밴드+ATR 관통 또는
-    밴드 밖 종가 3봉 연속)이 없음 ④ 선의 10봉 기울기 ≥ −0.2%(하락 중인 선의 지지는 제외 — Weinstein)
-    ⑤ 3년 백테스트에서 그 선의 지지쪽 결정 사례 2회 이상 · 가중 지지 성공률 50% 이상.<br>
-    <b>저항을 받는 중</b>은 위 기준의 완전한 거울상(선 아래 정박 + 고가 터치 + 확정 돌파 아님 + 기울기 ≤ +0.2% + 저항 성공률 50%+).
-    정렬은 신뢰 점수(성공률 Wilson 하한 × log(1+가중 성공 횟수)) 순 — 각 리스트 상위 6개.<br>
-    <b>주의:</b> "그 선이 지금 시험받고 있다"는 관찰이지 방향 보장이 아닙니다 — 지지가 뚫리면 하락 가속,
-    저항이 뚫리면 상승 가속 신호로 뒤집힐 수 있습니다.
-    <span class="src">방법 출처: 이평선 레이더 백테스트 엔진 (Wilson 하한 점수화) · Weinstein (1988) 스테이지 분석 · Brock·Lakonishok·LeBaron (1992) 계열 이동평균 연구</span>
+  <div class="method">
+    <p class="method-lead"><b>판정 기준은?</b> 3년 백테스트로 검증한 퀀트 규칙을 <b>전부 만족</b>한 종목만, 지지받는 종목과 저항받는 종목으로 나눠 각 상위 6개 보여드립니다.</p>
+    <details class="method-more">
+      <summary>판정 기준 · 주의사항 자세히</summary>
+      <div class="method-body">
+        <p><b>지지를 받는 중</b> = ① 직전 20봉(당일 제외) 종가의 70% 이상이 선 위(추세가 선 위에 정박) ② 최근 5봉 안에 저가가 허용 밴드(max(0.5×ATR14, 종가의 0.15%) — 사이트 공통)까지 선에 닿음 ③ 확정 이탈 아님 — 오늘 종가가 선−밴드 위 + 최근 5봉 안에 확정 이탈(밴드+ATR 관통 또는 밴드 밖 종가 3봉 연속)이 없음 ④ 선의 10봉 기울기 ≥ −0.2%(하락 중인 선의 지지는 제외 — Weinstein) ⑤ 3년 백테스트에서 그 선의 지지쪽 결정 사례 2회 이상 · 가중 지지 성공률 50% 이상.</p>
+        <p><b>저항을 받는 중</b>은 위 기준의 완전한 거울상(선 아래 정박 + 고가 터치 + 확정 돌파 아님 + 기울기 ≤ +0.2% + 저항 성공률 50%+). 정렬은 신뢰 점수(성공률 Wilson 하한 × log(1+가중 성공 횟수)) 순 — 각 리스트 상위 6개.</p>
+        <p class="method-caution"><b>주의:</b> "그 선이 지금 시험받고 있다"는 관찰이지 방향 보장이 아닙니다 — 지지가 뚫리면 하락 가속, 저항이 뚫리면 상승 가속 신호로 뒤집힐 수 있습니다.</p>
+        <span class="src">방법 출처: 이평선 레이더 백테스트 엔진 (Wilson 하한 점수화) · Weinstein (1988) 스테이지 분석 · Brock·Lakonishok·LeBaron (1992) 계열 이동평균 연구</span>
+      </div>
+    </details>
   </div>
 
   <div class="scan-party" id="scanParty" aria-hidden="true">

@@ -258,7 +258,20 @@
   }
 
   function renderDesc() {
-    el.desc.innerHTML = (window.WT_LANG === "en" ? DESCRIPTIONS_EN : DESCRIPTIONS)[pattern] || "";
+    var TR = window.WT_T || function (ko) { return ko; };
+    var full = (window.WT_LANG === "en" ? DESCRIPTIONS_EN : DESCRIPTIONS)[pattern] || "";
+    // 각 설명은 '정의(+부합 기준) → 자동 탈락 → 순위' 구조이고 첫 <br> 가 그
+    // 경계다. 중요한 정의만 항상 보이고, 자동 탈락·순위 세부는 접어 둔다
+    // (touches·lines 의 '요약 + 펼침'과 같은 형태). 구분자가 없으면 원문 그대로.
+    var i = full.indexOf("<br>");
+    if (i < 0) { el.desc.innerHTML = full; return; }
+    var lead = full.slice(0, i);
+    var rest = full.slice(i + 4);
+    el.desc.innerHTML =
+      '<p class="pd-lead">' + lead + "</p>" +
+      '<details class="pd-more"><summary>' +
+      TR("자동 탈락 · 순위 기준 자세히", "Drop rules & scoring") +
+      '</summary><div class="pd-body">' + rest + "</div></details>";
   }
 
   // 보이는 매칭 내용 기준 지문 — 스캔 진행 중 매칭이 바뀔 때만 재렌더한다

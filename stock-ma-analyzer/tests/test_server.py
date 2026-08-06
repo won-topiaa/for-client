@@ -168,6 +168,12 @@ def test_tool_pages_served(client):
     assert ma.status_code == 200 and 'id="searchInput"' in ma.text
     pt = client.get("/patterns")
     assert pt.status_code == 200 and 'id="scanStatus"' in pt.text
+    # 패턴 설명은 patterns.js 가 '요약(정의) + 펼침(자동 탈락·순위)'으로 그린다.
+    # 자리 요소에서 옛 모바일 전용 접기(data-mfold)는 빠져야 이중 접힘이 안 된다.
+    assert '<div class="pattern-desc" id="patternDesc"></div>' in pt.text
+    js = client.get("/static/patterns.js").text
+    assert 'class="pd-lead"' in js and 'class="pd-more"' in js, \
+        "patterns.js 가 설명을 요약+펼침 구조로 안 그린다"
 
 
 def test_legacy_symbol_deeplink_redirects_to_ma(client):
@@ -677,6 +683,8 @@ def test_lines_page_and_api_are_member_only(client):
         assert 'id="supportList"' in html and 'id="resistList"' in html
         assert 'id="periodInput"' in html
         assert "판정 기준" in html            # 기준을 화면에 공개
+        # 방법 설명은 touches 와 같은 '요약 + 펼침' 구조 (모든 화면에서 접힘)
+        assert 'class="method-lead"' in html and '<details class="method-more">' in html
     finally:
         client.post("/api/auth/logout")
 

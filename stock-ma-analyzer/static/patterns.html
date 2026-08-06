@@ -102,6 +102,23 @@
   }
   .pattern-desc b { color: var(--info); }
   .pattern-desc .src { color: var(--muted); font-size: 11.5px; display: block; margin-top: 6px; }
+  /* 패턴 정의만 항상 보이고, 자동 탈락·순위 세부는 펼쳐서 (patterns.js 가 채움) */
+  .pd-lead { margin: 0; }
+  .pd-more { margin-top: 9px; }
+  .pd-more > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .pd-more > summary::-webkit-details-marker { display: none; }
+  .pd-more > summary::after {
+    content: "▾"; font-size: 10px; transition: transform .15s ease;
+  }
+  .pd-more[open] > summary::after { transform: rotate(180deg); }
+  .pd-body { margin-top: 11px; }
+  @media (prefers-reduced-motion: reduce) {
+    .pd-more > summary::after { transition: none; }
+  }
 
   .status { margin: 4px 0 8px; color: var(--muted); }
   .bar {
@@ -823,7 +840,7 @@
     </div>
   </div>
 
-  <div class="pattern-desc" id="patternDesc" data-mfold="ℹ️ 패턴 설명·판정 기준"></div>
+  <div class="pattern-desc" id="patternDesc"></div>
 
   <div class="scan-party" id="scanParty" aria-hidden="true">
     <div class="bot up">
