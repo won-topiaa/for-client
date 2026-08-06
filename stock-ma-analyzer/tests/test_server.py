@@ -30,6 +30,69 @@ def test_health(client):
     assert body["provider"] in ("sample", "toss")
 
 
+def test_db_health_check_pings_db_and_reports_status(client):
+    """/api/health/db: 외부 모니터링이 주기적으로 불러 서버리스 DB(Neon)를
+    깨워 두는 용도 — 실제로 DB 왕복이 일어나야 의미가 있다."""
+    import app.server as server_mod
+
+    server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+    calls = []
+    real = server_mod.app.state.auth.ping
+    server_mod.app.state.auth.ping = lambda: (calls.append(1), real())[1]
+    try:
+        r = client.get("/api/health/db")
+        assert r.status_code == 200, r.text
+        assert r.json()["ok"] is True and r.json()["db"] == "up"
+        assert len(calls) == 1, "DB 를 실제로 안 두드렸다 — 깨우기 효과가 없다"
+
+        # 짧은 캐시: 연달아 불러도 DB 왕복은 늘지 않는다(인증 없는 경로라
+        # 몰아치기로 커넥션 풀을 소진해 로그인 쿼리를 굶기면 안 된다)
+        for _ in range(5):
+            assert client.get("/api/health/db").status_code == 200
+        assert len(calls) == 1, "캐시가 안 먹어 요청마다 DB 를 두드린다"
+    finally:
+        server_mod.app.state.auth.ping = real
+        server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+
+
+def test_db_health_check_reports_503_without_leaking_details(client):
+    """DB 가 죽으면 503(모니터링 알림용) — 단, 접속 문자열·예외 메시지는
+    응답에 절대 싣지 않는다(인증 없이 열려 있는 경로다)."""
+    import app.server as server_mod
+
+    server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+    real = server_mod.app.state.auth.ping
+
+    def boom():
+        raise RuntimeError("postgresql://u:SUPERSECRET@db.example/neon 연결 실패")
+
+    server_mod.app.state.auth.ping = boom
+    try:
+        r = client.get("/api/health/db")
+        assert r.status_code == 503, r.status_code
+        assert r.json()["db"] == "down"
+        assert "SUPERSECRET" not in r.text and "postgresql" not in r.text.lower(), \
+            "접속 정보가 응답 본문으로 새어 나간다"
+    finally:
+        server_mod.app.state.auth.ping = real
+        server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+
+
+def test_health_endpoints_bypass_site_password(monkeypatch):
+    """SITE_PASSWORD 를 걸어 사이트를 잠가도 헬스체크 두 개는 열려 있어야
+    한다 — 안 그러면 업타임로봇이 401 만 받아 깨우기·감시가 둘 다 죽는다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "SITE_PASSWORD", "test1234")
+    with TestClient(server_mod.app) as c:
+        assert c.get("/api/health").status_code == 200
+        server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+        assert c.get("/api/health/db").status_code in (200, 503), "401 이면 안 된다"
+        assert c.get("/").status_code == 401, "다른 경로는 여전히 잠겨 있어야 한다"
+    server_mod._db_health_cache.update({"ts": -1e9, "ok": False, "ms": 0.0})
+
+
 def test_search_korean_name(client):
     r = client.get("/api/search", params={"q": "삼성"})
     assert r.status_code == 200

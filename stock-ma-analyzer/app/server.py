@@ -499,6 +499,10 @@ def _rate_bucket(path: str) -> str:
     return "analyze"
 
 
+# 로그인(SITE_PASSWORD) 없이 열어 두는 헬스체크 경로 — 민감정보 없음
+_PUBLIC_HEALTH_PATHS = frozenset({"/api/health", "/api/health/db"})
+
+
 def _plain(status: int, msg: str, extra: dict | None = None) -> Response:
     """미들웨어 조기 응답 공통 꼴 — 보안 헤더를 항상 싣는다."""
     return Response(status_code=status, content=msg,
@@ -557,10 +561,11 @@ async def require_password(request: Request, call_next):
                 headers={"Retry-After": "30", **_SECURITY_HEADERS},
                 media_type="text/plain; charset=utf-8",
             )
-    # /api/health 는 호스팅 플랫폼의 생존 확인용이라 인증 예외 (민감정보 없음)
+    # 헬스체크는 호스팅 플랫폼·외부 모니터링(업타임로봇 등)이 로그인 없이
+    # 불러야 하므로 인증 예외 — 둘 다 민감정보를 담지 않는다.
     if (
         SITE_PASSWORD
-        and request.url.path != "/api/health"
+        and request.url.path not in _PUBLIC_HEALTH_PATHS
         and not _password_ok(request.headers.get("Authorization"))
     ):
         return Response(
@@ -582,6 +587,55 @@ async def health():
             },
         },
     }
+
+
+# DB 왕복까지 확인하는 헬스체크 — 외부 모니터링(업타임로봇 등)이 주기적으로
+# 부르면 서버리스 Postgres(Neon)가 유휴로 잠들지 않아, 첫 로그인·회원 페이지가
+# DB 콜드스타트로 몇 초씩 걸리는 일이 없어진다. /api/health 는 설정값만 반환해
+# DB 를 전혀 안 건드리므로 그것만으로는 DB 가 계속 잠든다.
+_DB_HEALTH_TTL_SEC = 30.0        # 이 시간 안의 재호출은 실제 쿼리 없이 직전 결과
+_DB_HEALTH_TIMEOUT_SEC = 10.0    # Neon 콜드스타트(수 초)는 기다려 주되 상한은 둔다
+_db_health_cache: dict[str, Any] = {"ts": -1e9, "ok": False, "ms": 0.0}
+_db_health_lock = asyncio.Lock()
+
+
+@app.get("/api/health/db")
+async def health_db():
+    """DB 연결 확인 + 서버리스 DB 깨우기.
+
+    짧게 캐시한다: 인증이 없는 경로라 누가 몰아쳐도 커넥션 풀(5+5)을 소진해
+    실제 로그인 쿼리를 굶기지 않게, 실제 왕복은 30초에 한 번으로 묶는다.
+    모니터링 주기(보통 5분)는 이보다 훨씬 길어 매번 진짜 쿼리가 나간다."""
+    now = time.monotonic()
+    if now - _db_health_cache["ts"] < _DB_HEALTH_TTL_SEC:
+        return _db_health_payload()
+    async with _db_health_lock:
+        now = time.monotonic()
+        if now - _db_health_cache["ts"] < _DB_HEALTH_TTL_SEC:
+            return _db_health_payload()
+        started = time.monotonic()
+        try:
+            await asyncio.wait_for(asyncio.to_thread(app.state.auth.ping),
+                                   _DB_HEALTH_TIMEOUT_SEC)
+            ok = True
+        except Exception:  # noqa: BLE001 — 실패 사유는 로그로만 (외부에 안 흘림)
+            ok = False
+            logger.warning("DB 헬스체크 실패", exc_info=True)
+        _db_health_cache.update({
+            "ts": time.monotonic(), "ok": ok,
+            "ms": round((time.monotonic() - started) * 1000, 1),
+        })
+        return _db_health_payload()
+
+
+def _db_health_payload() -> JSONResponse:
+    """실패는 503 으로 — 모니터링 도구가 '깨우기'뿐 아니라 진짜 장애 알림에도
+    쓸 수 있게 한다. 본문에는 접속 정보·예외 메시지를 절대 싣지 않는다."""
+    ok = bool(_db_health_cache["ok"])
+    return JSONResponse(
+        {"ok": ok, "db": "up" if ok else "down", "latencyMs": _db_health_cache["ms"]},
+        status_code=200 if ok else 503,
+    )
 
 
 # 동시 접속자(현재 사이트를 보고 있는 방문자) 근사 집계 — 각 브라우저가

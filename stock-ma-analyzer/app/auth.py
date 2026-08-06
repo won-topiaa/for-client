@@ -41,6 +41,7 @@ from sqlalchemy import (
     func,
     insert,
     select,
+    text,
 )
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.engine import Engine, make_url
@@ -291,6 +292,16 @@ class AuthStore:
     def user_count(self) -> int:
         with self._engine.connect() as conn:
             return int(conn.execute(select(func.count()).select_from(_users)).scalar() or 0)
+
+    def ping(self) -> None:
+        """DB 왕복 한 번 (SELECT 1) — 실패하면 예외를 그대로 올린다.
+
+        용도 두 가지: ① 연결이 실제로 살아있는지 확인 ② 서버리스 Postgres
+        (Neon 등)는 몇 분 유휴면 컴퓨트가 0으로 내려가는데, 주기적으로 이걸
+        불러 주면 깨어 있는 상태가 유지돼 첫 로그인·조회가 느려지지 않는다.
+        테이블을 안 건드리는 가장 싼 쿼리라 부하는 사실상 없다."""
+        with self._engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
 
     def close(self) -> None:
         self._engine.dispose()
