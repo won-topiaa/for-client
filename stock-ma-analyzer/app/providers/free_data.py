@@ -1,0 +1,680 @@
+"""무료 시세 공급자 (FinanceDataReader 우선, Yahoo Finance 보조).
+
+키·IP 허용 목록이 필요 없어서 공개 배포에 적합하다.
+- 검색: FinanceDataReader 의 KRX 상장 목록(전 종목 이름/코드)으로 이름 검색.
+- 캔들(국내): fdr.DataReader(네이버/KRX) → 실패 시 yfinance 폴백.
+- 캔들(미국): Stooq CSV → yfinance → FDR 3중 폴백 (야후는 데이터센터 IP 에서
+  자주 막혀 Stooq 를 1순위로 둔다).
+- 주봉/월봉은 service 층에서 일봉을 리샘플링해 만든다(공급자는 일봉만 제공).
+
+FinanceDataReader/yfinance 는 비공식·무료 소스라 간헐적으로 느리거나 스키마가
+바뀔 수 있어, 컬럼명은 관용적으로 매칭하고 두 소스를 이중화했다.
+"""
+from __future__ import annotations
+
+import asyncio
+import functools
+import logging
+import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from .base import SymbolInfo, validate_candles
+
+# 종목코드(6자리 숫자)/미국 티커
+_SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
+_LISTING_TTL_SEC = 12 * 3600  # 상장 목록은 거의 안 바뀜
+
+
+def _install_requests_default_timeout() -> None:
+    """timeout 없는 requests 호출(FDR 내부)에 기본 시간 상한을 주입한다.
+
+    socket.setdefaulttimeout() 은 requests/urllib3 에 적용되지 않는다 —
+    requests 는 timeout=None 을 명시적 Timeout(None) 으로 만들어 넘기고,
+    urllib3 는 None 을 '무한 대기'로 그대로 쓴다(기본값 대체는 sentinel 일
+    때만). 그래서 응답이 중간에 멈춘 소켓에 걸린 페치 스레드는 영원히 죽지
+    않고 전용 풀(18칸)을 하나씩 영구 잠식하며, 다 차면 모든 시세 조회가
+    프로세스 재시작 전까지 실패한다. FDR 은 대부분의 호출에 timeout 을 넘기지
+    않으므로 Session.request 단계에서 기본값을 채워 전부 유한하게 만든다.
+    (yfinance 는 curl_cffi + 자체 timeout, Stooq/Toss 는 httpx — 영향 없음)
+    """
+    try:
+        import requests
+
+        cls = requests.sessions.Session
+        if getattr(cls.request, "_timeboxed", False):
+            return  # 이미 설치됨 (재임포트/테스트 반복 대비)
+        orig = cls.request
+
+        @functools.wraps(orig)
+        def request(self, method, url, **kw):
+            if kw.get("timeout") is None:
+                kw["timeout"] = (7, 15)  # (연결, 읽기) 초 — 캔들 wait_for(25초) 미만
+            return orig(self, method, url, **kw)
+
+        request._timeboxed = True
+        cls.request = request
+    except Exception:  # noqa: BLE001 — 방어선 설치 실패가 부팅을 막으면 안 된다
+        logging.getLogger("ma-analyzer").warning(
+            "requests 기본 타임아웃 주입 실패", exc_info=True)
+
+
+_install_requests_default_timeout()
+
+# 국내 신형 종목코드 (2024.1 개편 — normalize_listing 의 유효성 규칙과 동일)
+_KR_NEW_CODE_RE = re.compile(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
+_KR_INDEXES = {"KS11", "KQ11"}
+# FDR 지수 표기 전체 — 개별 종목이 아니므로 Stooq(*.us) 폴백 대상이 아니다
+_FDR_INDEX_NOTATIONS = {"US500", "IXIC", "DJI", "KS11", "KQ11"}
+
+
+def _kr_route(symbol: str) -> bool:
+    """국내 경로(네이버/KRX 소스) 여부 — 이 경로는 야후 요청 제한과 무관하다."""
+    return (symbol.isdigit()
+            or bool(_KR_NEW_CODE_RE.match(symbol))
+            or symbol.upper() in _KR_INDEXES)
+
+
+# ---- 야후 요청 전역 페이싱 ----
+# 무료 야후 API 는 데이터센터 IP(Render 등)에서 초당 몇 건만 넘어도 429 로
+# IP 를 잠근다. 스캐너가 동시 6개로 훑으면 순식간에 전 종목이 막히므로,
+# 야후로 가는 모든 요청(FDR 미국 리더 포함)의 시작 간격에 하한을 둔다.
+# (페치는 to_thread 로 도는 동기 코드라 threading 락을 쓴다)
+_YAHOO_MIN_INTERVAL_SEC = 0.35
+_yahoo_gate = threading.Lock()
+_yahoo_next_ts = 0.0
+
+
+def _yahoo_pace() -> None:
+    global _yahoo_next_ts
+    with _yahoo_gate:
+        now = time.monotonic()
+        wait = _yahoo_next_ts - now
+        _yahoo_next_ts = max(now, _yahoo_next_ts) + _YAHOO_MIN_INTERVAL_SEC
+    if wait > 0:
+        time.sleep(wait)
+
+
+def _pick_col(df: pd.DataFrame, *names: str) -> str | None:
+    lower = {c.lower(): c for c in df.columns}
+    for n in names:
+        if n.lower() in lower:
+            return lower[n.lower()]
+    return None
+
+
+def normalize_ohlcv(raw: pd.DataFrame) -> pd.DataFrame:
+    """FDR/yfinance 의 OHLCV DataFrame -> 표준 컬럼(date,open,high,low,close,volume)."""
+    if raw is None or len(raw) == 0:
+        raise ValueError("빈 시세 데이터")
+    df = raw.copy()
+    if isinstance(df.columns, pd.MultiIndex):  # yf.download 형태 방어
+        df.columns = df.columns.get_level_values(0)
+    # 날짜가 인덱스인 경우 컬럼으로 꺼낸다
+    if not isinstance(df.index, pd.RangeIndex):
+        df = df.reset_index()
+    date_col = _pick_col(df, "date", "index", "Date", "Datetime")
+    # 'index' 는 무명 DatetimeIndex 전용 후보 — 정수 인덱스가 epoch 로
+    # 오해석되어 쓰레기 날짜가 조용히 통과하는 것을 방지
+    if (date_col and date_col.lower() == "index"
+            and not pd.api.types.is_datetime64_any_dtype(df[date_col])):
+        raise ValueError("날짜 컬럼을 찾지 못함 (index 가 날짜형이 아님)")
+    o = _pick_col(df, "open")
+    h = _pick_col(df, "high")
+    low = _pick_col(df, "low")
+    c = _pick_col(df, "close", "adj close", "adjclose")
+    v = _pick_col(df, "volume", "vol")
+    if not all([date_col, o, h, low, c]):
+        raise ValueError(f"OHLCV 컬럼을 찾지 못함: {list(df.columns)}")
+    out = pd.DataFrame({
+        "date": df[date_col],
+        "open": df[o],
+        "high": df[h],
+        "low": df[low],
+        "close": df[c],
+        "volume": df[v] if v else 0,
+    })
+    return validate_candles(out)
+
+
+def normalize_listing(raw: pd.DataFrame) -> pd.DataFrame:
+    """fdr.StockListing('KRX') -> symbol/name/market (+선택: amount/marcap) 목록."""
+    code = _pick_col(raw, "code", "symbol", "종목코드")
+    name = _pick_col(raw, "name", "종목명")
+    market = _pick_col(raw, "market", "시장구분")
+    if not code or not name:
+        raise ValueError(f"상장목록 컬럼을 찾지 못함: {list(raw.columns)}")
+    # pandas 3 부터 astype(str) 이 NaN 을 보존한다 — NaN 이름/시장명이 그대로
+    # 새면 /api/search 응답의 JSON 직렬화가 500 을 내고 그 검색어가 캐시에
+    # 1시간 박힌다. 이름은 코드로, 시장명은 빈 문자열로 채운다.
+    codes = raw[code].astype(str).str.strip()
+    out = pd.DataFrame({
+        "symbol": codes.str.zfill(6),
+        "name": raw[name].astype(str).str.strip().fillna(codes.str.zfill(6)),
+        "market": (raw[market].astype(str).str.strip().fillna("") if market else ""),
+    })
+    # 스크리너 유니버스 선정용 부가 컬럼 (있을 때만)
+    amount = _pick_col(raw, "amount", "거래대금")
+    marcap = _pick_col(raw, "marcap", "시가총액")
+    if amount:
+        out["amount"] = pd.to_numeric(raw[amount], errors="coerce")
+    if marcap:
+        out["marcap"] = pd.to_numeric(raw[marcap], errors="coerce")
+    # 유효 코드만: 순수 숫자(1~6자리) 또는 2024.1 개편 이후의 영문 포함
+    # 신형 코드(예: 00088K 한화3우B, 0126Z0). 빈 값이 zfill 로 000000 이
+    # 되는 것은 여전히 걸러진다.
+    valid = (
+        codes.str.match(r"^\d{1,6}$")
+        | codes.str.match(r"^\d{4}[0-9A-HJ-NP-TV-Z][0-9KLMN]$")
+    )
+    return out[valid].reset_index(drop=True)
+
+
+def _start_for(max_bars: int | None) -> str:
+    """필요 봉 수에 맞는 시작일 — 스크리너가 수백 종목을 훑을 때
+    전체 히스토리 다운로드를 피한다 (거래일 보정 1.7배 + 여유)."""
+    if not max_bars or max_bars > 2000:
+        return "1990-01-01"
+    days = int(max_bars * 1.7) + 40
+    return (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _fetch_fdr_sync(symbol: str, start: str = "1990-01-01") -> pd.DataFrame:
+    import FinanceDataReader as fdr
+    return fdr.DataReader(symbol, start)
+
+
+def _fetch_yahoo_sync(symbol: str, market: str = "", period: str = "max") -> pd.DataFrame:
+    import yfinance as yf
+
+    candidates: list[str] = []
+    # 국내 종목: 시장에 따라 접미사. 2024.1 개편 신형 코드(00088K 등)도 야후는
+    # 같은 .KS/.KQ 접미사 형식을 쓴다 — isdigit 만 보면 신형 코드가 접미사 없이
+    # 그대로 조회돼 야후 폴백이 항상 실패했다.
+    if symbol.isdigit() or _KR_NEW_CODE_RE.match(symbol):
+        if market.upper().startswith("KOSDAQ"):
+            candidates = [f"{symbol}.KQ", f"{symbol}.KS"]
+        else:
+            candidates = [f"{symbol}.KS", f"{symbol}.KQ"]
+    else:
+        candidates = [symbol]  # 미국 티커 등
+        # 지수 심볼(FDR 표기) -> Yahoo 표기
+        idx_map = {"US500": "^GSPC", "KS11": "^KS11", "KQ11": "^KQ11",
+                   "IXIC": "^IXIC", "DJI": "^DJI"}
+        if symbol.upper() in idx_map:
+            candidates.append(idx_map[symbol.upper()])
+        # 클래스주 점 표기(BRK.B) -> Yahoo 대시 표기(BRK-B)
+        if "." in symbol:
+            candidates.append(symbol.replace(".", "-"))
+    for tkr in candidates:
+        try:
+            _yahoo_pace()
+            hist = yf.Ticker(tkr).history(period=period, interval="1d", auto_adjust=False)
+        except Exception:
+            hist = None
+        if hist is not None and len(hist) > 0:
+            return hist
+    raise ValueError(f"{symbol} Yahoo 조회 실패")
+
+
+# Stooq(미국) 조회는 같은 호스트(stooq.com)에 종목마다 한 번씩, 스캔당 수백 번
+# 연결한다. 매 요청을 httpx.get 으로 새로 열면 TCP+TLS 핸드셰이크가 매번
+# 반복돼(종목당 수백 ms) 스캔 전체가 느려진다. 공유 Client 로 커넥션을
+# 재사용(keep-alive)해 그 비용을 없앤다 — 요청 '수'는 그대로라 소스 부담은
+# 늘지 않고, httpx.Client 는 스레드 세이프라 _fetch_pool 스레드가 함께 써도 안전.
+_stooq_http = None                      # 지연 생성되는 공유 httpx.Client
+_stooq_http_lock = threading.Lock()
+
+
+def _stooq_client():
+    global _stooq_http
+    if _stooq_http is None:
+        with _stooq_http_lock:
+            if _stooq_http is None:
+                import httpx
+                _stooq_http = httpx.Client(
+                    timeout=8.0, follow_redirects=True,
+                    limits=httpx.Limits(max_keepalive_connections=16,
+                                        max_connections=32,
+                                        keepalive_expiry=30.0))
+    return _stooq_http
+
+
+def close_stooq_client() -> None:
+    """공유 Stooq 클라이언트 정리 (셧다운 시). 없거나 두 번 불러도 안전."""
+    global _stooq_http
+    client, _stooq_http = _stooq_http, None
+    if client is not None:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 — 종료 정리는 실패해도 무시
+            pass
+
+
+def _fetch_stooq_sync(symbol: str, start: str) -> pd.DataFrame:
+    """Stooq 일봉 CSV — 미국 티커의 1순위 소스 (무키·데이터센터 친화적).
+
+    무료·무키 소스로, 형식은 Date,Open,High,Low,Close,Volume CSV.
+    클래스주는 대시 표기(brk-b.us)를 쓴다. 타임아웃을 짧게(8초) 잡아,
+    혹시 막혔더라도 슬롯을 빨리 반납해 야후 폴백으로 넘어가게 한다.
+    커넥션은 공유 풀에서 재사용한다(_stooq_client).
+    """
+    import io
+
+    t = symbol.lower().replace(".", "-")
+    d1 = start.replace("-", "")
+    d2 = pd.Timestamp.today().strftime("%Y%m%d")
+    url = f"https://stooq.com/q/d/l/?s={t}.us&d1={d1}&d2={d2}&i=d"
+    r = _stooq_client().get(url)
+    r.raise_for_status()
+    text = r.text.strip()
+    first = text.splitlines()[0] if text else ""
+    if not text or "," not in first:  # 실패 시 "No data" 등 단문이 온다
+        raise ValueError("Stooq: 데이터 없음")
+    return pd.read_csv(io.StringIO(text))
+
+
+_LISTING_TIMEOUT_SEC = 15.0   # 상장목록 다운로드 시간 상한
+_LISTING_RETRY_SEC = 60.0     # 실패 후 재시도 억제 (실패 폭주 방지)
+# 종목별 시세 조회 시간 상한 — 정상 조회는 1~3초라 넉넉하다. 짧게 잡을수록
+# hang 걸린 종목이 동시성 슬롯을 빨리 반납해, 수백 종목 스캔이 소프트 예산 안에
+# 더 많은 종목을 훑는다. 더 깊은 방어선은 _install_requests_default_timeout()
+# (연결 7초/읽기 15초) — 이 wait_for 가 포기한 뒤에도 스레드 자체가 유한 시간
+# 안에 끝나는 것을 보장해 페치 풀이 새지 않는다.
+_CANDLES_TIMEOUT_SEC = 25.0
+
+
+class FreeDataProvider:
+    name = "free"
+
+    def __init__(self, data_dir: Path | None = None):
+        self._listing: pd.DataFrame | None = None
+        self._listing_ts = 0.0
+        self._listing_fail_ts = -1e9
+        self._listing_lock = asyncio.Lock()
+        self._market_by_symbol: dict[str, str] = {}
+        self._us_listing: list[tuple[str, str, str]] | None = None
+        self._us_ts = 0.0
+        self._us_fail_ts = -1e9
+        # KR/US 목록은 상태를 공유하지 않으므로 락도 분리 (KR 갱신 15초가
+        # US 스캔 시작을 막지 않게)
+        self._us_lock = asyncio.Lock()
+        # 네트워크 페치 전용 스레드풀 — wait_for 에 버려진 행 스레드가 기본
+        # 실행기(작은 인스턴스에선 5칸)를 잠식해 분석 연산·상장목록까지 굶기는
+        # 것을 막는다. 여기서 새면 다른 '페치'만 느려질 뿐이다. 동시 페치
+        # 상한(CONCURRENCY=14)보다 넉넉히 잡아, 드문 상장목록 페치가 겹쳐도
+        # 캔들 페치가 큐잉으로 병목되지 않게 한다 (스레드는 네트워크 대기 중
+        # GIL 을 놓으므로 I/O 바운드 페치엔 코어 수보다 많이 둬도 이득).
+        self._fetch_pool = ThreadPoolExecutor(
+            max_workers=18, thread_name_prefix="candle-fetch")
+
+    def _listing_fresh(self) -> bool:
+        return (self._listing is not None
+                and time.monotonic() - self._listing_ts < _LISTING_TTL_SEC)
+
+    async def _get_listing(self) -> pd.DataFrame | None:
+        if self._listing_fresh():
+            return self._listing
+        # 최근 실패했으면 잠시 재시도하지 않는다 (요청마다 다운로드 재시도 방지)
+        if time.monotonic() - self._listing_fail_ts < _LISTING_RETRY_SEC:
+            return self._listing
+        async with self._listing_lock:
+            if self._listing_fresh():
+                return self._listing
+            if time.monotonic() - self._listing_fail_ts < _LISTING_RETRY_SEC:
+                return self._listing
+            try:
+                # 데이터 소스가 응답을 안 주면 검색 전체가 영구 블록되므로
+                # 시간 상한 필수 (락과 API 는 풀리고, 스레드는 알아서 끝남)
+                raw = await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(
+                        self._fetch_pool, _load_listing_sync),
+                    timeout=_LISTING_TIMEOUT_SEC,
+                )
+                listing = normalize_listing(raw)
+            except Exception:
+                self._listing_fail_ts = time.monotonic()
+                return self._listing  # 실패 시 기존(있으면) 유지, 없으면 None
+            if listing is None or listing.empty:
+                # 컬럼은 있으나 행이 0개인 응답(스크레이프 드리프트 등)을 12시간
+                # '정상'으로 캐시하면 검색·유니버스가 통째로 비어버린다 — 실패로 취급해
+                # 짧은 백오프 뒤 재시도한다 (기존 값이 있으면 유지)
+                self._listing_fail_ts = time.monotonic()
+                return self._listing
+            # 검색은 이름 부분일치라 매 호출 소문자화하면 3천 행을 반복 낭비한다 —
+            # 목록을 받는 12시간에 한 번만 미리 소문자 컬럼을 만들어 둔다.
+            listing["name_lower"] = listing["name"].str.lower()
+            self._listing = listing
+            self._listing_ts = time.monotonic()
+            self._market_by_symbol = dict(zip(listing["symbol"], listing["market"]))
+            return listing
+
+    async def search(self, query: str) -> list[SymbolInfo]:
+        q = query.strip()
+        if not q:
+            return []
+        results: list[SymbolInfo] = []
+        seen: set[str] = set()
+        # 직접 입력한 코드/티커 경로는 상장목록과 무관하게 항상 동작해야 한다
+        direct: SymbolInfo | None = None
+        if _SYMBOL_RE.match(q):
+            code = q if q.isdigit() else q.upper()
+            direct = SymbolInfo(code, code, "")
+        listing = await self._get_listing()
+        if listing is not None:
+            ql = q.lower()
+            # name_lower 는 목록 로드 때 미리 만들어 둔 소문자 컬럼 (매 검색 재계산 회피).
+            # 방어적으로 없으면 즉석 계산으로 폴백한다.
+            name_lower = (listing["name_lower"] if "name_lower" in listing.columns
+                          else listing["name"].str.lower())
+            mask = (
+                name_lower.str.contains(ql, regex=False, na=False)
+                | listing["symbol"].str.contains(q, regex=False, na=False)
+            )
+            for _, row in listing[mask].head(20).iterrows():
+                if row["symbol"] in seen:
+                    continue
+                seen.add(row["symbol"])
+                results.append(SymbolInfo(row["symbol"], row["name"], row["market"]))
+        if direct is not None and direct.symbol not in seen:
+            results.insert(0, direct)
+        return results[:20]
+
+    async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
+        # 이 공급자는 일봉 전용 — 주/월봉은 service 층에서 리샘플링한다.
+        # 조용히 일봉을 돌려주면 잘못 라벨된 데이터가 캐시에 박히므로 방어.
+        if timeframe != "day":
+            raise ValueError(
+                f"FreeDataProvider 는 일봉만 제공합니다 (요청: {timeframe})"
+            )
+        try:
+            loop = asyncio.get_running_loop()
+            df = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self._fetch_pool,
+                    functools.partial(self._fetch_daily_sync, symbol, max_bars),
+                ),
+                timeout=_CANDLES_TIMEOUT_SEC,
+            )
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"{symbol} 시세 조회가 {int(_CANDLES_TIMEOUT_SEC)}초를 초과했습니다 "
+                "(데이터 소스 응답 지연 — 잠시 후 다시 시도해 주세요)"
+            ) from exc
+        return df.tail(max_bars).reset_index(drop=True)
+
+    def _fetch_daily_sync(self, symbol: str, max_bars: int | None = None) -> pd.DataFrame:
+        errors: list[str] = []
+        start = _start_for(max_bars)
+        windowed = start != "1990-01-01"
+
+        def mark_window_bound(df: pd.DataFrame) -> pd.DataFrame:
+            # 창 제한 조회가 요청량보다 적게 돌아오면 (장기 거래정지 등)
+            # '히스토리 소진'이 아니라 '창이 짧았던 것'일 수 있다 —
+            # 캐시가 잘린 데이터를 전체 기간으로 오인하지 않게 표시.
+            # 단, 첫 봉이 요청 시작일보다 한참 뒤라면 상장이 늦어 히스토리
+            # 자체가 짧은 것(진짜 소진)이므로 표시하지 않는다 — 아니면
+            # 신생 종목이 캐시 불가가 되어 매 요청 재조회하게 된다.
+            # ('truncated' 와 달리 창이 자른 경우 같은 크기 요청은 같은
+            # 결과이므로 캐시가 같은/작은 요청을 그대로 응답해도 된다.)
+            if windowed and max_bars and len(df) < max_bars:
+                if df["date"].iloc[0] <= pd.Timestamp(start) + pd.Timedelta(days=10):
+                    df.attrs["window_bound"] = True
+            return df
+
+        def via_fdr() -> pd.DataFrame | None:
+            try:
+                if not _kr_route(symbol):
+                    _yahoo_pace()  # FDR 의 미국 리더도 야후를 때린다
+                raw = _fetch_fdr_sync(symbol, start)
+                if raw is None or len(raw) == 0:
+                    errors.append("FDR: 빈 응답")  # 무효 종목이면 예외 없이 빈 df
+                    return None
+                return mark_window_bound(normalize_ohlcv(raw))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"FDR: {exc}")
+                return None
+
+        def via_yahoo() -> pd.DataFrame | None:
+            try:
+                market = self._market_by_symbol.get(symbol, "")
+                period = ("max" if not max_bars or max_bars > 2000
+                          else "3y" if max_bars <= 520 else "10y")
+                df = normalize_ohlcv(_fetch_yahoo_sync(symbol, market, period))
+                if period != "max" and max_bars and len(df) < max_bars:
+                    # mark_window_bound 와 같은 이유 — 기간(period)이 실제로
+                    # 데이터를 자른 경우에만 표시.
+                    years = 3 if period == "3y" else 10
+                    expected_start = (pd.Timestamp.today().normalize()
+                                      - pd.DateOffset(years=years))
+                    if df["date"].iloc[0] <= expected_start + pd.Timedelta(days=10):
+                        df.attrs["window_bound"] = True
+                return df
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Yahoo: {exc}")
+                return None
+
+        def via_stooq() -> pd.DataFrame | None:
+            # 미국 일반 티커 전용 — 지수 표기(문자만인 IXIC/DJI 포함)·국내
+            # 코드는 제외 (Stooq 의 *.us 네임스페이스는 개별 종목 전용)
+            if (symbol.upper() in _FDR_INDEX_NOTATIONS
+                    or not re.match(r"^[A-Za-z][A-Za-z.\-]*$", symbol)):
+                return None
+            try:
+                return mark_window_bound(
+                    normalize_ohlcv(_fetch_stooq_sync(symbol, start)))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"Stooq: {exc}")
+                return None
+
+        # 국내(네이버/KRX 소스)는 FDR 우선 — 빠르고 제한이 없다.
+        # 미국 일반 티커는 Stooq 우선: 야후(yfinance/FDR)는 쿠키 없는 요청이
+        # 데이터센터 IP(Render 등)에서 자주 막히거나(429)·행에 걸려 미국 스캔
+        # 전체를 느리게 만든다. Stooq(*.us CSV)는 무키·데이터센터 친화적이라
+        # 미국을 안정적으로 채운다. Stooq 가 못 주는 티커만 야후로 폴백한다.
+        # (지수 표기는 via_stooq 가 스스로 걸러 내므로 야후→FDR 로 간다.)
+        if _kr_route(symbol):
+            chain = (via_fdr, via_yahoo)
+        else:
+            chain = (via_stooq, via_yahoo, via_fdr)
+        # 전체 사슬에 하나의 마감 시한을 둔다. 호출자는 25초
+        # (_CANDLES_TIMEOUT_SEC)에 await 를 포기하지만, 그건 '기다림'만 끊을 뿐
+        # 이 스레드는 계속 돈다 — 소스마다 자체 타임아웃이 있어 최악의 경우
+        # 몇 배의 시간 동안 풀 워커 하나를 붙잡고, 스캔 내내 동시성이 줄어든다.
+        # 시한이 지났으면 남은 소스는 시도하지 않고 즉시 실패로 끝낸다.
+        deadline = time.monotonic() + _CANDLES_TIMEOUT_SEC
+        for fetch in chain:
+            if time.monotonic() >= deadline:
+                errors.append("남은 소스 생략(시한 초과)")
+                break
+            df = fetch()
+            if df is not None and len(df) > 0:
+                return df
+        raise RuntimeError(
+            f"{symbol} 시세를 가져오지 못했습니다 ({' / '.join(errors)})"
+        )
+
+    async def listing_frame(self) -> pd.DataFrame | None:
+        """정규화된 KRX 상장목록 (amount/marcap 포함 가능). 스크리너 유니버스용."""
+        return await self._get_listing()
+
+    # FDR 의 위키피디아 리더는 클래스주 티커의 점을 제거한다 (BRK.B -> BRKB).
+    # Yahoo 는 대시 형식(BRK-B)만 인식하므로 알려진 것들을 복원한다.
+    _US_TICKER_FIX = {"BRKB": "BRK-B", "BFB": "BF-B"}
+
+    async def us_listing(self) -> list[tuple[str, str, str]] | None:
+        """S&P500 구성종목 [(symbol, name, sector)]. 12시간 캐시 + 백오프."""
+        def fresh() -> bool:
+            return (self._us_listing is not None
+                    and time.monotonic() - self._us_ts < _LISTING_TTL_SEC)
+
+        def backing_off() -> bool:
+            return time.monotonic() - self._us_fail_ts < _LISTING_RETRY_SEC
+
+        if fresh() or backing_off():
+            return self._us_listing
+        async with self._us_lock:
+            if fresh() or backing_off():  # 락 대기 중 갱신/실패됐을 수 있음
+                return self._us_listing
+            try:
+                raw = await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(
+                        self._fetch_pool, _load_us_listing_sync),
+                    timeout=_LISTING_TIMEOUT_SEC,
+                )
+                sym = _pick_col(raw, "symbol", "code", "ticker")
+                name = _pick_col(raw, "name")
+                sector = _pick_col(raw, "sector", "industry")
+                if not sym or not name:
+                    raise ValueError(f"S&P500 목록 컬럼 불명: {list(raw.columns)}")
+                out = []
+                for _, r in raw.iterrows():
+                    ticker = str(r[sym]).strip()
+                    if not ticker:
+                        continue
+                    ticker = self._US_TICKER_FIX.get(ticker, ticker)
+                    out.append((ticker, str(r[name]).strip(),
+                                str(r[sector]).strip() if sector else ""))
+            except Exception:
+                self._us_fail_ts = time.monotonic()
+                return self._us_listing
+            if not out:
+                # 컬럼은 있으나 행 0개인 응답을 12시간 '정상'으로 캐시하면 미국
+                # 유니버스가 통째로 비어(폴백조차 못 타고) 버린다 — 실패로 취급
+                self._us_fail_ts = time.monotonic()
+                return self._us_listing
+            self._us_listing = out
+            self._us_ts = time.monotonic()
+            return out
+
+    async def aclose(self) -> None:
+        # 대기 중인 페치는 버리고 즉시 종료 — 행 스레드가 셧다운을 붙잡지 않게
+        self._fetch_pool.shutdown(wait=False, cancel_futures=True)
+        # concurrent.futures 는 atexit 훅에서 워커 스레드를 무조건 join 한다 —
+        # wait=False 를 줘도 소켓에 걸린 스레드가 하나라도 남아 있으면 SIGTERM
+        # 뒤 프로세스가 플랫폼의 SIGKILL 까지 붙잡혀 재배포가 지연된다. 전용
+        # 페치 풀 스레드를 join 대상에서 빼 즉시 종료를 보장한다.
+        try:
+            import concurrent.futures.thread as _cft
+            for t in list(getattr(self._fetch_pool, "_threads", ()) or ()):
+                _cft._threads_queues.pop(t, None)
+        except Exception:  # noqa: BLE001 — 파이썬 내부 구조 변경 대비(없어도 동작엔 무해)
+            pass
+        close_stooq_client()  # 공유 커넥션 풀 정리
+
+
+def _load_listing_sync() -> pd.DataFrame:
+    import FinanceDataReader as fdr
+    return fdr.StockListing("KRX")
+
+
+def _load_us_listing_sync() -> pd.DataFrame:
+    import FinanceDataReader as fdr
+    return fdr.StockListing("S&P500")
+
+
+# ── 국내 지수 실시간 시세 ──────────────────────────────────────────────
+# FDR 은 지수(KS11/KQ11)를 GitHub 정적 CSV 캐시
+# (raw.githubusercontent.com/FinanceData/fdr_krx_data_cache)에서 읽는다.
+# 그 파일에는 '완성된 일봉'만 들어 있고 갱신도 하루 단위라, 헤더 티커가
+# 장중 내내 같은 숫자로 멈춰 있었다(개별 종목은 fchart.stock.naver.com 라이브
+# 소스라 정상). 지수만 네이버 실시간 API 로 직접 받아 해결한다.
+_index_logger = logging.getLogger("ma-analyzer")
+_KR_INDEX_CODE = {"KS11": "KOSPI", "KQ11": "KOSDAQ"}
+_INDEX_QUOTE_TIMEOUT_SEC = 6.0
+
+
+def _to_float(raw: Any) -> float | None:
+    """"2,650.12" · "+1.23%" 같은 표기를 float 로. 실패하면 None."""
+    if raw is None:
+        return None
+    try:
+        return float(str(raw).replace(",", "").replace("%", "").replace("+", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_naver_basic(payload: dict) -> dict | None:
+    """m.stock.naver.com /api/index/{code}/basic 응답 → 시세 dict."""
+    value = _to_float(payload.get("closePrice"))
+    if value is None or value <= 0:
+        return None
+    pct = _to_float(payload.get("fluctuationsRatio"))
+    if pct is None:
+        return None
+    # 하락은 별도 필드로만 표시된다 — 부호를 잃지 않게 방향을 반영
+    direction = str(payload.get("compareToPreviousPrice", {}).get("code", "")
+                    if isinstance(payload.get("compareToPreviousPrice"), dict)
+                    else payload.get("compareToPreviousPrice", ""))
+    if direction in ("4", "5") and pct > 0:      # 4=하락, 5=하한
+        pct = -pct
+    diff = _to_float(payload.get("compareToPreviousClosePrice"))
+    if diff is not None and diff < 0 and pct > 0:
+        pct = -pct
+    out = {"value": round(value, 2), "changePct": round(pct, 2)}
+    # 체결 시각이 오면 그대로 쓴다 — 휴장일에 '오늘 날짜'가 붙는 것을 막는다
+    traded = str(payload.get("localTradedAt") or "")[:10]
+    if len(traded) == 10 and traded[4] == "-":
+        out["date"] = f"{traded[5:7]}/{traded[8:10]}"
+    return out
+
+
+def parse_naver_polling(payload: dict) -> dict | None:
+    """polling.finance.naver.com 실시간 응답 → 시세 dict.
+
+    지수는 값이 100배 정수로 온다 (nv=265012 → 2650.12)."""
+    datas = payload.get("datas") or []
+    if not datas:
+        return None
+    d = datas[0]
+    nv, cr = d.get("nv"), d.get("cr")
+    if nv is None or cr is None:
+        return None
+    try:
+        value = float(nv) / 100.0
+        pct = float(cr)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    if str(d.get("rf", "")) in ("4", "5") and pct > 0:   # 하락 방향 보정
+        pct = -pct
+    return {"value": round(value, 2), "changePct": round(pct, 2)}
+
+
+def fetch_kr_index_quote_sync(symbol: str) -> dict | None:
+    """국내 지수 실시간 시세 {value, changePct} — 실패하면 None (호출자가 폴백).
+
+    두 소스를 순서대로 시도한다. 어느 쪽이 형식을 바꾸거나 막혀도 나머지가
+    받고, 둘 다 실패하면 기존 일봉 경로가 그대로 화면을 채운다."""
+    code = _KR_INDEX_CODE.get(symbol.upper())
+    if not code:
+        return None
+    # 브라우저처럼 보이는 헤더가 없으면 거절하는 경우가 있어 UA·Referer 를 붙인다.
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
+    sources = (
+        (f"https://m.stock.naver.com/api/index/{code}/basic", parse_naver_basic,
+         {"Referer": f"https://m.stock.naver.com/domestic/index/{code}/total"}),
+        (f"https://polling.finance.naver.com/api/realtime/domestic/index/{code}",
+         parse_naver_polling, {"Referer": "https://finance.naver.com/sise/"}),
+    )
+    client = _stooq_client()      # 공유 커넥션 풀 재사용 (범용 httpx.Client)
+    for url, parse, extra in sources:
+        try:
+            r = client.get(url, timeout=_INDEX_QUOTE_TIMEOUT_SEC,
+                           headers={"User-Agent": ua, "Accept": "application/json",
+                                    **extra})
+            r.raise_for_status()
+            quote = parse(r.json())
+            if quote:
+                return quote
+            _index_logger.debug("지수 응답 형식 불일치 %s", url)
+        except Exception as exc:  # noqa: BLE001 — 소스 하나 실패는 폴백으로 흡수
+            _index_logger.debug("지수 실시간 조회 실패 %s: %s", url, exc)
+    return None

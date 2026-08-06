@@ -1,0 +1,30 @@
+# Render.com 배포 설정 (Blueprint)
+# 사용법: render.com -> New -> Blueprint -> 이 저장소/브랜치 선택
+#
+# 기본 공급자가 무료 시세(국내 FDR/네이버 · 미국 Stooq→Yahoo→FDR)라 API 키·IP 등록이 필요 없다.
+# SITE_PASSWORD 만 선택적으로 설정(비공개용). 비워두면 누구나 접속 가능(공개).
+#
+# 회원가입/로그인('오늘의 지지선 터치')을 실서비스로 쓰려면 DATABASE_URL 에
+# 외부 영구 Postgres 연결 문자열을 넣는다. 무료 영구 DB 는 Neon(neon.tech) 추천
+# — 만료 없이 무료 유지. 설정하지 않으면 SQLite 파일로 동작하지만, 무료 플랜은
+# 인스턴스가 잠들/재배포될 때 초기화돼 계정이 사라진다. (설정 방법: docs/DEPLOY.md)
+services:
+  - type: web
+    name: ma-radar
+    runtime: python
+    plan: free
+    rootDir: stock-ma-analyzer
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      # 선택: 접속 비밀번호(비공개용). 공개로 열려면 Render 대시보드에서 비워둠.
+      - key: SITE_PASSWORD
+        sync: false
+      # 회원 계정 영구 저장용 Postgres 연결 문자열 (Neon 등). 대시보드에서 입력.
+      # 비워두면 SQLite 로 동작(무료 플랜에선 재시작 시 계정 초기화).
+      - key: DATABASE_URL
+        sync: false

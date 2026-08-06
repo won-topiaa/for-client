@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>원토피아 소개 — 주식 레이더</title>
+<meta name="description" content="원토피아(Wontopia) — 자유롭게 아이디어를 만들어보는 공간. 데이터 도구를 만들어 공개합니다. 협업 문의 환영.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ma-radar.onrender.com/about">
+<meta property="og:title" content="원토피아 소개">
+<meta property="og:description" content="원토피아(Wontopia) — 자유롭게 아이디어를 만들어보는 공간. 데이터 도구를 만들어 공개합니다.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
+<style>
+  /* 주식 레이더 공통 디자인: zinc 팔레트 + 라이트/다크 자동 · 에메랄드=주요 */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626;
+    --header-bg: rgba(255, 255, 255, .8);
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --info: #818cf8;
+      --up: #34d399; --down: #f87171;
+      --header-bg: rgba(24, 24, 27, .8);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: 1152px; margin: 0 auto; padding: 13px 24px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .header-inner h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .header-inner .sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+  .top-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .top-nav a {
+    color: var(--text); text-decoration: none; font-size: 13px;
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel); transition: border-color .15s, color .15s;
+  }
+  .top-nav a:hover { border-color: var(--accent); color: var(--accent); }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px 60px; }
+
+  .hero { text-align: center; padding: 58px 0 30px; }
+  .hero .mark { display: inline-flex; margin-bottom: 16px; }
+  .hero .mark svg { width: 56px; height: 56px; border-radius: 14px; }
+  .hero h2 { font-size: 34px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .hero .en { color: var(--muted); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; }
+  .hero p { margin: 14px auto 0; color: var(--muted); font-size: 15px; max-width: 480px; line-height: 1.7; }
+
+  section { margin-top: 34px; }
+  section h3 {
+    font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; margin: 0 0 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 18px 20px; font-size: 14px; line-height: 1.8;
+  }
+  .card p { margin: 0; }
+  .card p + p { margin-top: 10px; }
+  .card b { color: var(--accent); }
+
+  .projects { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .projects { grid-template-columns: 1fr; } }
+  .proj {
+    display: block; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px 18px; text-decoration: none; color: var(--text);
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+  }
+  .proj:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--card-shadow); }
+  .proj .t { font-weight: 600; font-size: 15px; }
+  .proj .d { color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.7; }
+  .proj .u {
+    color: var(--accent); font-size: 11.5px; margin-top: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .hows { display: flex; flex-direction: column; gap: 10px; }
+  .how {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 13px 16px; display: flex; gap: 12px; align-items: baseline;
+  }
+  .how .n { color: var(--accent); font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .how .b { font-weight: 600; }
+  .how .d { color: var(--muted); font-size: 12.5px; }
+
+  .contact {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px; text-align: center;
+  }
+  .contact p { margin: 0 auto; color: var(--muted); max-width: 460px; line-height: 1.8; }
+  .contact .mail {
+    display: inline-block; margin-top: 16px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
+    padding: 11px 22px; border-radius: 10px; text-decoration: none;
+    transition: background .15s;
+  }
+  .contact .mail:hover { background: var(--accent-hover); }
+  .contact .addr {
+    display: block; margin-top: 10px; color: var(--muted); font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .contact .tip { font-size: 12px; color: var(--faint); margin-top: 12px; }
+
+  footer {
+    margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  .f-nav a { color: var(--muted); text-decoration: none; }
+  .f-nav a:hover { color: var(--accent); }
+
+  /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
+  @media (max-width: 640px) {
+    .header-inner { padding: 10px 16px; gap: 6px 10px; }
+    .header-inner h1 { font-size: 16px; }
+    .header-inner .sub { font-size: 11px; line-height: 1.35; }
+    .brand-box svg { width: 28px !important; height: 28px !important; }
+    .brand-box { gap: 9px !important; }
+    .wrap { padding-left: 16px; padding-right: 16px; }
+    /* 상단 내비: 2열 그리드로 균등·크게 (엄지로 누르기 좋게) */
+    .top-nav { width: 100%; gap: 8px; }
+    .top-nav a {
+      flex: 1 1 calc(50% - 4px); text-align: center; min-width: 0;
+      padding: 10px 8px; font-size: 12.5px;
+    }
+    .hero { padding: 34px 0 24px; }
+    .hero h2 { font-size: 28px; }
+    .hero .mark svg { width: 48px; height: 48px; }
+    section { margin-top: 26px; }
+    .contact { padding: 20px 16px; }
+    .contact .mail { display: block; padding: 13px; }  /* 메일 버튼 폭 전체 */
+    .f-nav { gap: 10px 18px; }
+    .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
+  }
+  /* ── 프리미엄 리파인 레이어 (인라인: 추가 요청 없이 즉시 페인트) ──
+     원칙(금융 UI): 중립 팔레트 유지 · 강조색은 의미에만 · 넉넉한 여백 ·
+     큰 제목일수록 좁은 자간 · 하드 보더 대신 부드러운 다층 그림자 · 다크 입체감 */
+  :root {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+      --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+      --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+      --hairline: rgba(255,255,255,.09);
+      --glow: rgba(52,211,153,.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+    --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+    --hairline: rgba(255,255,255,.09);
+    --glow: rgba(52,211,153,.12);
+  }
+  :root[data-theme="light"] {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  /* 타이포: 큰 제목일수록 자간을 좁혀 확신 있는 절제 */
+  .hero h2 { letter-spacing: -.035em; }
+  .stat .k, .m-name, .reco-card .period { letter-spacing: -.025em; }
+  .tool-card h3, .proj .t, .table-head h3 { letter-spacing: -.02em; }
+  /* 카드류: 하드 보더 → 헤어라인 + 부드러운 다층 그림자 */
+  .tool-card, .stat, .p-card, .m-card, .reco-card, .card, .proj, .how,
+  .contact, .table-card, .controls, .quick-picks .qp { border-color: var(--hairline); }
+  .stat, .m-card, .reco-card, .card, .how, .contact, .table-card, .controls {
+    box-shadow: var(--shadow-sm);
+  }
+  .tool-card, .proj {
+    border-color: var(--hairline); box-shadow: var(--shadow-md);
+    transition: transform .22s cubic-bezier(.22,.61,.36,1),
+                box-shadow .22s cubic-bezier(.22,.61,.36,1), border-color .22s ease;
+  }
+  .tool-card:hover, .tool-card:focus-visible, .proj:hover {
+    transform: translateY(-4px); box-shadow: var(--shadow-lg);
+  }
+  /* 히어로: 은은한 시그니처 글로우 */
+  .hero { position: relative; }
+  .hero::before {
+    content: ""; position: absolute; left: 50%; top: -8%;
+    width: min(760px, 92%); height: 300px; transform: translateX(-50%);
+    background: radial-gradient(58% 100% at 50% 0%, var(--glow), transparent 72%);
+    pointer-events: none; z-index: -1; filter: blur(6px);
+  }
+  /* 아이콘 타일: 강조색을 아주 옅게 머금은 표면 */
+  .tool-card .icon {
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel2));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  /* CTA 버튼: 크리스프한 그림자로 입체감 */
+  .tool-card .go, .contact .mail, button.primary {
+    box-shadow: 0 1px 2px rgba(5,150,105,.28), 0 6px 16px -6px rgba(5,150,105,.35);
+  }
+  /* 헤더/티커/정보박스 헤어라인 · 매칭 카드 호버 */
+  .site-header { border-bottom-color: var(--hairline); }
+  .ticker-wrap { border-top-color: var(--hairline); }
+  .pattern-desc, .intro, .method, .basis { box-shadow: var(--shadow-sm); }
+  .m-card { transition: box-shadow .18s ease, transform .18s ease; }
+  .m-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+  /* ── 폴리시 v3: 시그니처 디테일 (전 페이지 공통) ── */
+  .site-header::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent 4%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 30%,
+      color-mix(in srgb, var(--info) 42%, transparent) 70%, transparent 96%);
+    pointer-events: none;
+  }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+  .contact .mail { background: linear-gradient(135deg, var(--accent), #0d9488 92%); }
+  .contact .mail:hover { background: linear-gradient(135deg, var(--accent-hover), #0f766e 92%); }
+
+  /* ── 수동 테마 전환: 헤더 토글이 <html data-theme> 를 찍으면 기기 설정보다
+     우선한다 (위의 자동 변수와 동일한 값 — 강제 적용 사본) ── */
+  :root[data-theme="light"] {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626;
+    --header-bg: rgba(255, 255, 255, .8);
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  :root[data-theme="dark"] {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --info: #818cf8;
+      --up: #34d399; --down: #f87171;
+      --header-bg: rgba(24, 24, 27, .8);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+  }
+
+  /* ── 라이트/다크 딸깍 토글 (헤더 중앙) — theme.js 가 아이콘·상태를 관리 ── */
+  .theme-toggle {
+    z-index: 30; width: 40px; height: 29px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel);
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .theme-toggle:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  /* 헤더 우측 그룹: 좁아지면 항목 '사이'에서만 줄바꿈 — 링크 글자가
+     '이평선 분/석'처럼 중간에서 꺾여 깨져 보이던 문제 방지 */
+  .nav-link, .top-nav a { white-space: nowrap; }
+  .header-inner > :last-child {
+    display: inline-flex; flex-wrap: wrap; justify-content: flex-end;
+    align-items: center; row-gap: 4px;
+  }
+  @media (min-width: 761px) {
+    /* 헤더를 3열 그리드로 — 가운데 칸을 실제로 예약해 어떤 폭·어떤 페이지에서도
+       토글이 좌우 내용(접속자 배지·부제목 등)과 겹치지 않는다 */
+    .header-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+    .header-inner > :first-child { justify-self: start; }
+    .header-inner > :last-child { justify-self: end; }
+  }
+  @media (max-width: 760px) {
+    /* 좁은 화면: 제목·부제와 겹치지 않게 오른쪽 위 모서리로 (공간도 예약) */
+    .header-inner { padding-right: 108px; }
+    .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
+    .theme-toggle.lang-toggle { right: 58px; }
+  }
+  /* 한/영 전환 버튼 — 테마 토글과 나란히 (i18n.js 가 라벨·동작 관리) */
+  .mid-toggles { display: inline-flex; gap: 8px; align-items: center; }
+  .lang-toggle { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     디자인 레이어 — 글로벌 핀테크 감각 (로빈후드 계열의 절제된 미니멀)
+     원칙: ① 순백/순흑 바탕과 헤어라인 ② 크고 단단한 제목 타이포
+           ③ 그림자 대신 여백 ④ 알약형 버튼(검정/흰색) ⑤ 그린은 '데이터의 색'
+     앞의 규칙을 지우지 않고 뒤에서 덮어쓴다 — 구조는 그대로, 감각만 올린다.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+      --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+      --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+      --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+      --info: #8b9bff;
+      --up: #00d95a; --down: #ff5f56;
+      --cta: #ffffff; --cta-text: #0b0d0e;
+      --header-bg: rgba(0, 0, 0, .72);
+      --card-shadow: none;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+    --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+    --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+    --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+    --info: #8b9bff;
+    --up: #00d95a; --down: #ff5f56;
+    --cta: #ffffff; --cta-text: #0b0d0e;
+    --header-bg: rgba(0, 0, 0, .72);
+    --card-shadow: none;
+  }
+
+  /* ── 타이포: 본문은 조금 크게, 제목은 더 단단하게 ── */
+  body { font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .howto-title, .refs-title, .side-title {
+    letter-spacing: -.028em; font-weight: 700;
+  }
+  .stat .k, .m-score, .ma-chip, table, .k, .period, td, th,
+  .tk-val, .tk-chg, #chart, .m-summary b { font-variant-numeric: tabular-nums; }
+
+  /* ── 헤더: 얇은 헤어라인 + 흐릿한 유리 ── */
+  .site-header { border-bottom: 1px solid var(--hairline); }
+  .header-inner h1 { letter-spacing: -.02em; }
+  .top-nav a, .nav-link {
+    border-radius: 999px; font-weight: 500; transition: background .15s, color .15s, border-color .15s;
+  }
+  .top-nav a:hover, .nav-link:hover { color: var(--text); border-color: var(--text); }
+  .theme-toggle { border-radius: 999px; border-color: var(--border); }
+  .theme-toggle:hover { border-color: var(--text); box-shadow: none; }
+
+  /* ── 히어로: 크고 조용하게 ── */
+  .hero { padding: 92px 0 56px; }
+  .hero h2 {
+    font-size: clamp(38px, 5.6vw, 60px); line-height: 1.04;
+    letter-spacing: -.038em; margin: 0 0 18px; font-weight: 700;
+  }
+  .hero p { font-size: 17px; line-height: 1.65; max-width: 600px; color: var(--muted); }
+  .eyebrow {
+    background: transparent; border-color: var(--border);
+    letter-spacing: .16em; font-size: 10.5px; padding: 6px 15px;
+  }
+
+  /* ── 카드: 그림자 없이 헤어라인과 여백으로 ── */
+  .tool-card, .stat, .howto, .basis, .ma-method, .method, .note, .refs,
+  .m-card, .reco-card, .p-card, .card, .proj, .contact, .pattern-desc {
+    box-shadow: none;
+  }
+  .tool-card {
+    border-radius: 22px; padding: 32px 30px 28px; gap: 14px;
+    border-color: var(--border);
+    transition: border-color .18s, transform .18s, background .18s;
+  }
+  .tool-card:hover, .tool-card:focus-visible {
+    border-color: var(--text); transform: translateY(-2px); box-shadow: none;
+  }
+  .tool-card .icon {
+    border-radius: 16px; background: var(--panel2); border-color: var(--hairline);
+  }
+  .tool-card h3 { font-size: 22px; letter-spacing: -.03em; }
+  .tool-card .desc { font-size: 14px; line-height: 1.68; }
+  .tool-card li { font-size: 13px; }
+  .tool-card li::before { color: var(--brand); }
+
+  /* ── 주 버튼: 검정(라이트)·흰색(다크) 알약 — 그린은 데이터에 양보 ── */
+  .tool-card .go, button.primary, .contact .mail, .go-btn {
+    background: var(--cta); color: var(--cta-text);
+    border: none; border-radius: 999px; font-weight: 600;
+    padding: 12px 24px; box-shadow: none;
+    transition: opacity .15s, transform .15s;
+  }
+  .tool-card:hover .go, button.primary:hover:not(:disabled),
+  .contact .mail:hover, .go-btn:hover {
+    background: var(--cta); opacity: .86; box-shadow: none;
+  }
+  .go-btn { padding: 10px 22px; }
+
+  /* ── 칩·토글: 전부 알약으로 통일 ── */
+  .market-toggle button, .qp, .preset, .tabs button, .tf-toggle button, .ma-chip, .m-score {
+    border-radius: 999px;
+  }
+  .market-toggle button.active, .tabs button.active, .tf-toggle button.active {
+    background: var(--cta); color: var(--cta-text); border-color: var(--cta);
+  }
+  .qp:hover, .preset:hover { border-color: var(--text); }
+
+  /* ── 스탯: 숫자를 주인공으로 ── */
+  .stat { border-radius: 18px; padding: 18px 20px; border-color: var(--border); }
+  .stat .k { font-size: 30px; letter-spacing: -.035em; }
+  .stat .k .u { color: var(--brand); }
+  .stat .l {
+    font-size: 11px; letter-spacing: .04em; margin-top: 4px; color: var(--muted);
+  }
+
+  /* ── 설명 블록: 여백을 넉넉히 ── */
+  .howto, .basis, .ma-method, .method, .note, .refs, .pattern-desc {
+    border-radius: 20px; border-color: var(--border);
+  }
+  .howto { padding: 30px 32px 24px; }
+  .howto-title { font-size: 20px; }
+  .step .t { letter-spacing: -.015em; }
+  .step .n { border-radius: 12px; }
+
+  /* ── 결과 카드 ── */
+  .m-card, .reco-card, .p-card {
+    border-radius: 18px; border-color: var(--border);
+    transition: border-color .18s, transform .18s;
+  }
+  .m-card:hover, .p-card:hover { border-color: var(--text); box-shadow: none; }
+  .p-card.active { border-color: var(--text); }
+  .m-name { letter-spacing: -.02em; }
+  .m-meter { border-radius: 999px; overflow: hidden; }
+  .m-meter > span { background: var(--brand); }
+  /* 저항 카드의 막대까지 초록이면 방향을 잘못 읽게 된다 — 방향색을 따른다 */
+  .m-card.side-resistance .m-meter > span { background: var(--down); }
+
+  /* ── 표: 선을 줄이고 숫자 정렬 ── */
+  table { border-collapse: collapse; }
+  th {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border);
+  }
+  td { border-bottom: 1px solid var(--hairline); }
+
+  /* ── 입력 ── */
+  input, select {
+    border-radius: 12px; border-color: var(--border);
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--text); outline: none; }
+
+  /* ── 접근성: 또렷한 포커스 링 ── */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  /* ── 푸터: 조용하게 ── */
+  /* 본문급 작은 글씨라 --faint(라이트 모드 3.4:1)는 대비 미달 — --muted 사용 */
+  footer { border-top: 1px solid var(--hairline); color: var(--muted); }
+  .f-nav a { border-radius: 999px; }
+
+  /* ── 정보 박스: 파란 '알림' 느낌을 걷어내고 중립 패널로 ──
+     설명은 경고가 아니라 읽을거리다. 배경·글자를 본문 색으로 되돌리고
+     강조(굵은 글씨)에만 그린을 남긴다. */
+  .intro, .pattern-desc, .method {
+    background: var(--panel2); border: 1px solid var(--hairline);
+    color: var(--text);
+  }
+  .intro p, .pattern-desc, .pattern-desc p, .method { color: var(--text); }
+  .intro .sub2, .pattern-desc .src, .method .src { color: var(--muted); }
+  .pattern-desc b, .intro b, .method b { color: var(--accent); }
+
+  /* ── 헤더 내비: 데스크톱은 테두리 없는 '글자 링크' ──
+     칩 다섯 개는 폭을 너무 먹어 제목·부제를 두 줄로 밀어냈다. 담백한 텍스트
+     내비가 공간도 아끼고 상단이 훨씬 조용해진다. (모바일은 탭 영역이
+     필요하므로 기존 칩 모양 유지) */
+  @media (min-width: 761px) {
+    /* 3열 그리드를 '내용 크기'로 재배분 — 1fr 대칭이면 좁은 브랜드 쪽에 여백이
+       남는데도 내비가 두 줄로 접혔다(브랜드 268px vs 내비 필요 ~560px).
+       가운데 칸은 여전히 토글 전용이라 좌우와 절대 겹치지 않는다. */
+    .header-inner { grid-template-columns: auto minmax(56px, 1fr) auto; }
+    .header-inner > :nth-child(2) { justify-self: center; }
+    .top-nav { gap: 2px; }
+    .top-nav a, .nav-link {
+      border-color: transparent; background: transparent;
+      color: var(--muted); font-size: 13px; padding: 6px 10px;
+    }
+    .top-nav a:hover, .nav-link:hover {
+      color: var(--text); border-color: transparent; background: var(--panel2);
+    }
+  }
+  .header-inner .sub { font-size: 11.5px; }
+  /* 좁은 데스크톱(761~1099px)에서는 부제를 접는다 — 제목·내비·토글이 먼저다.
+     (부제를 남기면 두세 줄로 접히며 헤더가 뚱뚱해지고 내비가 밀린다) */
+  @media (min-width: 761px) and (max-width: 1279px) {
+    .header-inner .sub { display: none; }
+  }
+  /* 작은 태블릿(761~900px): 브랜드 + 내비 6개 + 토글이 한 줄에 들어갈 수 없다.
+     억지로 욱여넣어 겹치게 두지 말고, 모바일처럼 토글을 오른쪽 위로 빼고
+     내비를 아래 줄 전체 폭으로 내린다. */
+  @media (min-width: 761px) and (max-width: 900px) {
+    .header-inner {
+      position: relative; grid-template-columns: 1fr; padding-right: 112px; row-gap: 8px;
+    }
+    .header-inner > .mid-toggles { position: absolute; right: 12px; top: 9px; justify-self: end; }
+    .header-inner > :last-child { justify-self: start; }
+  }
+
+  /* ── 히어로 강조어: 세 가지 색 그라데이션 대신 한 가지 확신의 색 ── */
+  .hero h2 .em {
+    background: none; -webkit-background-clip: border-box; background-clip: border-box;
+    color: var(--accent);
+  }
+
+  /* ── 폰(≤640px): 페이지 고유의 모바일 튜닝을 이 레이어가 덮지 않게 ──
+     이 레이어는 파일 맨 끝이라 같은 특이도면 항상 이긴다. 그래서 위쪽
+     무조건부 규칙(.hero/.stat/.tool-card …)이 페이지의 @media 640px 값을
+     되돌려, 전체폭 CTA 버튼 같은 모바일 배려가 사라졌었다. 다시 명시한다. */
+  @media (max-width: 640px) {
+    .hero { padding: 34px 0 26px; }
+    .hero h2 { font-size: 30px; line-height: 1.16; letter-spacing: -.03em; }
+    .hero p { font-size: 14.5px; }
+    .eyebrow { font-size: 9.5px; letter-spacing: .12em; padding: 5px 12px; }
+    .stat { padding: 14px 15px; }
+    .stat .k { font-size: 22px; }
+    .tool-card { padding: 22px 20px 20px; border-radius: 18px; gap: 11px; }
+    .tool-card h3 { font-size: 19px; }
+    /* 엄지로 누르기 좋은 전체폭 버튼 (페이지 원래 의도) */
+    .tool-card .go { width: 100%; text-align: center; padding: 13px 20px; }
+  }
+
+  /* ── 한/영 버튼: 아이콘 토글보다 글자가 작으니 색은 또렷하게 ── */
+  .lang-toggle { color: var(--text); }
+
+  /* ── 모바일: 히어로 여백만 줄인다 (나머지 리듬은 유지) ── */
+  @media (max-width: 760px) {
+    /* 부제는 접는다 — 오른쪽 위 토글 두 개가 자리를 쓰면서 두세 줄로 접혀
+       헤더만 길어졌다. 제목이 이미 페이지를 설명한다. */
+    .header-inner .sub { display: none; }
+    .hero { padding: 56px 0 36px; }
+  }
+  /* 작은 폰(≤420px): 토글 두 개가 예약한 108px 때문에 제목이 두 줄로 접히며
+     헤더가 170~220px 까지 부풀었다(작은 화면의 4분의 1). 버튼을 조금 줄이고
+     예약폭을 88px 로 낮춰 제목이 한 줄에 들어가게 한다. */
+  @media (max-width: 420px) {
+    .header-inner { padding-right: 88px; }
+    .theme-toggle { width: 34px; height: 27px; }
+    .theme-toggle.lang-toggle { width: auto; padding: 0 7px; font-size: 11px; right: 52px; }
+    .header-inner h1 { font-size: 15px; }
+    /* 접속자 배지는 장식이라 제일 먼저 양보한다 — 이게 제목 옆에서 90px 를
+       가져가는 바람에 긴 제목(오늘의 지지선 터치 등)이 두 줄로 접혔다.
+       presence.js 가 인라인 display 를 켜므로 !important 가 필요하다. */
+    .presence { display: none !important; }
+    .hero p { font-size: 15.5px; }
+    .tool-card { padding: 26px 22px 22px; }
+    .howto { padding: 24px 20px 18px; }
+    .stat .k { font-size: 26px; }
+  }
+</style>
+<script src="/static/theme.js"></script>
+<script src="/static/i18n.js"></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand-box" style="display:flex; align-items:center; gap:11px;">
+      <a class="brand" href="/" aria-label="주식 레이더 홈" style="display:inline-flex;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고" style="width:30px;height:30px;border-radius:8px;display:block;"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></a>
+      <div>
+        <h1>원토피아 소개</h1>
+        <p class="sub">주식 레이더를 만드는 곳</p>
+      </div>
+      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
+    </div>
+    <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
+    <nav class="top-nav" aria-label="도구 바로가기">
+      
+      <a href="/">🏠 홈</a>
+      <a href="/ma">📈 이평선 분석</a>
+      <a href="/patterns">🔍 패턴 스크리너</a>
+      <a href="/touches">🚨 오늘의 터치</a>
+      <a href="/lines">📐 내 이평선</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <span class="mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></span>
+    <h2>원토피아</h2>
+    <div class="en">WONTOPIA</div>
+    <p>자유롭게 아이디어를 꺼내서, 이것저것 만들어보는 공간입니다.</p>
+  </section>
+
+  <section id="ab-name">
+    <h3>이름 이야기</h3>
+    <div class="card">
+      <p>원토피아는 만든 사람 이름 끝 글자 '<b>원</b>'에 <b>유토피아</b>의 '토피아'를 붙인 이름입니다.</p>
+      <p>거창한 뜻이 있다기보다, 아이디어를 자유롭게 꺼내놓고 마음껏 만들어볼 수 있는
+        공간이면 좋겠다는 마음으로 지었습니다. 궁금한 게 생기면 데이터로 확인해보고,
+        쓸 만하다 싶으면 누구나 쓸 수 있는 웹 도구로 만들어 공개합니다.</p>
+    </div>
+  </section>
+
+  <section id="ab-works">
+    <h3>만든 것들</h3>
+    <div class="projects">
+      <a class="proj" href="/">
+        <div class="t">📊 주식 레이더</div>
+        <div class="d">이평선 백테스트 · 차트 패턴 스크리너 · 오늘의 지지선 터치 ·
+          내 이평선 스크리너. 판단 기준마다 학술 연구와 고전 문헌의 출처를 함께 표기합니다.</div>
+        <div class="u">ma-radar.onrender.com</div>
+      </a>
+      <a class="proj" href="https://earnings-volatility.vercel.app" target="_blank" rel="noopener">
+        <div class="t">📉 실적 발표 변동성</div>
+        <div class="d">미국 주식이 분기 실적 발표일에 얼마나 출렁였는지 5년치 데이터로
+          보여주고, 다음 발표일의 예상 변동을 과거 평균으로 추정합니다.</div>
+        <div class="u">earnings-volatility.vercel.app ↗</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="ab-how">
+    <h3>일하는 방식</h3>
+    <div class="hows">
+      <div class="how"><span class="n">01</span>
+        <span><span class="b">근거를 밝힙니다.</span>
+        <span class="d">"이 기준은 어디서 왔는가"에 답할 수 없는 기능은 만들지 않으려고 합니다.</span></span></div>
+      <div class="how"><span class="n">02</span>
+        <span><span class="b">작게 만들어 먼저 공개합니다.</span>
+        <span class="d">완벽한 계획보다 쓰면서 고치는 쪽을 택합니다.</span></span></div>
+      <div class="how"><span class="n">03</span>
+        <span><span class="b">재미를 잃지 않습니다.</span>
+        <span class="d">로딩 화면에 춤추는 캔들봇을 넣는 이유입니다.</span></span></div>
+    </div>
+  </section>
+
+  <section id="ab-contact">
+    <h3>협업 · 연락</h3>
+    <div class="contact">
+      <p>데이터 도구, 투자 콘텐츠, 웹 서비스 — 함께 만들어보고 싶은 아이디어가 있다면
+        편하게 연락 주세요. 제안, 피드백, 버그 제보 모두 환영합니다.</p>
+      <a class="mail" href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%ED%98%91%EC%97%85%20%EB%AC%B8%EC%9D%98">✉️ 협업 문의 보내기</a>
+      <span class="addr">wontopiaaa@gmail.com</span>
+      <p class="tip">간단한 자기소개와 제안 내용을 함께 보내주시면 답장이 빨라집니다.</p>
+    </div>
+  </section>
+
+  <footer>
+    <nav class="f-nav" aria-label="사이트 링크">
+      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a><a href="/lines">📐 내 이평선</a><a href="/privacy">🔒 개인정보처리방침</a>
+    </nav>
+    <p style="margin:0">© 원토피아 (Wontopia) · 본 사이트의 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
+  </footer>
+</div>
+<script src="/static/presence.js"></script>
+</body>
+</html>

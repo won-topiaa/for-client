@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>원토피아</title>
+<meta name="description" content="원토피아(Wontopia)가 만든 것들 — 주식 레이더, 매크로 캘린더, 실적 발표 변동성.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ma-radar.onrender.com/links">
+<meta property="og:title" content="원토피아 — 만든 것들">
+<meta property="og:description" content="아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다.">
+<meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
+<style>
+  /* ── 토큰 ──
+     밝은 회색 한 벌 + 강조색 하나(에메랄드). 그라데이션·유리효과 없음.
+     다크는 '반전'이 아니라 같은 절제를 어두운 쪽에서 반복한 것. */
+  :root {
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.09); --hairline: rgba(9,11,12,.07);
+    --grid: rgba(9,11,12,.035);
+    --text: #0a0b0c; --muted: #565e66; --faint: #68707a;
+    --accent: #16a34a;
+    --shadow: 0 1px 2px rgba(9,11,12,.04);
+    --shadow-hover: 0 10px 30px -14px rgba(9,11,12,.22), 0 2px 6px rgba(9,11,12,.04);
+    --border-hover: rgba(9,11,12,.18);
+    --markbg: #0a0b0c; --markfg: #2fbf6b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0b; --panel: #101113; --soft: #141517;
+      --border: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.07);
+      --grid: rgba(255,255,255,.045);
+      --text: #f4f6f7; --muted: #9198a0; --faint: #7d848c;
+      --accent: #22c55e;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-hover: 0 10px 30px -14px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.3);
+      --border-hover: rgba(255,255,255,.19);
+      --markbg: #1c1f23; --markfg: #22c55e;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fcfcfd; --panel: #ffffff; --soft: #f7f8f9;
+    --border: rgba(9,11,12,.09); --hairline: rgba(9,11,12,.07);
+    --grid: rgba(9,11,12,.035);
+    --text: #0a0b0c; --muted: #565e66; --faint: #68707a;
+    --accent: #16a34a;
+    --shadow: 0 1px 2px rgba(9,11,12,.04);
+    --shadow-hover: 0 10px 30px -14px rgba(9,11,12,.22), 0 2px 6px rgba(9,11,12,.04);
+    --border-hover: rgba(9,11,12,.18);
+    --markbg: #0a0b0c; --markfg: #2fbf6b;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0b; --panel: #101113; --soft: #141517;
+    --border: rgba(255,255,255,.09); --hairline: rgba(255,255,255,.07);
+    --grid: rgba(255,255,255,.045);
+    --text: #f4f6f7; --muted: #9198a0; --faint: #7d848c;
+    --accent: #22c55e;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-hover: 0 10px 30px -14px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.3);
+    --border-hover: rgba(255,255,255,.19);
+    --markbg: #1c1f23; --markfg: #22c55e;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo",
+      "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh; position: relative; overflow-x: hidden;
+    padding: 104px 24px 80px;
+  }
+
+  /* ── 배경: 눈에 겨우 걸리는 격자 하나. 그림도, 형광 덩어리도 없다. ── */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(88% 52% at 50% 0%, #000 0%, transparent 72%);
+    mask-image: radial-gradient(88% 52% at 50% 0%, #000 0%, transparent 72%);
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ── 히어로 ── */
+  .hero { text-align: center; margin-bottom: 76px; }
+  .hero .mark {
+    width: 64px; height: 64px; border-radius: 50%; display: block; margin: 0 auto 26px;
+    background: var(--markbg); box-shadow: var(--shadow);
+  }
+  .hero .mark g { fill: var(--markfg); }
+  .hero h1 {
+    font-size: 32px; margin: 0 0 12px; font-weight: 700; letter-spacing: -.032em;
+    line-height: 1.2;
+  }
+  .role {
+    font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase;
+    font-weight: 600; color: var(--faint); margin-bottom: 20px;
+  }
+  .hero .tagline {
+    margin: 0 auto; color: var(--muted); font-size: 15px; max-width: 460px;
+    line-height: 1.65; letter-spacing: -.004em; word-break: keep-all;
+  }
+
+  /* ── 구역 머리: 얇은 선 + 아주 작은 대문자 라벨 ── */
+  .sec {
+    border-top: 1px solid var(--hairline); padding-top: 18px; margin: 0 0 20px;
+    font-size: 10.5px; color: var(--faint); letter-spacing: .18em;
+    text-transform: uppercase; font-weight: 600;
+  }
+
+  /* ── 작업물 카드 (이 페이지의 주인공) ── */
+  .cards { display: flex; flex-direction: column; gap: 12px; }
+  .lk {
+    display: grid; align-items: center; gap: 0 20px;
+    grid-template-columns: auto 46px 1fr auto 18px;
+    grid-template-areas: "num ico body badge arw";
+    background: var(--panel); border: 1px solid var(--border); border-radius: 22px;
+    padding: 26px 28px; text-decoration: none; color: var(--text);
+    box-shadow: var(--shadow);
+    transition: transform .25s cubic-bezier(.2,.7,.3,1),
+                box-shadow .25s cubic-bezier(.2,.7,.3,1),
+                border-color .25s ease;
+  }
+  .lk:hover, .lk:focus-visible {
+    transform: translateY(-3px); box-shadow: var(--shadow-hover);
+    border-color: var(--border-hover); outline: none;
+  }
+  .lk .num {
+    grid-area: num; font-size: 11px; font-weight: 600; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .04em; font-variant-numeric: tabular-nums;
+  }
+  .lk .ico {
+    grid-area: ico; width: 46px; height: 46px; border-radius: 14px;
+    background: var(--soft); border: 1px solid var(--hairline);
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .lk .ico svg { width: 20px; height: 20px; display: block; }
+  .lk .body { grid-area: body; min-width: 0; }
+  .lk .t { display: block; font-weight: 700; font-size: 17px; letter-spacing: -.017em; }
+  .lk .d {
+    display: block; color: var(--muted); font-size: 14px; margin-top: 4px;
+    line-height: 1.5; letter-spacing: -.004em; word-break: keep-all;
+  }
+  .lk .badge {
+    grid-area: badge; justify-self: end;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+    color: var(--faint); background: var(--soft); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 5px 9px; white-space: nowrap; line-height: 1.2;
+  }
+  .lk .arw {
+    grid-area: arw; justify-self: end; color: var(--faint); font-size: 15px; line-height: 1;
+    transition: transform .25s cubic-bezier(.2,.7,.3,1), color .25s ease;
+  }
+  .lk:hover .arw, .lk:focus-visible .arw { color: var(--accent); transform: translate(2px, -2px); }
+
+  /* ── 푸터: 링크 한 줄 + 최소한의 고지 ── */
+  footer { margin-top: 76px; }
+  .social {
+    border-top: 1px solid var(--hairline); padding-top: 26px;
+    display: flex; flex-wrap: wrap; gap: 8px 26px; justify-content: center;
+  }
+  .social a {
+    color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 500;
+    letter-spacing: -.005em; transition: color .25s ease;
+  }
+  .social a:hover { color: var(--text); }
+  .legal {
+    margin-top: 30px; text-align: center; color: var(--faint);
+    font-size: 11.5px; line-height: 1.8;
+  }
+  .legal p { margin: 0; }
+  .legal a { color: var(--faint); }
+
+  /* ── 토글 (오른쪽 위) ── */
+  .theme-toggle {
+    width: 38px; height: 30px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel);
+    color: var(--text); font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow); transition: border-color .25s ease;
+  }
+  .theme-toggle:hover { border-color: var(--border-hover); }
+  .lang-toggle { width: auto; padding: 0 11px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+  .mid-toggles {
+    position: fixed; right: 20px; top: 18px; z-index: 50;
+    display: inline-flex; gap: 8px; align-items: center;
+  }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px;
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 72px 18px 56px; }
+    .mid-toggles { position: absolute; right: 14px; top: 14px; }
+    .hero { margin-bottom: 56px; }
+    .hero h1 { font-size: 26px; }
+    .hero .mark { width: 56px; height: 56px; margin-bottom: 22px; }
+    .hero .tagline { font-size: 14.5px; }
+    footer { margin-top: 56px; }
+    .lk {
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "num arw" "body body" "badge badge";
+      gap: 0; padding: 22px 22px 20px; border-radius: 20px;
+    }
+    .lk .ico { display: none; }
+    .lk .body { margin-top: 10px; }
+    .lk .t { font-size: 16px; }
+    .lk .badge { justify-self: start; margin-top: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lk, .lk .arw, .theme-toggle, .social a { transition: none; }
+    .lk:hover, .lk:focus-visible { transform: none; }
+    .lk:hover .arw, .lk:focus-visible .arw { transform: none; }
+  }
+</style>
+<script src="/static/theme.js"></script>
+<script src="/static/i18n.js"></script>
+</head>
+<body>
+  <div class="grid-bg" aria-hidden="true"></div>
+  <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
+
+  <main class="wrap">
+    <header class="hero">
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="원토피아 로고"><g><rect x="18.5" y="34" width="4" height="14" rx="1.4" opacity=".62"/><rect x="19.6" y="31" width="1.8" height="20" rx=".9" opacity=".62"/><rect x="29.5" y="26" width="4" height="16" rx="1.4" opacity=".8"/><rect x="30.6" y="22" width="1.8" height="24" rx=".9" opacity=".8"/><rect x="40.5" y="18" width="4" height="18" rx="1.4"/><rect x="41.6" y="14" width="1.8" height="26" rx=".9"/></g></svg>
+      <h1>원토피아</h1>
+      <div class="role">Finance Developer</div>
+      <p class="tagline">아이디어를 데이터로 확인하고, 쓸 만하면 웹 도구로 만들어 공개합니다</p>
+    </header>
+
+    <section>
+      <h2 class="sec sec-works">작업물</h2>
+      <div class="cards">
+        <!-- PORTFOLIO_CARDS -->
+      </div>
+    </section>
+
+    <footer>
+      <nav class="social" aria-label="연락처">
+        <a href="https://blog.naver.com/information_provider" target="_blank" rel="noopener">Blog</a>
+        <a href="https://www.threads.com/@tooja_in" target="_blank" rel="noopener">Threads</a>
+        <a href="https://github.com/won-topiaa" target="_blank" rel="noopener">GitHub</a>
+        <a href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9B%90%ED%86%A0%ED%94%BC%EC%95%84%5D%20%EB%AC%B8%EC%9D%98">Email</a>
+      </nav>
+      <div class="legal">
+        <p class="disc">각 도구는 과거 데이터 통계이며 투자 권유가 아닙니다.</p>
+        <p class="copy">© 원토피아 · <a href="/privacy">개인정보처리방침</a></p>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>

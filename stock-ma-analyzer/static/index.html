@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주식 레이더 — 데이터로 보는 기술적 분석</title>
+<meta name="description" content="주식 레이더 — 이평선 백테스트와 차트 패턴 스크리너. 학술 연구에 근거한 기준으로 감이 아니라 데이터로 확인하세요.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ma-radar.onrender.com/">
+<meta property="og:title" content="주식 레이더 — 데이터로 보는 기술적 분석">
+<meta property="og:description" content="주식 레이더 — 이평선 백테스트와 차트 패턴 스크리너. 학술 연구에 근거한 기준으로 감이 아니라 데이터로 확인하세요.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
+<style>
+  /* earnings-volatility 사이트와 같은 디자인 언어:
+     zinc 중립 팔레트 + 라이트/다크 자동 · 에메랄드=상승/주요 · 인디고=정보 */
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626;
+    --header-bg: rgba(255, 255, 255, .8);
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --info: #818cf8;
+    --up: #34d399; --down: #f87171;
+      --header-bg: rgba(24, 24, 27, .8);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--header-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: 1152px; margin: 0 auto; padding: 13px 24px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .header-inner h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+  .header-inner .sub { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+  .top-nav { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+  .top-nav a {
+    color: var(--text); text-decoration: none; font-size: 13px;
+    padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel); transition: border-color .15s, color .15s;
+  }
+  .top-nav a:hover { border-color: var(--accent); color: var(--accent); }
+
+  .wrap { max-width: 1152px; margin: 0 auto; padding: 0 24px 60px; }
+
+  /* 히어로 — 차트 워터마크 배경 + 아이브로우 */
+  .hero { text-align: center; padding: 66px 0 40px; position: relative; }
+  .hero-bg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: -1;
+  }
+  .eyebrow {
+    display: inline-block; margin-bottom: 14px; padding: 5px 14px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--panel);
+    color: var(--muted); font-size: 11px; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .eyebrow .live { color: var(--accent); }
+  .hero h2 { font-size: 36px; margin: 0 0 12px; letter-spacing: -.02em; line-height: 1.25; }
+  .hero h2 .em { color: var(--accent); }
+  .hero p { margin: 0 auto; color: var(--muted); font-size: 15px; max-width: 560px; line-height: 1.7; }
+
+  /* 핵심 수치 스탯 스트립 */
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 0 0 26px;
+  }
+  @media (max-width: 760px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px 16px;
+  }
+  .stat .k {
+    font-size: 24px; font-weight: 700; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .k .u { color: var(--accent); }
+  .stat .l { color: var(--muted); font-size: 11.5px; margin-top: 2px; letter-spacing: .02em; }
+
+  /* 이용방법 3단계 — 처음 온 방문자용 (단계마다 '왜?'를 함께 설명) */
+  .howto {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
+    padding: 24px 26px 18px; margin: 0 0 26px;
+  }
+  .howto-title { margin: 0 0 18px; font-size: 19px; letter-spacing: -.02em; }
+  .howto-title .em { color: var(--accent); }
+  .steps {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px;
+  }
+  @media (max-width: 980px) { .steps { grid-template-columns: 1fr; gap: 18px; } }
+  .step { display: flex; gap: 13px; align-items: flex-start; }
+  .step .n {
+    flex: none; width: 30px; height: 30px; border-radius: 10px;
+    display: grid; place-items: center; font-weight: 700; font-size: 15px;
+    color: #fff; background: linear-gradient(135deg, var(--accent), #0d9488 92%);
+    box-shadow: 0 1px 2px rgba(5,150,105,.28), 0 6px 14px -6px rgba(5,150,105,.35);
+  }
+  .step .t { font-weight: 600; font-size: 14.5px; letter-spacing: -.01em; }
+  .step .t a { color: var(--accent); text-decoration: none; }
+  .step .t a:hover { text-decoration: underline; }
+  .step .d { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; word-break: keep-all; }
+  .step .why {
+    margin: 8px 0 0; padding: 9px 11px; border-radius: 10px;
+    background: var(--panel2); border: 1px solid var(--border);
+    /* 작은 글씨(12px)라 muted 그대로는 라이트 모드에서 WCAG AA(4.5:1) 미달 —
+       본문색 쪽으로 섞어 양쪽 모드 모두 대비를 확보한다 */
+    color: color-mix(in srgb, var(--muted) 65%, var(--text));
+    font-size: 12px; line-height: 1.65; word-break: keep-all;
+  }
+  .step .why b { color: color-mix(in srgb, var(--accent) 78%, var(--text)); }
+  .howto-note {
+    margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7; word-break: keep-all;
+  }
+
+  /* 이동평균선 매매법 소개 — 바쁜 직장인 관점의 짧은 설명 (howto 와 동일 톤) */
+  .ma-method {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
+    padding: 24px 26px 20px; margin: 0 0 26px;
+  }
+  .mm-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; }
+  @media (max-width: 980px) { .mm-grid { grid-template-columns: 1fr; gap: 14px; } }
+  .mm-what p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.75; word-break: keep-all; }
+  .mm-what p + p { margin-top: 10px; }
+  .mm-what b { color: var(--text); }
+  .mm-caution {
+    padding: 9px 11px; border-radius: 10px; background: var(--panel2);
+    border: 1px solid var(--border); font-size: 12px !important; line-height: 1.65 !important;
+  }
+  .mm-why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .mm-why li {
+    position: relative; padding: 10px 12px 10px 30px; border-radius: 12px;
+    background: var(--panel2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12.5px; line-height: 1.7; word-break: keep-all;
+  }
+  .mm-why li::before { content: "✓"; position: absolute; left: 12px; top: 10px; color: var(--accent); font-weight: 700; }
+  .mm-why b { color: var(--text); }
+  .mm-bridge {
+    margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12.5px; line-height: 1.7; word-break: keep-all;
+  }
+  .mm-bridge b { color: var(--text); }
+  .mm-bridge a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .mm-bridge a:hover { text-decoration: underline; }
+
+  /* 도구 카드 — 4개라 2×2 가 읽기 편하다 */
+  .tools {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px;
+    margin: 0 auto;
+  }
+  @media (max-width: 980px) { .tools { grid-template-columns: 1fr; max-width: 560px; } }
+  /* 접힘 섹션(이용법 상세·매매법 소개) — 첫 화면을 가볍게 유지 */
+  details.fold > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::after {
+    content: "펼치기 ▾"; color: var(--accent); font-size: 12.5px; font-weight: 600;
+    margin-left: auto; flex: none;
+  }
+  details.fold[open] > summary::after { content: "접기 ▴"; }
+  /* 캐럿 문구는 CSS content 라 i18n 이 못 바꾼다 — 영문 모드(html[lang=en])에서 직접 교체 */
+  html[lang="en"] details.fold > summary::after { content: "Show ▾"; }
+  html[lang="en"] details.fold[open] > summary::after { content: "Hide ▴"; }
+  .tool-card {
+    display: flex; flex-direction: column; gap: 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 20px;
+    padding: 28px 26px 24px; text-decoration: none; color: var(--text);
+    transition: border-color .18s, transform .18s, box-shadow .18s;
+  }
+  .tool-card:hover, .tool-card:focus-visible {
+    border-color: var(--accent); transform: translateY(-3px);
+    box-shadow: var(--card-shadow); outline: none;
+  }
+  .tool-card .icon {
+    font-size: 26px; line-height: 1; width: 54px; height: 54px;
+    display: grid; place-items: center; border-radius: 14px;
+    background: var(--panel2); border: 1px solid var(--border);
+  }
+  .tool-card h3 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+  .tool-card .desc { color: var(--muted); font-size: 13.5px; line-height: 1.7; margin: 0; }
+  .tool-card ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .tool-card li { color: var(--muted); font-size: 12.5px; padding-left: 20px; position: relative; }
+  .tool-card li::before { content: "✓"; position: absolute; left: 2px; color: var(--accent); font-weight: 700; }
+  .tool-card .go {
+    margin-top: auto; align-self: flex-start;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
+    padding: 10px 20px; border-radius: 10px; transition: background .15s;
+  }
+  .tool-card:hover .go { background: var(--accent-hover); }
+
+  /* 하단 안내 */
+  .basis {
+    max-width: 920px; margin: 26px auto 0;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.7;
+  }
+  .basis b { color: var(--text); }
+  .basis a { color: var(--accent); text-decoration: none; }
+  .basis a:hover { text-decoration: underline; }
+
+  footer {
+    max-width: 920px; margin: 40px auto 0; padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  footer .strong { color: var(--text); font-weight: 500; }
+
+  /* ---- 브랜드 로고 · 지수 티커 · 푸터 내비 (매크로 디자인 공통) ---- */
+  .brand { display: inline-flex; flex: none; }
+  .brand svg { display: block; width: 30px; height: 30px; border-radius: 8px; }
+  .brand-box { display: flex; align-items: center; gap: 11px; }
+  .ticker-wrap { border-top: 1px solid var(--border); }
+  .ticker {
+    max-width: 1152px; margin: 0 auto; padding: 5px 24px;
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .tk { display: inline-flex; gap: 7px; align-items: baseline; }
+  .tk-name { color: var(--text); font-weight: 600; }
+  .tk-chg.up { color: var(--up); }
+  .tk-chg.down { color: var(--down); }
+  .tk-chg.flat { color: var(--muted); }
+  .f-nav { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  .f-nav a { color: var(--muted); text-decoration: none; }
+  .f-nav a:hover { color: var(--accent); }
+
+  /* ============ 모바일(휴대폰) 최적화 — 데스크톱 레이아웃은 그대로 ============ */
+  @media (max-width: 640px) {
+    .header-inner { padding: 10px 16px; gap: 6px 10px; }
+    .header-inner h1 { font-size: 16px; }
+    .header-inner .sub { font-size: 11px; line-height: 1.35; }
+    .brand svg { width: 28px; height: 28px; }
+    .brand-box { gap: 9px; }
+    .wrap { padding-left: 16px; padding-right: 16px; }
+    /* 홈 상단 내비: 2열 그리드로 균등·크게 (엄지로 누르기 좋게) */
+    .top-nav { width: 100%; gap: 8px; }
+    .top-nav a {
+      flex: 1 1 calc(50% - 4px); text-align: center; min-width: 0;
+      padding: 10px 8px; font-size: 12.5px;
+    }
+    /* 지수 티커: 세 줄로 접히는 대신 한 줄 가로 스크롤 (세로 공간 절약) */
+    .ticker {
+      flex-wrap: nowrap; overflow-x: auto; gap: 16px; padding: 6px 16px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .ticker::-webkit-scrollbar { display: none; }
+    .tk { flex: none; }
+    /* 히어로: 세로 공간을 줄여 도구 카드가 더 빨리 보이게 */
+    .hero { padding: 30px 0 26px; }
+    .hero h2 { font-size: 27px; line-height: 1.28; }
+    .hero p { font-size: 14px; }
+    .eyebrow { font-size: 9.5px; letter-spacing: .1em; }
+    .stat { padding: 13px 14px; }
+    .stat .k { font-size: 21px; }
+    .stat .l { font-size: 11px; }
+    /* 도구 카드: 화면 폭을 꽉 채우고 CTA 버튼을 큼직하게 */
+    .tools { gap: 14px; }
+    .tool-card { padding: 22px 20px 20px; border-radius: 16px; gap: 10px; }
+    .tool-card h3 { font-size: 18px; }
+    .tool-card .go { width: 100%; text-align: center; padding: 13px; }
+    .basis { margin-top: 20px; }
+    .f-nav { gap: 10px 18px; }
+    .f-nav a { display: inline-flex; align-items: center; min-height: 34px; }
+  }
+  /* ── 프리미엄 리파인 레이어 (인라인: 추가 요청 없이 즉시 페인트) ──
+     원칙(금융 UI): 중립 팔레트 유지 · 강조색은 의미에만 · 넉넉한 여백 ·
+     큰 제목일수록 좁은 자간 · 하드 보더 대신 부드러운 다층 그림자 · 다크 입체감 */
+  :root {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+      --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+      --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+      --hairline: rgba(255,255,255,.09);
+      --glow: rgba(52,211,153,.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 18px 40px -14px rgba(0,0,0,.65);
+    --shadow-lg: 0 4px 10px rgba(0,0,0,.5), 0 32px 64px -20px rgba(0,0,0,.75);
+    --hairline: rgba(255,255,255,.09);
+    --glow: rgba(52,211,153,.12);
+  }
+  :root[data-theme="light"] {
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 1px 3px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.16);
+    --shadow-lg: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -18px rgba(16,24,40,.22);
+    --hairline: rgba(16,24,40,.08);
+    --glow: rgba(5,150,105,.10);
+  }
+  /* 타이포: 큰 제목일수록 자간을 좁혀 확신 있는 절제 */
+  .hero h2 { letter-spacing: -.035em; }
+  .stat .k, .m-name, .reco-card .period { letter-spacing: -.025em; }
+  .tool-card h3, .proj .t, .table-head h3 { letter-spacing: -.02em; }
+  /* 카드류: 하드 보더 → 헤어라인 + 부드러운 다층 그림자 */
+  .tool-card, .stat, .p-card, .m-card, .reco-card, .card, .proj, .how,
+  .contact, .table-card, .controls, .quick-picks .qp { border-color: var(--hairline); }
+  .stat, .m-card, .reco-card, .card, .how, .contact, .table-card, .controls {
+    box-shadow: var(--shadow-sm);
+  }
+  .tool-card, .proj {
+    border-color: var(--hairline); box-shadow: var(--shadow-md);
+    transition: transform .22s cubic-bezier(.22,.61,.36,1),
+                box-shadow .22s cubic-bezier(.22,.61,.36,1), border-color .22s ease;
+  }
+  .tool-card:hover, .tool-card:focus-visible, .proj:hover {
+    transform: translateY(-4px); box-shadow: var(--shadow-lg);
+  }
+  /* 히어로: 은은한 시그니처 글로우 */
+  .hero { position: relative; }
+  .hero::before {
+    content: ""; position: absolute; left: 50%; top: -8%;
+    width: min(760px, 92%); height: 300px; transform: translateX(-50%);
+    background: radial-gradient(58% 100% at 50% 0%, var(--glow), transparent 72%);
+    pointer-events: none; z-index: -1; filter: blur(6px);
+  }
+  /* 아이콘 타일: 강조색을 아주 옅게 머금은 표면 */
+  .tool-card .icon {
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel2));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  /* CTA 버튼: 크리스프한 그림자로 입체감 */
+  .tool-card .go, .contact .mail, button.primary {
+    box-shadow: 0 1px 2px rgba(5,150,105,.28), 0 6px 16px -6px rgba(5,150,105,.35);
+  }
+  /* 헤더/티커/정보박스 헤어라인 · 매칭 카드 호버 */
+  .site-header { border-bottom-color: var(--hairline); }
+  .ticker-wrap { border-top-color: var(--hairline); }
+  .pattern-desc, .intro, .method, .basis { box-shadow: var(--shadow-sm); }
+  .m-card { transition: box-shadow .18s ease, transform .18s ease; }
+  .m-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+  /* ── 폴리시 v3: 시그니처 디테일 (전 페이지 공통) ──
+     헤더 아래 브랜드 그라데이션 헤어라인 · 일관된 포커스 링 · 선택 색 */
+  .site-header::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent 4%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 30%,
+      color-mix(in srgb, var(--info) 42%, transparent) 70%, transparent 96%);
+    pointer-events: none;
+  }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+  /* ── 폴리시 v3: 홈 전용 ──
+     강조어 그라데이션 · 히어로 도트 그리드 · 차트선 드로우인 · 스탯 호버 */
+  .hero h2 .em {
+    background: linear-gradient(94deg, var(--accent) 8%, #0d9488 55%, var(--info));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: -14px 0 0; z-index: -2; pointer-events: none;
+    background-image: radial-gradient(
+      color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1.4px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(62% 82% at 50% 18%, #000, transparent 76%);
+    mask-image: radial-gradient(62% 82% at 50% 18%, #000, transparent 76%);
+  }
+  .hero-bg path:first-child {
+    stroke-dasharray: 1700; stroke-dashoffset: 1700;
+    animation: draw-line 2s ease-out .2s forwards;
+  }
+  .hero-bg path + path { opacity: 0; animation: fade-fill 1s ease-out 1.4s forwards; }
+  @keyframes draw-line { to { stroke-dashoffset: 0; } }
+  @keyframes fade-fill { to { opacity: .045; } }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-bg path:first-child { animation: none; stroke-dashoffset: 0; }
+    .hero-bg path + path { animation: none; opacity: .045; }
+  }
+  .stat { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .stat:hover {
+    transform: translateY(-2px); box-shadow: var(--shadow-md);
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--hairline));
+  }
+  .tool-card .go { background: linear-gradient(135deg, var(--accent), #0d9488 92%); }
+  .tool-card:hover .go { background: linear-gradient(135deg, var(--accent-hover), #0f766e 92%); }
+
+  /* ── 수동 테마 전환: 헤더 토글이 <html data-theme> 를 찍으면 기기 설정보다
+     우선한다 (위의 자동 변수와 동일한 값 — 강제 적용 사본) ── */
+  :root[data-theme="light"] {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5;
+    --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --faint: #a1a1aa;
+    --accent: #059669; --accent-hover: #047857;
+    --info: #4f46e5;
+    --up: #059669; --down: #dc2626;
+    --header-bg: rgba(255, 255, 255, .8);
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, .06);
+  }
+  :root[data-theme="dark"] {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9, 9, 11, .5);
+      --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #059669; --accent-hover: #10b981;
+      --info: #818cf8;
+    --up: #34d399; --down: #f87171;
+      --header-bg: rgba(24, 24, 27, .8);
+      --card-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+  }
+
+  /* ── 라이트/다크 딸깍 토글 (헤더 중앙) — theme.js 가 아이콘·상태를 관리 ── */
+  .theme-toggle {
+    z-index: 30; width: 40px; height: 29px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel);
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .theme-toggle:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  /* 헤더 우측 그룹: 좁아지면 항목 '사이'에서만 줄바꿈 — 링크 글자가
+     '이평선 분/석'처럼 중간에서 꺾여 깨져 보이던 문제 방지 */
+  .nav-link, .top-nav a { white-space: nowrap; }
+  .header-inner > :last-child {
+    display: inline-flex; flex-wrap: wrap; justify-content: flex-end;
+    align-items: center; row-gap: 4px;
+  }
+  @media (min-width: 761px) {
+    /* 헤더를 3열 그리드로 — 가운데 칸을 실제로 예약해 어떤 폭·어떤 페이지에서도
+       토글이 좌우 내용(접속자 배지·부제목 등)과 겹치지 않는다 */
+    .header-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+    .header-inner > :first-child { justify-self: start; }
+    .header-inner > :last-child { justify-self: end; }
+  }
+  @media (max-width: 760px) {
+    /* 좁은 화면: 제목·부제와 겹치지 않게 오른쪽 위 모서리로 (공간도 예약) */
+    .header-inner { padding-right: 108px; }
+    .theme-toggle { position: absolute; left: auto; right: 12px; top: 9px; }
+    .theme-toggle.lang-toggle { right: 58px; }
+  }
+
+  /* 한/영 전환 버튼 — 테마 토글과 나란히 (i18n.js 가 라벨·동작 관리) */
+  .mid-toggles { display: inline-flex; gap: 8px; align-items: center; }
+  .lang-toggle { width: auto; padding: 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+  /* ── 모바일 전용 설명 접기 (mfold.js) — 데스크톱은 버튼 숨김·본문 그대로 ── */
+  .mfold-btn {
+    display: none; width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-size: 13px; font-weight: 600;
+    font-family: inherit; margin: 0;
+  }
+  @media (max-width: 640px) { .mfold-hidden { display: none !important; } }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     디자인 레이어 — 글로벌 핀테크 감각 (로빈후드 계열의 절제된 미니멀)
+     원칙: ① 순백/순흑 바탕과 헤어라인 ② 크고 단단한 제목 타이포
+           ③ 그림자 대신 여백 ④ 알약형 버튼(검정/흰색) ⑤ 그린은 '데이터의 색'
+     앞의 규칙을 지우지 않고 뒤에서 덮어쓴다 — 구조는 그대로, 감각만 올린다.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+      --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+      --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+      --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+      --info: #8b9bff;
+      --up: #00d95a; --down: #ff5f56;
+      --cta: #ffffff; --cta-text: #0b0d0e;
+      --header-bg: rgba(0, 0, 0, .72);
+      --card-shadow: none;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #ffffff; --panel2: #f6f7f8;
+    --border: rgba(9, 11, 12, .10); --hairline: rgba(9, 11, 12, .07);
+    --text: #0b0d0e; --muted: #62696d; --faint: #8b9296;
+    --accent: #00913f; --accent-hover: #007a35; --brand: #00c805;
+    --info: #3d4ee0;
+    --up: #00913f; --down: #e03131;
+    --cta: #0b0d0e; --cta-text: #ffffff;
+    --header-bg: rgba(255, 255, 255, .72);
+    --card-shadow: none;
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000; --panel: #0d0f11; --panel2: #16191c;
+    --border: rgba(255, 255, 255, .11); --hairline: rgba(255, 255, 255, .08);
+    --text: #f4f6f6; --muted: #9aa1a5; --faint: #6d7478;
+    --accent: #00d95a; --accent-hover: #4ce882; --brand: #00c805;
+    --info: #8b9bff;
+    --up: #00d95a; --down: #ff5f56;
+    --cta: #ffffff; --cta-text: #0b0d0e;
+    --header-bg: rgba(0, 0, 0, .72);
+    --card-shadow: none;
+  }
+
+  /* ── 타이포: 본문은 조금 크게, 제목은 더 단단하게 ── */
+  body { font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, .howto-title, .refs-title, .side-title {
+    letter-spacing: -.028em; font-weight: 700;
+  }
+  .stat .k, .m-score, .ma-chip, table, .k, .period, td, th,
+  .tk-val, .tk-chg, #chart, .m-summary b { font-variant-numeric: tabular-nums; }
+
+  /* ── 헤더: 얇은 헤어라인 + 흐릿한 유리 ── */
+  .site-header { border-bottom: 1px solid var(--hairline); }
+  .header-inner h1 { letter-spacing: -.02em; }
+  .top-nav a, .nav-link {
+    border-radius: 999px; font-weight: 500; transition: background .15s, color .15s, border-color .15s;
+  }
+  .top-nav a:hover, .nav-link:hover { color: var(--text); border-color: var(--text); }
+  .theme-toggle { border-radius: 999px; border-color: var(--border); }
+  .theme-toggle:hover { border-color: var(--text); box-shadow: none; }
+
+  /* ── 히어로: 크고 조용하게 ── */
+  .hero { padding: 92px 0 56px; }
+  .hero h2 {
+    font-size: clamp(38px, 5.6vw, 60px); line-height: 1.04;
+    letter-spacing: -.038em; margin: 0 0 18px; font-weight: 700;
+  }
+  .hero p { font-size: 17px; line-height: 1.65; max-width: 600px; color: var(--muted); }
+  .eyebrow {
+    background: transparent; border-color: var(--border);
+    letter-spacing: .16em; font-size: 10.5px; padding: 6px 15px;
+  }
+
+  /* ── 카드: 그림자 없이 헤어라인과 여백으로 ── */
+  .tool-card, .stat, .howto, .basis, .ma-method, .method, .note, .refs,
+  .m-card, .reco-card, .p-card, .card, .proj, .contact, .pattern-desc {
+    box-shadow: none;
+  }
+  .tool-card {
+    border-radius: 22px; padding: 32px 30px 28px; gap: 14px;
+    border-color: var(--border);
+    transition: border-color .18s, transform .18s, background .18s;
+  }
+  .tool-card:hover, .tool-card:focus-visible {
+    border-color: var(--text); transform: translateY(-2px); box-shadow: none;
+  }
+  .tool-card .icon {
+    border-radius: 16px; background: var(--panel2); border-color: var(--hairline);
+  }
+  .tool-card h3 { font-size: 22px; letter-spacing: -.03em; }
+  .tool-card .desc { font-size: 14px; line-height: 1.68; }
+  .tool-card li { font-size: 13px; }
+  .tool-card li::before { color: var(--brand); }
+
+  /* ── 주 버튼: 검정(라이트)·흰색(다크) 알약 — 그린은 데이터에 양보 ── */
+  .tool-card .go, button.primary, .contact .mail, .go-btn {
+    background: var(--cta); color: var(--cta-text);
+    border: none; border-radius: 999px; font-weight: 600;
+    padding: 12px 24px; box-shadow: none;
+    transition: opacity .15s, transform .15s;
+  }
+  .tool-card:hover .go, button.primary:hover:not(:disabled),
+  .contact .mail:hover, .go-btn:hover {
+    background: var(--cta); opacity: .86; box-shadow: none;
+  }
+  .go-btn { padding: 10px 22px; }
+
+  /* ── 칩·토글: 전부 알약으로 통일 ── */
+  .market-toggle button, .qp, .preset, .tabs button, .tf-toggle button, .ma-chip, .m-score {
+    border-radius: 999px;
+  }
+  .market-toggle button.active, .tabs button.active, .tf-toggle button.active {
+    background: var(--cta); color: var(--cta-text); border-color: var(--cta);
+  }
+  .qp:hover, .preset:hover { border-color: var(--text); }
+
+  /* ── 스탯: 숫자를 주인공으로 ── */
+  .stat { border-radius: 18px; padding: 18px 20px; border-color: var(--border); }
+  .stat .k { font-size: 30px; letter-spacing: -.035em; }
+  .stat .k .u { color: var(--brand); }
+  .stat .l {
+    font-size: 11px; letter-spacing: .04em; margin-top: 4px; color: var(--muted);
+  }
+
+  /* ── 설명 블록: 여백을 넉넉히 ── */
+  .howto, .basis, .ma-method, .method, .note, .refs, .pattern-desc {
+    border-radius: 20px; border-color: var(--border);
+  }
+  .howto { padding: 30px 32px 24px; }
+  .howto-title { font-size: 20px; }
+  .step .t { letter-spacing: -.015em; }
+  .step .n { border-radius: 12px; }
+
+  /* ── 결과 카드 ── */
+  .m-card, .reco-card, .p-card {
+    border-radius: 18px; border-color: var(--border);
+    transition: border-color .18s, transform .18s;
+  }
+  .m-card:hover, .p-card:hover { border-color: var(--text); box-shadow: none; }
+  .p-card.active { border-color: var(--text); }
+  .m-name { letter-spacing: -.02em; }
+  .m-meter { border-radius: 999px; overflow: hidden; }
+  .m-meter > span { background: var(--brand); }
+  /* 저항 카드의 막대까지 초록이면 방향을 잘못 읽게 된다 — 방향색을 따른다 */
+  .m-card.side-resistance .m-meter > span { background: var(--down); }
+
+  /* ── 표: 선을 줄이고 숫자 정렬 ── */
+  table { border-collapse: collapse; }
+  th {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border);
+  }
+  td { border-bottom: 1px solid var(--hairline); }
+
+  /* ── 입력 ── */
+  input, select {
+    border-radius: 12px; border-color: var(--border);
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--text); outline: none; }
+
+  /* ── 접근성: 또렷한 포커스 링 ── */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  /* ── 푸터: 조용하게 ── */
+  /* 본문급 작은 글씨라 --faint(라이트 모드 3.4:1)는 대비 미달 — --muted 사용 */
+  footer { border-top: 1px solid var(--hairline); color: var(--muted); }
+  .f-nav a { border-radius: 999px; }
+
+  /* ── 정보 박스: 파란 '알림' 느낌을 걷어내고 중립 패널로 ──
+     설명은 경고가 아니라 읽을거리다. 배경·글자를 본문 색으로 되돌리고
+     강조(굵은 글씨)에만 그린을 남긴다. */
+  .intro, .pattern-desc, .method {
+    background: var(--panel2); border: 1px solid var(--hairline);
+    color: var(--text);
+  }
+  .intro p, .pattern-desc, .pattern-desc p, .method { color: var(--text); }
+  .intro .sub2, .pattern-desc .src, .method .src { color: var(--muted); }
+  .pattern-desc b, .intro b, .method b { color: var(--accent); }
+
+  /* ── 헤더 내비: 데스크톱은 테두리 없는 '글자 링크' ──
+     칩 다섯 개는 폭을 너무 먹어 제목·부제를 두 줄로 밀어냈다. 담백한 텍스트
+     내비가 공간도 아끼고 상단이 훨씬 조용해진다. (모바일은 탭 영역이
+     필요하므로 기존 칩 모양 유지) */
+  @media (min-width: 761px) {
+    /* 3열 그리드를 '내용 크기'로 재배분 — 1fr 대칭이면 좁은 브랜드 쪽에 여백이
+       남는데도 내비가 두 줄로 접혔다(브랜드 268px vs 내비 필요 ~560px).
+       가운데 칸은 여전히 토글 전용이라 좌우와 절대 겹치지 않는다. */
+    .header-inner { grid-template-columns: auto minmax(56px, 1fr) auto; }
+    .header-inner > :nth-child(2) { justify-self: center; }
+    .top-nav { gap: 2px; }
+    .top-nav a, .nav-link {
+      border-color: transparent; background: transparent;
+      color: var(--muted); font-size: 13px; padding: 6px 10px;
+    }
+    .top-nav a:hover, .nav-link:hover {
+      color: var(--text); border-color: transparent; background: var(--panel2);
+    }
+  }
+  .header-inner .sub { font-size: 11.5px; }
+  /* 좁은 데스크톱(761~1099px)에서는 부제를 접는다 — 제목·내비·토글이 먼저다.
+     (부제를 남기면 두세 줄로 접히며 헤더가 뚱뚱해지고 내비가 밀린다) */
+  @media (min-width: 761px) and (max-width: 1279px) {
+    .header-inner .sub { display: none; }
+  }
+  /* 작은 태블릿(761~900px): 브랜드 + 내비 6개 + 토글이 한 줄에 들어갈 수 없다.
+     억지로 욱여넣어 겹치게 두지 말고, 모바일처럼 토글을 오른쪽 위로 빼고
+     내비를 아래 줄 전체 폭으로 내린다. */
+  @media (min-width: 761px) and (max-width: 900px) {
+    .header-inner {
+      position: relative; grid-template-columns: 1fr; padding-right: 112px; row-gap: 8px;
+    }
+    .header-inner > .mid-toggles { position: absolute; right: 12px; top: 9px; justify-self: end; }
+    .header-inner > :last-child { justify-self: start; }
+  }
+
+  /* ── 히어로 강조어: 세 가지 색 그라데이션 대신 한 가지 확신의 색 ── */
+  .hero h2 .em {
+    background: none; -webkit-background-clip: border-box; background-clip: border-box;
+    color: var(--accent);
+  }
+
+  /* ── 폰(≤640px): 페이지 고유의 모바일 튜닝을 이 레이어가 덮지 않게 ──
+     이 레이어는 파일 맨 끝이라 같은 특이도면 항상 이긴다. 그래서 위쪽
+     무조건부 규칙(.hero/.stat/.tool-card …)이 페이지의 @media 640px 값을
+     되돌려, 전체폭 CTA 버튼 같은 모바일 배려가 사라졌었다. 다시 명시한다. */
+  @media (max-width: 640px) {
+    .hero { padding: 34px 0 26px; }
+    .hero h2 { font-size: 30px; line-height: 1.16; letter-spacing: -.03em; }
+    .hero p { font-size: 14.5px; }
+    .eyebrow { font-size: 9.5px; letter-spacing: .12em; padding: 5px 12px; }
+    .stat { padding: 14px 15px; }
+    .stat .k { font-size: 22px; }
+    .tool-card { padding: 22px 20px 20px; border-radius: 18px; gap: 11px; }
+    .tool-card h3 { font-size: 19px; }
+    /* 엄지로 누르기 좋은 전체폭 버튼 (페이지 원래 의도) */
+    .tool-card .go { width: 100%; text-align: center; padding: 13px 20px; }
+  }
+
+  /* ── 한/영 버튼: 아이콘 토글보다 글자가 작으니 색은 또렷하게 ── */
+  .lang-toggle { color: var(--text); }
+
+  /* ── 모바일: 히어로 여백만 줄인다 (나머지 리듬은 유지) ── */
+  @media (max-width: 760px) {
+    /* 부제는 접는다 — 오른쪽 위 토글 두 개가 자리를 쓰면서 두세 줄로 접혀
+       헤더만 길어졌다. 제목이 이미 페이지를 설명한다. */
+    .header-inner .sub { display: none; }
+    .hero { padding: 56px 0 36px; }
+  }
+  /* 작은 폰(≤420px): 토글 두 개가 예약한 108px 때문에 제목이 두 줄로 접히며
+     헤더가 170~220px 까지 부풀었다(작은 화면의 4분의 1). 버튼을 조금 줄이고
+     예약폭을 88px 로 낮춰 제목이 한 줄에 들어가게 한다. */
+  @media (max-width: 420px) {
+    .header-inner { padding-right: 88px; }
+    .theme-toggle { width: 34px; height: 27px; }
+    .theme-toggle.lang-toggle { width: auto; padding: 0 7px; font-size: 11px; right: 52px; }
+    .header-inner h1 { font-size: 15px; }
+    /* 접속자 배지는 장식이라 제일 먼저 양보한다 — 이게 제목 옆에서 90px 를
+       가져가는 바람에 긴 제목(오늘의 지지선 터치 등)이 두 줄로 접혔다.
+       presence.js 가 인라인 display 를 켜므로 !important 가 필요하다. */
+    .presence { display: none !important; }
+    .hero p { font-size: 15.5px; }
+    .tool-card { padding: 26px 22px 22px; }
+    .howto { padding: 24px 20px 18px; }
+    .stat .k { font-size: 26px; }
+  }
+</style>
+<script src="/static/theme.js"></script>
+<script src="/static/i18n.js"></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand-box">
+      <span class="brand" aria-label="주식 레이더"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg></span>
+      <div>
+      <h1>주식 레이더</h1>
+      <p class="sub">데이터로 보는 기술적 분석</p>
+      </div>
+      <span class="presence" id="presenceBadge" title="지금 접속 중인 방문자 수" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;"><span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex:none;"></span><b id="presenceCount" style="color:var(--text);font-weight:600;">·</b>명 접속 중</span>
+    </div>
+    <span class="mid-toggles"><button id="langToggle" class="theme-toggle lang-toggle" type="button" aria-label="View in English">EN</button><button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button></span>
+    <nav class="top-nav" aria-label="도구 바로가기">
+      
+      <a href="/ma">📈 이평선 분석</a>
+      <a href="/patterns">🔍 패턴 스크리너</a>
+      <a href="/touches">🚨 오늘의 터치</a><a href="/lines">📐 내 이평선</a><a href="/about">🏢 소개</a>
+    </nav>
+  </div>
+  <div class="ticker-wrap" id="tickerWrap" style="display:none">
+    <div class="ticker" id="tickerBar" aria-label="주요 지수 시세"></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <svg class="hero-bg" viewBox="0 0 800 260" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 205 L60 190 L120 198 L180 165 L240 176 L300 138 L360 152 L420 112 L480 126 L540 88 L600 100 L660 62 L720 74 L800 34"
+            fill="none" stroke="var(--accent)" stroke-width="2" opacity="0.16"/>
+      <path d="M0 205 L60 190 L120 198 L180 165 L240 176 L300 138 L360 152 L420 112 L480 126 L540 88 L600 100 L660 62 L720 74 L800 34 L800 260 L0 260 Z"
+            fill="var(--accent)" opacity="0.045"/>
+    </svg>
+    <div class="eyebrow"><span class="live">●</span>&nbsp; DATA-DRIVEN TECHNICAL ANALYSIS</div>
+    <h2>감이 아니라 <span class="em">데이터</span>로 확인하세요</h2>
+    <p>모든 판단 기준을 백테스트와 학술 문헌에 근거해, 출처와 함께 보여드립니다.</p>
+  </section>
+
+  <div class="tools">
+    <a class="tool-card" href="/ma">
+      <span class="icon">📈</span>
+      <h3>이평선 레이더</h3>
+      <p class="desc">종목을 검색하면 일봉·주봉·월봉에서 <b>실제로 지지/저항 역할을 해온 이동평균선</b>을
+        백테스트로 찾아 순위를 매기고, 차트 위에 지지·저항·돌파 사건을 표시해 드립니다.</p>
+      <ul>
+        <li>국내·미국 종목 검색 + 대표 종목 원클릭 분석</li>
+        <li>기간별(일·주·월봉) 추천 이평선 2~3개와 성공률</li>
+        <li>차트 마커로 과거 지지·저항·돌파 사건 한눈에</li>
+      </ul>
+      <span class="go">분석하러 가기 →</span>
+    </a>
+
+    <a class="tool-card" href="/patterns">
+      <span class="icon">🔍</span>
+      <h3>차트 패턴 스크리너</h3>
+      <p class="desc">와인스타인 초기 2단계 · 삼각수렴 · 헤드앤숄더 · 컵앤핸들 —
+        <b>교과서 패턴의 기하학적 정의로 전 종목을 자동 스캔</b>해 지금 그 모양을 만들고 있는 종목을 찾아드립니다.</p>
+      <ul>
+        <li>국내(거래대금 상위 300) · 미국(S&amp;P500) 유니버스</li>
+        <li>연구 문헌 기반 매칭 기준 + 이탈 시 자동 탈락</li>
+        <li>매칭 근거를 수치로 설명 · 정석 부합도 순 정렬</li>
+      </ul>
+      <span class="go">스캔 보러 가기 →</span>
+    </a>
+
+    <a class="tool-card" href="/touches">
+      <span class="icon">🚨</span>
+      <h3>오늘의 지지선 터치 <span style="font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;vertical-align:3px;background:var(--panel2);">회원 전용 · 무료</span></h3>
+      <p class="desc">두 도구를 거꾸로 뒤집은 데일리 스크리너 — <b>백테스트로 검증된 지지 이평선에
+        오늘 가격이 닿아 있는 종목</b>만 골라 매일 새로 보여드립니다.</p>
+      <ul>
+        <li>종목마다 3년 백테스트로 '믿을 만한 선'부터 검증</li>
+        <li>오늘 저가가 허용 밴드(max(0.5×ATR, 0.15%))에 닿은 종목만</li>
+        <li>선의 신뢰 점수 순 정렬 · 매일 달라지는 목록</li>
+      </ul>
+      <span class="go">오늘 터치 보기 →</span>
+    </a>
+
+    <a class="tool-card" href="/lines">
+      <span class="icon">📐</span>
+      <h3>내 이평선 스크리너 <span style="font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--hairline);border-radius:999px;padding:2px 9px;vertical-align:3px;background:var(--panel2);">회원 전용 · 무료</span></h3>
+      <p class="desc">원하는 이평선(예: 50일선)을 입력하면 <b>그 선의 지지를 받는 종목과
+        저항을 받는 종목</b>을 나눠서 보여드립니다.</p>
+      <ul>
+        <li>기간 5~250일 자유 입력 (20·50·60·120·200 프리셋)</li>
+        <li>지지/저항 판정 기준 5가지를 화면에 전부 공개</li>
+        <li>3년 백테스트 성공률(Wilson 하한) 순 정렬</li>
+      </ul>
+      <span class="go">내 선으로 찾기 →</span>
+    </a>
+  </div>
+
+  <div class="stat-strip" aria-label="핵심 수치">
+    <div class="stat"><div class="k">770<span class="u">+</span></div><div class="l">스캔 유니버스 종목 (KR·US)</div></div>
+    <div class="stat"><div class="k">3<span class="u">년+</span></div><div class="l">종목당 백테스트 기간</div></div>
+    <div class="stat"><div class="k">7<span class="u">편</span></div><div class="l">기준이 근거한 학술·고전 문헌</div></div>
+    <div class="stat"><div class="k">1,050<span class="u">봉</span></div><div class="l">종목당 분석 시세 데이터</div></div>
+  </div>
+
+  <section class="howto" aria-label="이용 방법">
+    <details class="fold">
+    <summary><h3 class="howto-title" style="margin:0">처음이신가요? <span class="em">이렇게 쓰면 됩니다</span></h3></summary>
+    <div style="margin-top:14px">
+    <ol class="steps">
+      <li class="step">
+        <span class="n">1</span>
+        <div>
+          <div class="t">궁금한 종목은 <a href="/ma">이평선 분석</a>에 검색</div>
+          <p class="d">남들 다 보는 20일·60일선이 내 종목에는 안 맞을 수 있어요 — 그래서
+            <b>그 종목에서 실제로 통해온 선</b>을 백테스트로 찾아 성공률과 함께 보여드립니다.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="n">2</span>
+        <div>
+          <div class="t">볼 종목이 없다면 <a href="/patterns">패턴 스크리너</a></div>
+          <p class="d">국내·미국 770여 종목을 자동으로 훑어, 교과서 차트 패턴을
+            만들고 있는 종목만 <b>정석 부합도 순</b>으로 골라드립니다.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="n">3</span>
+        <div>
+          <div class="t">매일 아침엔 <a href="/touches">오늘의 터치</a> · <a href="/lines">내 이평선</a> 한 번</div>
+          <p class="d">검증된 지지선에 <b>오늘 가격이 닿은 종목</b>과, 내가 고른 N일선에서
+            <b>지지/저항 중인 종목</b>을 매일 새로 추려드립니다 (이메일 가입 10초, 무료).</p>
+        </div>
+      </li>
+    </ol>
+    <p class="howto-note">⚠️ 모두 <b>과거 데이터 통계</b>입니다 — 매수 신호가 아니라 '확인 도구'로
+      쓰세요. 모든 화면에 판단 기준과 출처를 적어 두며, 투자 판단과 결과는 본인 책임입니다.</p>
+    </div>
+    </details>
+  </section>
+
+  <section class="ma-method" aria-label="이동평균선 매매법 소개">
+    <details class="fold">
+    <summary><h3 class="howto-title" style="margin:0">이동평균선 매매법이란? <span class="em">바쁜 사람에게 잘 맞는 이유</span></h3></summary>
+    <div style="margin-top:14px">
+    <div class="mm-grid">
+      <div class="mm-what">
+        <p><b>이동평균선(이평선)</b>은 최근 N일 종가의 평균을 이은 선입니다. 이평선 매매법은 이 선을
+          기준선으로 삼는 <b>추세 추종</b> 기법이에요 — 가격이 <b>선 위</b>에 있고 선이 우상향이면
+          "추세가 살아있다"고 보고 보유하고, 종가가 <b>선 아래로 확정 이탈</b>하면 "추세가 꺾였다"고
+          보고 정리합니다. 판단 기준이 차트에 그대로 그려져 있으니, 복잡한 재무 분석 없이도
+          규칙대로만 움직이면 됩니다.</p>
+        <p class="mm-caution">⚠️ 만능은 아닙니다 — 뚜렷한 추세가 없는 횡보장에서는 선을 자주
+          넘나들며 속임수 신호(whipsaw)가 잦아지고, 과거에 통한 선이 앞으로도 통한다는 보장은
+          없습니다. 그래서 이 사이트의 모든 화면은 근거 수치와 출처를 함께 보여드립니다.</p>
+      </div>
+      <ul class="mm-why">
+        <li><b>하루 한 번이면 충분</b> — 일봉·주봉 기준이라 장중 시세를 계속 볼 필요가 없습니다.
+          와인스타인은 30주선 기준으로 <i>일주일에 한 번</i> 점검하는 매매를 권했습니다.
+          퇴근 후 10분이면 됩니다.</li>
+        <li><b>감정이 낄 틈이 적다</b> — "선 위면 보유, 확정 이탈이면 정리"처럼 규칙이 명확해,
+          급등·급락에 휩쓸린 즉흥 판단을 줄여줍니다.</li>
+        <li><b>학술적으로 검토된 몇 안 되는 기법</b> — Brock·Lakonishok·LeBaron(1992,
+          <i>Journal of Finance</i>)이 이동평균 규칙의 예측력을 보고했고, 후속 연구(Park·Irwin
+          2007)는 거래비용·시기에 따른 한계도 지적했습니다. 장점과 한계가 모두 연구된 기법입니다.</li>
+      </ul>
+    </div>
+    <p class="mm-bridge">남는 문제는 하나 — <b>"어떤 선을 써야 하나?"</b> 20일선이 잘 맞는 종목도,
+      60일선·120일선이 맞는 종목도 있습니다. 그걸 종목마다 백테스트로 찾아주는 것이
+      <a href="/ma">이평선 레이더</a>이고, 검증된 지지선에 오늘 가격이 닿은 종목을 매일 골라주는 것이
+      <a href="/touches">오늘의 지지선 터치</a>입니다.</p>
+    </div>
+    </details>
+  </section>
+
+
+  <div class="basis">
+    <details class="fold">
+    <summary><b>📚 근거 문헌</b></summary>
+    <div style="margin-top:12px">
+    <b>근거 있는 기준</b> — 모든 도구의 판단 기준은 Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>),
+    Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil, Weinstein (1988) 등
+    학술 연구·고전 문헌에 근거합니다. 정식 출처 목록은 <a href="/patterns">패턴 스크리너 페이지 하단</a>에 있습니다.
+    이 사이트는 <a href="/about"><b>원토피아</b></a>에서 만들었습니다 — 협업 문의도 그곳에서 받습니다.
+    </div>
+    </details>
+  </div>
+
+  <footer>
+    <nav class="f-nav" aria-label="사이트 링크">
+      <a href="/">홈</a><a href="/ma">📈 이평선 분석</a><a href="/patterns">🔍 패턴 스크리너</a><a href="/touches">🚨 오늘의 터치</a><a href="/lines">📐 내 이평선</a><a href="/about">🏢 원토피아 소개</a><a href="/links">🔗 링크 모음</a><a href="/privacy">🔒 개인정보처리방침</a>
+    </nav>
+    <p class="strong" style="margin:0">참고용 데이터 시각화입니다.</p>
+    <p style="margin:2px 0 0">본 사이트는 과거 데이터 통계이며 매수 추천·투자 권유가 아닙니다. 모든 투자 결정과 결과는 본인 책임입니다.</p>
+  </footer>
+</div>
+<script src="/static/ticker.js"></script>
+<script src="/static/presence.js"></script>
+<script src="/static/mfold.js"></script>
+</body>
+</html>

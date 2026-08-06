@@ -1,0 +1,21 @@
+# API 키가 들어가는 실제 설정 파일은 커밋 금지 (config.example.json 만 커밋)
+config.json
+
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.csv
+
+# 회원 인증 SQLite DB(런타임 데이터) — 커밋 금지
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.db
+
+# 시크릿 파일은 어떤 형태든 커밋 금지
+*_secret.*
+*.secret
+# 환경변수 파일(DATABASE_URL 등) — 절대 커밋 금지 (예시 템플릿만 허용)
+.env
+.env.*
+!.env.example

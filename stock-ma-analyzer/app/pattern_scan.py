@@ -1,0 +1,601 @@
+"""패턴 스크리너: 종목 유니버스를 훑어 패턴별 상위 매칭을 만든다.
+
+유니버스 선정 근거 (관련 논문 기반 — README 참고):
+- 국내: 일평균 거래대금 상위 300 (유동성 확보; Park·Irwin 의 거래비용 경고)
+  에서 시가총액 상위 30(초대형주) 제외 — MA/패턴 효과는 고변동·정보
+  불확실성 높은 종목에서 강함 (Han·Yang·Zhou 2013, Lo 외 2000)
+- 미국: S&P500 구성종목(유동성 검증된 풀)에서 메가캡 제외
+- 유니버스는 스캔 때마다 최신 상장목록으로 다시 뽑아 시장 변화를 따라감
+
+스캔은 수십 초~수 분이 걸릴 수 있으므로 백그라운드 태스크로 돌고, 완주한
+결과는 다음 아침 갱신 시각까지 전 사용자가 공유한다(하루 한 번 갱신).
+진행률을 노출해 프런트가 폴링할 수 있게 한다.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import random
+import time
+import weakref
+from typing import Any, Awaitable, Callable
+
+import numpy as np
+import pandas as pd
+
+from .patterns import PATTERN_KEYS, run_all
+from .providers.base import Provider, SymbolInfo
+from .providers.cache import NegativeCacheSkip
+
+logger = logging.getLogger("ma-analyzer")
+
+RESULT_TTL_SEC = 1800.0     # 스캔 결과 공유 시간 (부분/저커버리지 결과의 갱신 주기)
+LOW_COVERAGE_TTL_SEC = 300.0  # 절반도 못 훑었으면(업스트림 장애 등) 짧게 재시도
+# 하루 한 번(아침) 갱신: 완주(양호 커버리지)한 결과는 이 시각(KST)까지 그대로
+# 고정된다 — 일봉 기준 스크리너라 장중에 마지막(미확정) 봉이 움직이며 목록이
+# 흔들리는 것을 막고, 매일 아침 직전 거래일 종가 기준으로 한 번만 새로 뽑는다.
+# 기본 06:30 KST = 미국 정규장 마감(겨울 06:00 / 여름 05:00 KST)의 30분~1시간
+# 30분 뒤라 미국 종가가 반영되고, 국내 장(09:00)은 아직 열리기 전이다.
+# 환경변수 DAILY_REFRESH_KST("HH:MM")로 조정 가능.
+def _parse_refresh_kst(raw: str) -> int:
+    """"HH:MM" → 자정 이후 분(minute-of-day). 형식이 이상하면 06:30."""
+    try:
+        h, m = raw.strip().split(":")
+        mod = int(h) * 60 + int(m)
+        if 0 <= mod < 24 * 60:
+            return mod
+    except (ValueError, AttributeError):
+        pass
+    return 6 * 60 + 30
+
+
+DAILY_REFRESH_MIN_KST = _parse_refresh_kst(os.getenv("DAILY_REFRESH_KST", "06:30"))
+_KST_OFFSET_SEC = 9 * 3600  # KST = UTC+9 (서머타임 없음)
+
+
+def _next_daily_boundary(after_epoch: float) -> float:
+    """after_epoch(초, UTC epoch) 이후 처음 오는 '아침 갱신 시각'의 epoch.
+
+    결과가 이 시각 전에 만들어졌으면 그 시각에 stale 이 되어 재스캔이 시작된다.
+    KST 로 환산해 날짜 경계를 잡으므로 서버 타임존과 무관하다."""
+    kst = after_epoch + _KST_OFFSET_SEC
+    day_start = kst - (kst % 86400)                    # 그날 00:00 KST
+    boundary = day_start + DAILY_REFRESH_MIN_KST * 60
+    if boundary <= kst:                                # 이미 지났으면 다음 날
+        boundary += 86400
+    return boundary - _KST_OFFSET_SEC                  # 다시 UTC epoch
+
+
+# 부분(partial) 결과는 이 쿨다운만 지나면 바로 백그라운드 재스캔을 시작한다 —
+# TTL(5분) 내내 '일부만 스캔' 화면이 얼어붙지 않고, 따뜻한 캐시 위에서 다음
+# 스캔이 이어받아 점점 채워진다. 쿨다운은 소프트 예산(150초)의 절반 미만으로
+# 잡지 않는다 — 업스트림이 계속 느릴 때 스캐너가 거의 쉬지 않고 도는(약한
+# CPU 를 독점하는) 것을 막기 위함. publish 의 커버리지 가드가 재스캔 중에도
+# 기존 결과를 유지하므로 사용자는 쿨다운을 체감하지 않는다.
+PARTIAL_RESCAN_COOLDOWN_SEC = 60.0
+ERROR_COOLDOWN_SEC = 60.0   # 스캔 실패 후 재시도 대기 (실패 폭주 방지)
+SCAN_TIMEOUT_SEC = 900.0    # 워치독: 스캔이 이보다 오래 걸리면 행(hang)으로 보고 중단
+# 소프트 시간예산: 이 시간을 넘기면 새 종목 조회를 멈추고 '지금까지 모은
+# 결과'로 마무리한다. 무료 소스가 느리거나(미국 야후 페이싱) 일부가 hang 에
+# 걸려도 스캔이 워치독(900초)까지 갈아버리며 취소→재시도를 반복(=무한 로딩)
+# 하지 않게 하는 핵심 장치. 부분 결과는 낮은 커버리지 → 짧은 TTL 로 백그라운드
+# 재스캔이 이어받아(따뜻한 캐시라 빠름) 점점 채워진다.
+SCAN_SOFT_BUDGET_SEC = 150.0
+# 스캔이 도는 동안 이 간격마다 '지금까지 모은 결과'를 부분(partial)으로 공개한다.
+# 첫 결과가 몇 초 만에 뜨고 스캔이 진행되며 점점 채워져, 다 끝날 때까지
+# 기다리는 체감 대기시간을 없앤다 (프런트는 partial 이면 5초마다 폴링).
+PUBLISH_INTERVAL_SEC = 6.0
+# 종목당 일봉 수 — 터치 스캐너와 같은 값으로 맞춰, 두 스캐너가 시세 캐시의
+# 같은 페치 한 번을 공유하게 한다 (패턴 자체는 뒤쪽 500봉만 사용)
+FETCH_BARS = 1050
+# 동시 페치 수. 페치는 I/O 바운드(네트워크 대기 중 GIL 해제)라 코어가 약한
+# 무료 인스턴스에서도 동시성을 올리면 스캔 전체 시간이 크게 준다. 미국이
+# Stooq(커넥션 풀링·요청제한 관대)로 바뀌어 상향 여지가 커졌다. 소프트 예산·
+# 네거티브 캐시·조기중단이 있어 소스가 느려져도 무한로딩이 아니라 부분결과로
+# 안전하게 끝난다. 실효 동시성은 _fetch_pool(스레드 수)과 함께 정해지므로
+# 둘을 같이 올려야 효과가 난다 (세마포어 ≤ 스레드풀).
+CONCURRENCY = 14
+# 조기 실패 감지: 초반 이 수만큼 훑었는데 성공이 0이면 데이터 소스 전면
+# 장애(요청 제한 등)로 보고, 수백 종목을 헛되이 훑는 대신 즉시 실패시킨다
+# — 사용자에게 명확한 오류가 빨리 보이고, 쿨다운 후 자동 재시도된다.
+# CONCURRENCY(14)보다 크게 잡아, 첫 동시 조회 한 물결이 우연히 다 실패해도
+# 곧바로 전면장애로 오판하지 않게 한다(한 물결 + 여유).
+FAIL_FAST_PROBE = 16
+TOP_N = 8                   # 패턴별 보관 상위 개수
+CHART_BARS = 200            # 결과 카드에 실어줄 봉 수
+
+KR_TOP_LIQUIDITY = 300      # 국내: 거래대금 상위 N
+KR_EXCLUDE_MEGA = 30        # 국내: 시가총액 상위 N 제외 (초대형주)
+INDEX_SYMBOL = {"kr": "KS11", "us": "US500"}  # 상대강도(RS) 비교 지수
+
+# 미국 메가캡 (S&P500 에서 제외할 초대형주 — Han·Yang·Zhou 기준 효과 최약 구간)
+MEGA_US = frozenset({
+    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "TSLA", "AVGO",
+    "BRK.B", "BRK-B", "LLY", "JPM", "WMT", "V", "UNH", "XOM", "MA", "ORCL",
+    "PG", "COST", "JNJ", "HD", "NFLX", "BAC", "ABBV", "CRM", "AMD", "KO",
+})
+
+# S&P500 목록을 못 받아올 때의 최소 폴백 (유동성 높은 비-메가캡 위주)
+US_FALLBACK = [
+    ("UBER", "Uber Technologies", "US"), ("PLTR", "Palantir", "US"),
+    ("SHOP", "Shopify", "US"), ("SQ", "Block", "US"), ("SNAP", "Snap", "US"),
+    ("PYPL", "PayPal", "US"), ("INTC", "Intel", "US"), ("MU", "Micron", "US"),
+    ("DIS", "Walt Disney", "US"), ("NKE", "Nike", "US"), ("SBUX", "Starbucks", "US"),
+    ("BA", "Boeing", "US"), ("GE", "GE Aerospace", "US"), ("F", "Ford", "US"),
+    ("GM", "General Motors", "US"), ("DAL", "Delta Air Lines", "US"),
+    ("MRNA", "Moderna", "US"), ("PFE", "Pfizer", "US"), ("T", "AT&T", "US"),
+    ("VZ", "Verizon", "US"), ("CSCO", "Cisco", "US"), ("QCOM", "Qualcomm", "US"),
+    ("TXN", "Texas Instruments", "US"), ("AMAT", "Applied Materials", "US"),
+    ("LRCX", "Lam Research", "US"), ("ADBE", "Adobe", "US"),
+    ("NOW", "ServiceNow", "US"), ("MDB", "MongoDB", "US"),
+]
+
+UniverseFn = Callable[[], Awaitable[list[SymbolInfo]]]
+
+# ── 확정 봉만 사용: 스캔이 하루 중 언제 돌아도 같은 결과가 나오게 ──
+# 장 마감 + 여유 시각(분 단위, 현지 시간). 마지막 봉의 날짜가 '현지 오늘'인데
+# 아직 이 시각 전이면 진행 중(미확정) 봉이므로 떼고 계산한다 — 예열(06:30)이
+# 실패한 날 장중 첫 방문자가 킥한 스캔도 예열과 똑같이 '직전 확정 종가 기준'
+# 목록을 만들고, 그게 하루 고정되므로 기준이 날마다 달라지지 않는다.
+# 국내는 수능일(연 1회) 16:30 마감까지 있어 '가장 늦은 마감'을 기준으로 잡는다
+# — 아침(06:30) 정규 스캔에는 영향이 없고, 드문 장중 재계산이 미확정 봉을
+# 확정으로 오인해 하루 고정되는 사고만 막는다 (보수적 방향의 오차만 허용).
+_KR_SESSION_END_MIN = 16 * 60 + 40   # 16:30(수능일 마감) + 10분 여유 (KST)
+_US_SESSION_END_MIN = 16 * 60 + 10   # 16:00 마감 + 10분 여유 (ET)
+
+
+def _now_market_minutes(market: str, now_epoch: float) -> tuple[Any, int]:
+    """(현지 오늘 날짜, 자정 이후 분). US 는 zoneinfo 로 서머타임 반영."""
+    from datetime import datetime, timedelta, timezone
+
+    if market == "us":
+        try:
+            from zoneinfo import ZoneInfo
+            local = datetime.fromtimestamp(now_epoch, ZoneInfo("America/New_York"))
+        except Exception:  # noqa: BLE001 — tzdata 없으면 EST(UTC-5) 근사
+            local = datetime.fromtimestamp(now_epoch, timezone(timedelta(hours=-5)))
+    else:
+        local = datetime.fromtimestamp(now_epoch, timezone(timedelta(hours=9)))
+    return local.date(), local.hour * 60 + local.minute
+
+
+def _strip_forming_bar(df: pd.DataFrame, market: str,
+                       now_epoch: float | None = None) -> pd.DataFrame:
+    """마지막 일봉이 '현지 오늘 + 장 마감 전'이면 진행 중인 봉이므로 떼어낸다."""
+    if df is None or len(df) == 0:
+        return df
+    now_epoch = time.time() if now_epoch is None else now_epoch
+    today, minute = _now_market_minutes(market, now_epoch)
+    end_min = _US_SESSION_END_MIN if market == "us" else _KR_SESSION_END_MIN
+    try:
+        last_date = pd.Timestamp(df["date"].iloc[-1]).date()
+    except Exception:  # noqa: BLE001 — 날짜 파싱 불가 시 그대로 사용
+        return df
+    if last_date == today and minute < end_min:
+        return df.iloc[:-1]
+    return df
+
+
+def _unwrap(provider: Provider):
+    """CachingProvider 래퍼를 벗겨 원 공급자(listing 접근용)를 얻는다."""
+    return getattr(provider, "inner", provider)
+
+
+def make_universe_fn(provider: Provider, market: str, fallback: list[SymbolInfo]) -> UniverseFn:
+    """스캔 때마다 최신 목록으로 유니버스를 다시 뽑는 함수를 만든다."""
+
+    async def resolve() -> list[SymbolInfo]:
+        inner = _unwrap(provider)
+        if provider.name == "sample" or not hasattr(inner, "listing_frame"):
+            return fallback
+        try:
+            if market == "kr":
+                lf = await inner.listing_frame()
+                if lf is None or "amount" not in lf.columns or "marcap" not in lf.columns:
+                    return fallback
+                # 소스 데이터 방어: 중복 코드, NaN 시장명(JSON 직렬화 불가),
+                # 문자열이 섞인 숫자 컬럼이 와도 스캔이 죽지 않게 정리
+                df = lf.drop_duplicates(subset=["symbol"]).copy()
+                df["market"] = df["market"].fillna("").astype(str)
+                df["name"] = df["name"].fillna(df["symbol"]).astype(str)
+                df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+                df["marcap"] = pd.to_numeric(df["marcap"], errors="coerce")
+                df = df[~df["market"].str.upper().str.contains("KONEX", na=False)]
+                df = df.dropna(subset=["amount", "marcap"])
+                mega = set(df.nlargest(KR_EXCLUDE_MEGA, "marcap")["symbol"])
+                pool = df[~df["symbol"].isin(mega)].nlargest(KR_TOP_LIQUIDITY, "amount")
+                out = [SymbolInfo(str(r["symbol"]), r["name"], r["market"])
+                       for _, r in pool.iterrows()]
+                return out or fallback
+            # us
+            lst = await inner.us_listing()
+            if not lst:
+                return [SymbolInfo(*t) for t in US_FALLBACK]
+            return [SymbolInfo(s, n, sec or "US") for s, n, sec in lst
+                    if s.upper() not in MEGA_US] or [SymbolInfo(*t) for t in US_FALLBACK]
+        except Exception:
+            logger.exception("유니버스 선정 실패 (%s) — 폴백 사용", market)
+            return fallback if market == "kr" else [SymbolInfo(*t) for t in US_FALLBACK]
+
+    return resolve
+
+
+# 국내/미국 스캐너가 동시에 돌아도 업스트림 동시 요청 합계가 CONCURRENCY 를
+# 넘지 않도록 이벤트루프별로 하나의 세마포어를 공유한다.
+_fetch_sems: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _shared_fetch_sem() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _fetch_sems.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(CONCURRENCY)
+        _fetch_sems[loop] = sem
+    return sem
+
+
+class BaseScanner:
+    """백그라운드 유니버스 스캐너 공통 상태기계.
+
+    결과 TTL 공유 · 실패 시 쿨다운(재시작 폭주 방지) · 만료 결과 우선 제공
+    (stale-while-revalidate) 을 제공한다. 하위 클래스는 `_scan_inner` 에서
+    유니버스를 훑고 `_finish(results, ...)` 로 결과를 확정한다.
+    """
+
+    def __init__(self, provider: Provider, universe_fn: UniverseFn,
+                 market: str = "kr"):
+        self.provider = provider
+        self.universe_fn = universe_fn
+        self.market = market             # 확정 봉 판정(현지 장 마감)용
+        self._results: dict[str, Any] | None = None
+        self._generated = 0.0
+        self._ttl = RESULT_TTL_SEC
+        self._task: asyncio.Task | None = None
+        self._done = 0
+        self._total = 0
+        self._errors = 0
+        self._error: str | None = None   # 마지막 스캔 전체 실패 사유
+        self._error_ts = 0.0
+        self._scan_started = 0.0         # 워치독용: 현재 스캔 시작 시각
+        self._partial = False            # 시간예산으로 일부만 훑고 끝났는지
+        # 스캔 종료(성공/실패/취소 불문) 시각과 다음 시작까지의 최소 간격.
+        # '완주했지만 이전 커버리지에 못 미쳐 아무것도 갱신 못 한' 스캔은
+        # 오류도 아니고 결과 갱신도 아니어서 어떤 쿨다운에도 안 걸린다 —
+        # 이 휴지(rest) 하한이 없으면 그런 스캔이 쉼 없이 반복(churn)되며
+        # 업스트림과 CPU 를 계속 두들긴다. 미달 완주가 거듭되면 publish 가
+        # 간격을 지수적으로 늘리고, 정상 발행이 되면 기본값으로 되돌린다.
+        # None = "아직 한 번도 안 끝남". time.monotonic() 의 기준점은 임의라
+        # (컨테이너 재기동 직후엔 0에 가까울 수 있다) 0.0 을 시각으로 쓰면 부팅
+        # 직후 첫 스캔이 "방금 막 끝난 것"으로 오판돼 최대 _retry_wait 만큼
+        # 밀린다 — Render 콜드스타트마다 반복되는 창이라 None 으로 구분한다.
+        self._scan_ended: float | None = None
+        self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC
+        # 완주(양호 커버리지)한 결과인지 + 그 결과의 벽시계 생성 시각.
+        # 이런 결과는 다음 아침 갱신 시각까지 고정하고, 부분/저커버리지 결과만
+        # 짧은 TTL 로 계속 채운다.
+        self._daily_frozen = False
+        self._generated_wall = 0.0
+
+    def _served_expired(self) -> bool:
+        """서빙 중인 결과가 이미 아침 경계를 지났는가 (하루 고정 여부와 무관).
+
+        지났다면 publish 의 커버리지 고수위(no-shrink) 기준으로 삼지 않는다 —
+        상장폐지·데이터 소스 이탈 등으로 오늘의 최대 종목 수가 어제보다 1이라도
+        작아지면, 완주한 스캔이 영원히 버려지고 며칠 지난 목록이 계속 서빙되는
+        구멍을 막는다 (새 날에는 새 기준).
+
+        '하루 고정된 결과'로 한정하면 안 된다: 부분·저커버리지 결과는 애초에
+        고정되지 않으므로(_daily_frozen=False) 탈출구가 닫혀, 업스트림이 조금만
+        나빠져도 어제의 반쪽 목록이 고수위로 남아 이후 모든 스캔이 기각되는
+        영구 교착이 된다. _generated_wall 은 발행할 때마다 갱신되므로 부분
+        결과에도 그대로 성립한다."""
+        return (self._results is not None
+                and time.time() >= _next_daily_boundary(self._generated_wall))
+
+    def _fresh(self) -> bool:
+        if self._results is None:
+            return False
+        # 완주한 양호 결과: 다음 아침 갱신 시각까지 그대로 고정 (하루 한 번 갱신).
+        # 장중 마지막 봉 변동으로 목록이 흔들리지 않게 monotonic age 는 무시한다.
+        if self._daily_frozen:
+            return time.time() < _next_daily_boundary(self._generated_wall)
+        age = time.monotonic() - self._generated
+        # 부분 결과(시간예산 조기 마감)는 짧은 쿨다운까지만 신선으로 취급 —
+        # 그 뒤엔 stale 로 판정돼 재스캔이 시작되고, 사용자는 기존 부분 결과를
+        # (refreshing 표시와 함께) 계속 보면서 목록이 점점 채워진다.
+        # 플래그는 확정된 self._results 에서 읽는다 (_partial 은 스캔 시작 시
+        # 리셋되는 진행 중 상태라 여기서 쓰면 안 됨).
+        if self._results.get("partial") and age >= PARTIAL_RESCAN_COOLDOWN_SEC:
+            return False
+        return age < self._ttl
+
+    async def snapshot(self) -> dict[str, Any]:
+        """상태 조회 + 필요 시 스캔 시작.
+
+        - 결과가 만료돼도 남아 있으면 우선 그대로 내주고 뒤에서 재스캔
+          (stale-while-revalidate — 사용자는 기다리지 않음)
+        - 스캔 자체가 통째로 실패하면 잠깐(ERROR_COOLDOWN_SEC) 재시도를 멈춰
+          업스트림 장애 시 무한 재시작 폭주를 막는다
+        """
+        if self._fresh():
+            return {"status": "done", **self._results}
+        idle = self._task is None or self._task.done()
+        if not idle and time.monotonic() - self._scan_started > SCAN_TIMEOUT_SEC:
+            # 워치독: 업스트림 요청이 행(hang)에 걸리면 스캔이 영원히 '진행 중'에
+            # 갇힌다 — 끊고 실패 처리해 쿨다운 후 새로 시도하게 한다
+            self._task.cancel()
+            self._error = "스캔 시간 초과 (업스트림 응답 없음)"
+            self._error_ts = time.monotonic()
+            logger.warning("%s 워치독: %.0f초 초과로 스캔 중단",
+                           type(self).__name__, SCAN_TIMEOUT_SEC)
+            idle = True
+        cooling = (self._error is not None
+                   and time.monotonic() - self._error_ts < ERROR_COOLDOWN_SEC)
+        # 직전 스캔이 끝난 지 _retry_wait 이 지나기 전에는 새 스캔을 시작하지
+        # 않는다 — 어떤 경로로 끝났든 스캔 사이 최소 휴지를 보장하는 하한선.
+        # 아직 한 번도 안 끝났으면(None) 휴지 대상이 아니다.
+        resting = (self._scan_ended is not None
+                   and time.monotonic() - self._scan_ended < self._retry_wait)
+        if idle and not cooling and not resting:
+            self._done = 0
+            self._total = 0   # 유니버스 선정 동안 이전 스캔의 total 이 비치지 않게
+            self._errors = 0
+            self._partial = False
+            self._scan_started = time.monotonic()
+            self._task = asyncio.create_task(self._scan())
+            idle = False
+        if self._results is not None:
+            return {"status": "done", "refreshing": not idle, **self._results}
+        if idle:
+            if self._error is None:
+                # 실패한 적 없는데 휴지(resting)로 시작만 미뤄진 상태 — 맞춤선
+                # 스캐너가 퇴출됐다 재생성돼 이전 쿨다운을 승계한 직후가 여기다.
+                # '실패(None)' 같은 거짓 오류 대신 준비 중으로 답해 프런트가
+                # 짧은 간격으로 폴링하다 휴지가 끝나면 자연히 스캔을 시작한다.
+                # total 을 None 으로 보내 프런트가 '0/0 종목'이라는 멈춘 듯한
+                # 진행률 대신 '대상 선정 중'으로 표시하게 한다 (휴지는 최대 몇 분).
+                return {"status": "running", "done": 0, "total": None,
+                        "errors": 0, "waiting": True}
+            # 쿨다운 중 + 보여줄 과거 결과도 없음
+            return {"status": "error",
+                    "detail": f"스캔 실패 ({self._error}) — 잠시 후 자동으로 다시 시도합니다."}
+        return {"status": "running", "done": self._done,
+                "total": self._total, "errors": self._errors}
+
+    async def _scan(self) -> None:
+        try:
+            await self._scan_inner()
+            self._error = None
+        except Exception as exc:  # noqa: BLE001
+            self._error = str(exc) or exc.__class__.__name__
+            self._error_ts = time.monotonic()
+            logger.exception("%s 스캔 실패", type(self).__name__)
+        finally:
+            # CancelledError(워치독·셧다운) 포함 어떤 종료든 기록 — snapshot 의
+            # 휴지(resting) 판정이 이 시각을 기준으로 다음 시작을 늦춘다
+            self._scan_ended = time.monotonic()
+
+    def _finish(self, results: dict[str, Any], universe_n: int,
+                scanned_n: int, started: float) -> float:
+        """결과 확정 + 커버리지 기반 TTL 결정. 커버리지를 반환."""
+        results.update({"universe": universe_n, "scanned": scanned_n,
+                        "partial": self._partial,
+                        "elapsedSec": round(time.monotonic() - started, 1),
+                        # 스캔 고유 식별자 — 프런트가 '같은 결과인지'를 근사치
+                        # (elapsedSec 등) 대신 이 값으로 판별한다
+                        "generatedAt": round(time.time(), 3)})
+        coverage = scanned_n / universe_n if universe_n else 1.0
+        # 완주하고 커버리지가 충분한 '양호' 결과만 하루 고정 대상. 부분 결과·
+        # 저커버리지(업스트림 장애 등)는 짧은 TTL 로 곧 재스캔해 채운다 —
+        # 반쪽 목록을 24시간 얼려두지 않기 위함.
+        good = (not self._partial) and coverage >= 0.5
+        self._ttl = RESULT_TTL_SEC if good else LOW_COVERAGE_TTL_SEC
+        self._daily_frozen = good
+        self._results = results
+        self._generated = time.monotonic()
+        self._generated_wall = time.time()
+        return coverage
+
+    async def _scan_inner(self) -> None:
+        raise NotImplementedError
+
+
+class PatternScanner(BaseScanner):
+    def __init__(self, provider: Provider, universe_fn: UniverseFn,
+                 index_symbol: str | None = None, market: str = "kr"):
+        super().__init__(provider, universe_fn, market)
+        self.index_symbol = index_symbol
+
+    async def _scan_inner(self) -> None:
+        started = time.monotonic()
+        universe = await self.universe_fn()
+        self._total = len(universe)
+
+        # 상대강도(RS) 계산용 시장 지수 — 실패해도 스캔은 계속
+        index_close: np.ndarray | None = None
+        if self.index_symbol:
+            try:
+                idx_df = await self.provider.candles(self.index_symbol, "day", 300)
+                idx_df = _strip_forming_bar(idx_df, self.market)
+                index_close = idx_df["close"].to_numpy(float)
+            except Exception:
+                logger.info("지수(%s) 조회 실패 — RS 없이 스캔", self.index_symbol)
+
+        sem = _shared_fetch_sem()
+        # 종목별 {패턴키: (점수, 직렬화된 매칭 dict)} — 직렬화까지 워커 스레드에서
+        # 끝내 두므로 publish 는 정렬·슬라이스만 한다 (이벤트 루프 블로킹 제거,
+        # 원본 DataFrame 을 들고 있지 않아 스캔 중 메모리도 가볍다)
+        per_symbol: list[dict[str, tuple[float, dict[str, Any]]]] = []
+        abort = asyncio.Event()       # 전면 장애 조기중단 (→ 오류)
+        budget_hit = asyncio.Event()  # 소프트 시간예산 초과 (→ 부분결과 발행)
+        attempted = 0  # 실제 업스트림 조회 시도 수 (네거티브 캐시 스킵 제외)
+        last_publish = 0.0  # 0 으로 시작해 '첫 결과가 나오는 즉시' 한 번 공개
+
+        def publish(partial: bool, final: bool = False) -> None:
+            """지금까지 모은 per_symbol 로 결과를 만들어 공개 (동기 — 레이스 없음).
+
+            재스캔이 '이전 커버리지'에 도달하기 전에는 기존 결과를 대체하지
+            않는다 — 부분 결과 재스캔의 첫 발행이 사용자가 보던 목록을 1~2개로
+            줄였다가 다시 채우는 깜빡임을 막는 진짜 stale-while-revalidate.
+            (따뜻한 캐시 덕에 이전 범위는 보통 수 초 만에 따라잡는다)"""
+            prev = self._results.get("scanned", 0) if self._results is not None else 0
+            if final and self._served_expired():
+                prev = 0  # 새 날 — 어제 커버리지는 고수위 기준이 아니다
+            if len(per_symbol) < prev:
+                if final:
+                    # 최종 발행인데 이전 커버리지에 못 미침(업스트림 악화) —
+                    # 기존 결과를 유지하고, 다음 스캔까지의 휴지를 지수적으로
+                    # 늘린다. 이게 없으면 '완주→미달→아무 갱신 없음→즉시
+                    # 재스캔'이 쉼 없이 반복되며 업스트림을 계속 두들긴다.
+                    self._retry_wait = min(self._retry_wait * 2, RESULT_TTL_SEC)
+                return
+            self._partial = partial
+            if final:
+                self._retry_wait = PARTIAL_RESCAN_COOLDOWN_SEC  # 정상 발행 — 백오프 해제
+            self._finish(self._build_results(per_symbol), len(universe),
+                         len(per_symbol), started)
+
+        async def one(info: SymbolInfo):
+            nonlocal attempted, last_publish
+            if abort.is_set() or budget_hit.is_set():
+                return
+            async with sem:
+                if abort.is_set() or budget_hit.is_set():
+                    return
+                if time.monotonic() - started > SCAN_SOFT_BUDGET_SEC:
+                    budget_hit.set()  # 시간예산 초과 — 새 종목은 그만, 모은 것으로 마무리
+                    return
+                skipped = False
+                try:
+                    # 요청 사이 짧은 지터 — 업스트림(무료 시세) 레이트리밋 배려
+                    await asyncio.sleep(0.02 + random.random() * 0.08)
+                    df = await self.provider.candles(info.symbol, "day", FETCH_BARS,
+                                                     use_fail_cache=True)
+                    df = _strip_forming_bar(df, self.market)  # 확정 봉만
+                    if len(df) < 60:
+                        raise ValueError("데이터 부족")
+                    entry = await asyncio.to_thread(
+                        _detect_and_serialize, info, df, index_close)
+                    per_symbol.append(entry)
+                except NegativeCacheSkip:
+                    # 방금 실패해 건너뛴 종목 — '업스트림 장애' 신호가 아니므로
+                    # 조기중단 판정에서 제외하고, 뒤쪽 신선한 종목으로 진행한다
+                    skipped = True
+                    self._errors += 1
+                except Exception as exc:  # noqa: BLE001
+                    self._errors += 1
+                    logger.info("패턴 스캔 스킵 %s (%s)", info.symbol, exc)
+                finally:
+                    self._done += 1
+                    if not skipped:
+                        attempted += 1
+            # 실제로 시도한 종목이 FAIL_FAST_PROBE 개인데 성공이 0이면 업스트림
+            # 전면 장애로 보고 조기 중단 (캐시 스킵은 여기 포함되지 않으므로,
+            # 선두가 캐시된 실패여도 스캔이 신선한 종목까지 진행해 완주한다)
+            if attempted >= FAIL_FAST_PROBE and not per_symbol:
+                abort.set()
+            # 진행 중 결과를 주기적으로 공개 — 첫 결과가 빨리 뜨고 점점 채워진다.
+            # abort(전면 장애) 뒤 뒤늦게 성공한 스트래글러가 몇 %짜리 부분을
+            # 공개하지 않도록 abort 중이면 건너뛴다 (완주 후 raise 로 버려진다).
+            if (per_symbol and not abort.is_set()
+                    and time.monotonic() - last_publish > PUBLISH_INTERVAL_SEC):
+                last_publish = time.monotonic()
+                publish(partial=True)
+
+        await asyncio.gather(*(one(s) for s in universe))
+        if abort.is_set():
+            # 전면 장애 조기중단 — 중단 직전 스트래글러가 뒤늦게 성공했더라도
+            # 유니버스의 몇 %만 담긴 '완료'는 빈 목록보다 해로우므로 공개하지 않는다
+            raise RuntimeError(
+                "스캔 초반 종목 시세 조회가 모두 실패했습니다 "
+                "(데이터 소스 장애 또는 요청 제한)")
+        if not per_symbol:
+            # 시간예산 초과 등으로 성공이 하나도 없으면 보여줄 게 없다
+            raise RuntimeError(
+                "종목 시세를 하나도 가져오지 못했습니다 (데이터 소스 장애 또는 요청 제한)")
+        # 완주했든 시간예산으로 부분이든 최종 결과를 발행한다.
+        publish(partial=budget_hit.is_set(), final=True)
+        logger.info("패턴 스캔 완료: %d종목 / %.1fs / 오류 %d",
+                    len(per_symbol), self._results["elapsedSec"], self._errors)
+
+    def _build_results(self, per_symbol: list) -> dict[str, Any]:
+        """미리 직렬화된 종목별 매칭에서 패턴별 상위 TOP_N 만 골라낸다.
+
+        직렬화(비싼 부분)는 _detect_and_serialize 가 워커 스레드에서 이미
+        끝냈으므로, 여기는 정렬·슬라이스뿐이라 이벤트 루프에서 돌아도 싸다."""
+        results: dict[str, Any] = {"patterns": {}}
+        for key in PATTERN_KEYS:
+            matched = sorted((entry[key] for entry in per_symbol if key in entry),
+                             key=lambda t: t[0], reverse=True)
+            results["patterns"][key] = [d for _score, d in matched[:TOP_N]]
+        return results
+
+
+def _detect_and_serialize(info: SymbolInfo, df: pd.DataFrame,
+                          index_close) -> dict[str, tuple[float, dict[str, Any]]]:
+    """한 종목의 패턴 탐지 + 매칭분 직렬화 (워커 스레드 전용).
+
+    매 publish 때마다 이벤트 루프에서 전 매칭을 다시 직렬화하던 것을,
+    종목당 1회·스레드에서 끝내는 구조로 바꾼 것. 반환은 매칭된 패턴만 담은
+    {키: (점수, 직렬화 dict)} — 대부분의 종목은 빈 dict 라 메모리도 가볍다."""
+    hits = run_all(df, index_close)
+    chart = df.tail(CHART_BARS).reset_index(drop=True)
+    out: dict[str, tuple[float, dict[str, Any]]] = {}
+    for key in PATTERN_KEYS:
+        hit = hits.get(key)
+        if hit is not None and hit.matched:
+            out[key] = (float(hit.score), _serialize_match(info, hit, chart))
+    return out
+
+
+def _serialize_match(info: SymbolInfo, hit, df: pd.DataFrame) -> dict[str, Any]:
+    # 행 단위 .iloc 루프는 200봉×매칭수에서 이벤트 루프를 수백 ms 잡아먹는다 —
+    # 열 단위로 한 번에 뽑아(zip) 직렬화한다 (동일 출력, ~50배 빠름)
+    dates = df["date"].dt.strftime("%Y-%m-%d").tolist()
+    opens = df["open"].to_numpy(float).tolist()
+    highs = df["high"].to_numpy(float).tolist()
+    lows = df["low"].to_numpy(float).tolist()
+    closes = df["close"].to_numpy(float).tolist()
+    candles = [
+        {"time": t, "open": o, "high": h, "low": lo, "close": c}
+        for t, o, h, lo, c in zip(dates, opens, highs, lows, closes)
+    ]
+    return {
+        "symbol": info.symbol, "name": info.name, "market": info.market,
+        "score": hit.score, "summary": hit.summary,
+        "summaryEn": hit.summary_en or hit.summary,
+        "candles": candles,
+        "overlays": _map_overlays(hit, dates),
+    }
+
+
+def _map_overlays(hit, dates: list[str]) -> list[dict[str, Any]]:
+    """탐지 컨텍스트 인덱스 -> 차트 날짜 좌표.
+
+    탐지 컨텍스트(tail(300))와 차트(tail(200))는 같은 '끝 봉'을 공유하므로
+    chart_idx = idx - (ctx_len - n) 으로 변환된다. 차트 범위를 벗어난 점은
+    선분을 차트 왼쪽 경계에서 잘라 보간한다. dates 는 차트 봉의 날짜 문자열
+    리스트 (_serialize_match 가 이미 만들어 둔 것을 재사용).
+    """
+    n = len(dates)
+    ctx_len = int(hit.detail.get("_ctx_len", n))
+    shift = ctx_len - n
+    out = []
+    for ov in hit.overlays:
+        raw = [(int(idx) - shift, float(val)) for idx, val in ov["points"]]
+        pts = []
+        for j, (ci, val) in enumerate(raw):
+            if ci >= 0:
+                pts.append({"time": dates[min(ci, n - 1)], "value": round(val, 2)})
+            elif j + 1 < len(raw) and raw[j + 1][0] > 0:
+                # 차트 밖 -> 안으로 이어지는 선분은 경계(0)에서 잘라 보간
+                ni, nv = raw[j + 1]
+                t = (0 - ci) / (ni - ci)
+                pts.append({"time": dates[0],
+                            "value": round(val + (nv - val) * t, 2)})
+        if len(pts) >= 2:
+            out.append({"name": ov.get("name", ""), "points": pts})
+    return out

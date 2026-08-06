@@ -1,0 +1,26 @@
+{
+  "provider": "auto",
+  "toss": {
+    "base_url": "https://openapi.tossinvest.com",
+    "token_path": "/oauth2/token",
+    "auth_style": "body",
+    "client_id": "여기에 발급받은 client_id",
+    "client_secret": "여기에 발급받은 client_secret",
+    "candles_path": "/api/v1/candles",
+    "candles_symbol_param": "symbol",
+    "candles_interval_param": "interval",
+    "interval_values": { "day": "1d" },
+    "candles_count_param": "count",
+    "max_count_per_request": 200,
+    "candles_before_param": "before",
+    "stocks_path": "/api/v1/stocks",
+    "stocks_symbols_param": "symbols"
+  },
+  "lookback_years": { "day": 3, "week": 7, "month": null },
+  "candidates": {
+    "day": [5, 10, 20, 50, 60, 100, 120, 200, 240],
+    "week": [5, 10, 20, 30, 52, 60, 104],
+    "month": [3, 6, 12, 24, 36, 60]
+  },
+  "min_touches": { "day": 5, "week": 4, "month": 3 }
+}
