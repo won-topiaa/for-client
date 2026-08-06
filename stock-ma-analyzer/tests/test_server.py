@@ -183,6 +183,12 @@ def test_touches_page_and_api(client):
     try:
         r = client.get("/touches")
         assert r.status_code == 200 and 'id="scanStatus"' in r.text
+        html = r.text
+        # 상단 방법 설명은 '요약 한 줄 + 펼쳐보는 상세(details)' 구조여야 한다 —
+        # 중요한 부분만 먼저 보이고 판정 기준·주의사항은 접어 둔다.
+        assert 'class="method-lead"' in html, "요약 한 줄이 없다"
+        assert '<details class="method-more">' in html, "펼침 상세(details)가 없다"
+        assert "판정 기준" in html and "주의:" in html, "상세 안에 기준·주의가 남아야 한다"
         api = client.get("/api/touches", params={"market": "kr"})
         assert api.status_code == 200
         assert api.json()["status"] in ("running", "done")

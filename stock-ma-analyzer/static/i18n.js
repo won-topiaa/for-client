@@ -245,7 +245,11 @@
       ".party-note": "We fetch and backtest 3 years of data per stock, so a cold start can take a few seconds up to 2–3 minutes. Results fill in as they are found.",
     },
     "/touches": {
-      ".method": "<b>How it works:</b> every stock in the universe is backtested over <b>3 years of daily bars</b> to find moving averages that repeatedly acted as support. Only <b>verified lines</b> qualify: 3+ past support bounces and a recency-weighted success rate of 60%+ (5-day MA excluded as unreliable). We then show stocks whose <b>low touched that line's band today</b> (band = max(0.5×ATR, 0.15% of price)) without a confirmed close below. Ranked by the line's confidence score (Wilson lower bound × log(1+weighted bounces)), top 12.<br><b>Caution:</b> a touch of a historically strong line is an alert, not a bounce guarantee — a break below can accelerate the downside." + SRC_NOTE,
+      ".method": '<p class="method-lead"><b>How it works:</b> a daily screener showing stocks whose price <b>touched a backtest-verified support line today</b>, ranked by confidence — top 12.</p>' +
+        '<details class="method-more"><summary>Criteria &amp; cautions</summary><div class="method-body">' +
+        "<p>Every stock in the universe is backtested over <b>3 years of daily bars</b> to find moving averages that repeatedly acted as support. Only <b>verified lines</b> qualify: 3+ past support bounces and a recency-weighted success rate of 60%+ (5-day MA excluded as unreliable). We then show stocks whose <b>low touched that line's band today</b> (band = max(0.5×ATR, 0.15% of price)) without a confirmed close below. Ranked by the line's confidence score (Wilson lower bound × log(1+weighted bounces)); the success rate on each card is that same recency-weighted 3-year figure.</p>" +
+        '<p class="method-caution"><b>Caution:</b> a touch of a historically strong line is an alert, not a bounce guarantee — a break below can accelerate the downside.</p>' +
+        SRC_NOTE + "</div></details>",
       ".note": "Universe — 🇰🇷 KR: top 300 by trading value (top-30 mega-caps excluded) · 🇺🇸 US: S&amp;P 500 ex-mega-caps · touches judged on the last completed trading day.",
       ".party-note": "We fetch and backtest 3 years of data per stock, so a cold start can take a few seconds up to 2–3 minutes. Results fill in as they are found.",
     },

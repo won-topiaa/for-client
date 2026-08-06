@@ -85,6 +85,25 @@
   }
   .method b { color: var(--info); }
   .method .src { color: var(--muted); font-size: 11.5px; display: block; margin-top: 6px; }
+  /* 중요한 한 줄만 항상 보이고, 판정 기준·주의는 펼쳐서 — 모든 화면 공통 */
+  .method-lead { margin: 0; }
+  .method-more { margin-top: 9px; }
+  .method-more > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .method-more > summary::-webkit-details-marker { display: none; }
+  .method-more > summary::after {
+    content: "▾"; font-size: 10px; transition: transform .15s ease;
+  }
+  .method-more[open] > summary::after { transform: rotate(180deg); }
+  .method-body { margin-top: 11px; }
+  .method-body > p { margin: 0 0 9px; }
+  .method-body > p:last-of-type { margin-bottom: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .method-more > summary::after { transition: none; }
+  }
 
   .status { margin: 4px 0 8px; color: var(--muted); }
   .bar {
@@ -768,17 +787,16 @@
     <button data-market="us" aria-pressed="false">🇺🇸 미국</button>
   </div>
 
-  <div class="method" data-mfold="ℹ️ 어떻게 찾나요? (판정 기준)">
-    <b>어떻게 찾나요?</b> 유니버스의 모든 종목을 <b>일봉 3년 백테스트</b>해, "자주 그리고 믿을 만하게"
-    지지가 되어온 이동평균선을 종목마다 찾습니다. 다만 여기서는 신뢰도가 낮은 <b>5일선은 제외</b>하고,
-    <b>지지 성공(반등) 3회 이상 · 지지 성공률(최근 가중) 60% 이상</b>인 '검증된 선'만 대상으로 합니다.
-    그중 <b>오늘 저가가 그 선의 허용 밴드(max(0.5×ATR, 종가의 0.15%) — 이평선 레이더 엔진과 동일)까지
-    내려왔고, 종가가 선 아래로 확정 이탈하지는 않은</b> 종목만 보여드립니다.
-    정렬은 그 선의 신뢰 점수(지지 성공률 신뢰하한 × log(1+가중 성공 횟수)) 순으로, 상위 12개를 보여드립니다.
-    카드의 성공률 수치도 같은 값 — 최근 사례에 가중치를 둔 3년 지지 성공률입니다.<br>
-    <b>주의:</b> "과거에 잘 지켜진 선에 닿았다"는 알림이지 반등 보장이 아닙니다 — 선이 뚫리면
-    오히려 하락 신호일 수 있으니, 카드의 '이평선 분석'에서 과거 이탈 사례도 함께 확인하세요.
-    <span class="src">방법 출처: 이평선 레이더 백테스트 엔진 (Wilson 하한 점수화) · Brock·Lakonishok·LeBaron (1992) 계열의 이동평균 지지 연구</span>
+  <div class="method">
+    <p class="method-lead"><b>어떻게 찾나요?</b> 3년 백테스트로 '검증된 지지선'에 오늘 가격이 닿은 종목을, 신뢰 점수 순 상위 12개 보여드립니다.</p>
+    <details class="method-more">
+      <summary>판정 기준 · 주의사항 자세히</summary>
+      <div class="method-body">
+        <p>유니버스의 모든 종목을 <b>일봉 3년 백테스트</b>해, "자주 그리고 믿을 만하게" 지지가 되어온 이동평균선을 종목마다 찾습니다. 다만 신뢰도가 낮은 <b>5일선은 제외</b>하고, <b>지지 성공(반등) 3회 이상 · 지지 성공률(최근 가중) 60% 이상</b>인 '검증된 선'만 대상으로 합니다. 그중 <b>오늘 저가가 그 선의 허용 밴드(max(0.5×ATR, 종가의 0.15%) — 이평선 레이더 엔진과 동일)까지 내려왔고, 종가가 선 아래로 확정 이탈하지는 않은</b> 종목만 보여드립니다. 정렬은 그 선의 신뢰 점수(지지 성공률 신뢰하한 × log(1+가중 성공 횟수)) 순이며, 카드의 성공률 수치도 같은 값 — 최근 사례에 가중치를 둔 3년 지지 성공률입니다.</p>
+        <p class="method-caution"><b>주의:</b> "과거에 잘 지켜진 선에 닿았다"는 알림이지 반등 보장이 아닙니다 — 선이 뚫리면 오히려 하락 신호일 수 있으니, 카드의 '이평선 분석'에서 과거 이탈 사례도 함께 확인하세요.</p>
+        <span class="src">방법 출처: 이평선 레이더 백테스트 엔진 (Wilson 하한 점수화) · Brock·Lakonishok·LeBaron (1992) 계열의 이동평균 지지 연구</span>
+      </div>
+    </details>
   </div>
 
   <div class="scan-party" id="scanParty" aria-hidden="true">
