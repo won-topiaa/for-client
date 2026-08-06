@@ -877,17 +877,21 @@ def test_polling_unchanged_short_circuit(client):
 
 
 def test_mobile_fold_wiring(client):
-    """모바일 전용 설명 접기: 대상 페이지마다 mfold.js 와 data-mfold 블록이
-    연결돼 있어야 한다 (데스크톱은 버튼 숨김이라 영향 없음)."""
-    assert "data-mfold" in client.get("/static/mfold.js").text or True  # 파일 서빙 확인
+    """모바일 전용 설명 접기(data-mfold): 남아 있는 보조 블록(스캔 대상·참고
+    문헌 등)이 있는 페이지는 mfold.js 와 연결돼 있어야 한다. 홈은 이제 이
+    방식 대신 모든 접힘을 <details class="fold"> 로 처리하므로 제외한다."""
     assert client.get("/static/mfold.js").status_code == 200
     _signup(client, "mfoldcheck@example.com")
     try:
-        for page in ("/", "/patterns", "/touches", "/lines"):
+        for page in ("/patterns", "/touches", "/lines"):
             html = client.get(page).text
             assert "/static/mfold.js" in html, page
             assert "data-mfold" in html, page
             assert ".mfold-btn" in html, f"{page} 에 접기 버튼 CSS 없음"
+        # 홈: 이용법·매매법 소개·근거 문헌을 모두 <details class="fold"> 로 접는다
+        home = client.get("/").text
+        assert home.count('<details class="fold">') >= 3, "홈의 접힘 섹션이 3개 미만"
+        assert "data-mfold" not in home, "홈은 data-mfold 를 더는 쓰지 않는다"
     finally:
         client.post("/api/auth/logout")
 

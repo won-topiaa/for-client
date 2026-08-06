@@ -219,8 +219,8 @@
         "<li>All 5 support/resistance criteria shown on screen</li>" +
         "<li>Sorted by 3-year backtest success (Wilson lower bound)</li></ul>" +
         '<span class="go">Screen by my line →</span>',
-      ".howto": '<h3 class="howto-title">New here? <span class="em">Here’s how to use it</span></h3>' +
-        '<ol class="steps">' +
+      ".howto": '<details class="fold"><summary><h3 class="howto-title" style="margin:0">New here? <span class="em">Here’s how to use it</span></h3></summary>' +
+        '<div style="margin-top:14px"><ol class="steps">' +
         '<li class="step"><span class="n">1</span><div><div class="t">Search a stock in <a href="/ma">MA Analyzer</a></div>' +
         '<p class="d">The 20/50-day MA everyone watches may not work for <b>your</b> stock — we backtest which lines actually held, with success rates.</p></div></li>' +
         '<li class="step"><span class="n">2</span><div><div class="t">No stock in mind? Open the <a href="/patterns">Pattern Screener</a></div>' +
@@ -228,8 +228,10 @@
         '<li class="step"><span class="n">3</span><div><div class="t">Each morning, check <a href="/touches">Touches</a> · <a href="/lines">My MA Line</a></div>' +
         '<p class="d">Fresh daily lists: stocks touching a <b>verified support line today</b>, and stocks holding/blocked at <b>the MA you choose</b> (free, 10-second signup).</p></div></li>' +
         "</ol>" +
-        '<p class="howto-note">⚠️ All tools show historical statistics — use them for confirmation, not as buy signals. All investment decisions are your own responsibility.</p>',
-      ".basis": "<b>Grounded methodology</b> — every rule is based on Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>), Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil and Weinstein (1988). Full references are at the bottom of the <a href=\"/patterns\">Pattern Screener</a>. Built by <a href=\"/about\"><b>Wontopia</b></a>.",
+        '<p class="howto-note">⚠️ All tools show historical statistics — use them for confirmation, not as buy signals. All investment decisions are your own responsibility.</p></div></details>',
+      ".basis": '<details class="fold"><summary><b>📚 References</b></summary><div style="margin-top:12px">' +
+        "<b>Grounded methodology</b> — every rule is based on Lo·Mamaysky·Wang (2000, <i>Journal of Finance</i>), Han·Yang·Zhou (2013), Park·Irwin (2007), Bulkowski (2005), O'Neil and Weinstein (1988). Full references are at the bottom of the <a href=\"/patterns\">Pattern Screener</a>. Built by <a href=\"/about\"><b>Wontopia</b></a>." +
+        "</div></details>",
       ".ma-method": '<details class="fold"><summary><h3 class="howto-title" style="margin:0">What is MA trading? <span class="em">Why it suits busy people</span></h3></summary>' +
         '<div style="margin-top:14px"><div class="mm-grid"><div class="mm-what">' +
         "<p>A <b>moving average (MA)</b> is the average closing price of the last N days drawn as a line. MA trading is <b>trend following</b>: hold while price stays <b>above a rising line</b>, exit when it <b>closes decisively below</b>. The rule is drawn right on the chart — no complex analysis needed.</p>" +
