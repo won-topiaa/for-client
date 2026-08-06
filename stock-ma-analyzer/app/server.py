@@ -1222,6 +1222,34 @@ async def about_page():
 
 _LINKS_CARDS_MARKER = "<!-- PORTFOLIO_CARDS -->"
 
+# /links 완성본 HTML 을 통째로 캐시한다. 작업물은 관리 API 로만 바뀌고 그때마다
+# 무효화하므로, 방문자 요청은 DB·디스크를 건드리지 않고 메모리에서 즉시 답한다
+# (예전 정적 파일과 같은 속도). 이게 없으면 방문 때마다 Postgres 왕복 + 디스크
+# 읽기가 붙어, 가장 많이 공유되는 페이지가 제일 느려진다.
+_links_html_cache: str | None = None
+_links_template_cache: str | None = None
+_links_render_lock = asyncio.Lock()
+
+
+def _links_template() -> str:
+    """links.html 원본을 한 번만 디스크에서 읽어 재사용한다."""
+    global _links_template_cache
+    if _links_template_cache is None:
+        _links_template_cache = (STATIC_DIR / "links.html").read_text(encoding="utf-8")
+    return _links_template_cache
+
+
+def _invalidate_links_cache() -> None:
+    """작업물이 바뀌면(추가·수정·삭제·이동) 다음 요청에서 다시 그리게 비운다."""
+    global _links_html_cache
+    _links_html_cache = None
+
+
+async def _render_links_html() -> str:
+    items = await asyncio.to_thread(app.state.portfolio.list_items)
+    cards_html = "".join(_render_portfolio_card(i, it) for i, it in enumerate(items, 1))
+    return _links_template().replace(_LINKS_CARDS_MARKER, cards_html)
+
 
 def _render_portfolio_card(idx: int, item) -> str:
     """작업물 카드 하나를 HTML 로 렌더링한다.
@@ -1229,7 +1257,7 @@ def _render_portfolio_card(idx: int, item) -> str:
     title/description/badge/url 은 관리자가 입력한 값이라도 항상 이스케이프
     한다 — '신뢰된 관리자'라도 XSS 는 그대로 XSS 다. icon_svg 만 예외인데,
     관리 API 의 어떤 엔드포인트도 icon_svg 를 받지 않아(portfolio.py 참고)
-    seed_if_empty 로 심은 신뢰된 문자열만 여기 올 수 있다."""
+    sync_seed 로 심은 신뢰된 문자열만 여기 올 수 있다."""
     esc = html.escape
     external = not item.url.startswith("/")
     target = ' target="_blank" rel="noopener"' if external else ""
@@ -1259,11 +1287,18 @@ async def links_page():
 
     작업물 카드만 DB(포트폴리오 스토어)에서 읽어 서버가 직접 렌더링한다 —
     나머지(헤더·푸터 등)는 그대로 정적 HTML. 관리자가 /links/admin 에서
-    카드를 추가·수정해도 코드 배포 없이 바로 반영된다."""
-    items = await asyncio.to_thread(app.state.portfolio.list_items)
-    cards_html = "".join(_render_portfolio_card(i, it) for i, it in enumerate(items, 1))
-    template = (STATIC_DIR / "links.html").read_text(encoding="utf-8")
-    return HTMLResponse(template.replace(_LINKS_CARDS_MARKER, cards_html))
+    카드를 추가·수정해도 코드 배포 없이 바로 반영된다.
+
+    완성본은 메모리에 캐시하고 작업물이 바뀔 때만 다시 그린다 — 방문자
+    요청은 DB·디스크를 건드리지 않는다(정적 파일과 같은 속도)."""
+    global _links_html_cache
+    if _links_html_cache is not None:
+        return HTMLResponse(_links_html_cache)
+    async with _links_render_lock:
+        # 락을 기다리는 사이 다른 요청이 이미 채웠을 수 있다 — 다시 확인
+        if _links_html_cache is None:
+            _links_html_cache = await _render_links_html()
+        return HTMLResponse(_links_html_cache)
 
 
 @app.get("/links/admin")
@@ -1317,6 +1352,7 @@ async def portfolio_create(request: Request):
             app.state.portfolio.create, **_portfolio_fields_from(body))
     except PortfolioError as exc:
         raise HTTPException(400, str(exc))
+    _invalidate_links_cache()
     return item.to_dict()
 
 
@@ -1329,6 +1365,7 @@ async def portfolio_update(item_id: int, request: Request):
             app.state.portfolio.update, item_id, **_portfolio_fields_from(body))
     except PortfolioError as exc:
         raise HTTPException(400, str(exc))
+    _invalidate_links_cache()
     return item.to_dict()
 
 
@@ -1339,6 +1376,7 @@ async def portfolio_delete(item_id: int, request: Request):
         await asyncio.to_thread(app.state.portfolio.delete, item_id)
     except PortfolioError as exc:
         raise HTTPException(400, str(exc))
+    _invalidate_links_cache()
     return {"ok": True}
 
 
@@ -1351,6 +1389,7 @@ async def portfolio_move(item_id: int, request: Request):
         await asyncio.to_thread(app.state.portfolio.move, item_id, direction)
     except PortfolioError as exc:
         raise HTTPException(400, str(exc))
+    _invalidate_links_cache()
     return {"ok": True}
 
 
