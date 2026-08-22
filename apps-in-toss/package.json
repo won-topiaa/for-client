@@ -1,0 +1,33 @@
+{
+  "name": "wontopia-ma-radar",
+  "private": true,
+  "scripts": {
+    "dev": "granite dev",
+    "build": "ait build",
+    "deploy": "ait deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@apps-in-toss/framework": "2.10.10",
+    "@granite-js/native": "1.0.43",
+    "@granite-js/react-native": "1.0.43",
+    "brick-module": "0.5.1",
+    "react": "19.2.3",
+    "react-native": "0.84.0"
+  },
+  "devDependencies": {
+    "@apps-in-toss/react-native-cli": "2.10.10",
+    "@babel/core": "7.28.5",
+    "@babel/runtime": "7.28.4",
+    "@granite-js/plugin-hermes": "1.0.43",
+    "@granite-js/plugin-router": "1.0.43",
+    "@types/react": "19.2.0",
+    "babel-preset-granite": "1.0.43",
+    "typescript": "^5.8.3"
+  },
+  "dependenciesMeta": {
+    "hermes-compiler": {
+      "unplugged": true
+    }
+  }
+}

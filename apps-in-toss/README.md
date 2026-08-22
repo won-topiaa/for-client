@@ -1,0 +1,77 @@
+# 이평선 레이더 — 앱인토스 미니앱 (wontopia-ma-radar)
+
+주식 레이더 사이트의 두 기능을 앱인토스(Apps in Toss) 미니앱으로 분리한 앱.
+
+- **이평선 레이더** (`/` 화면): 종목을 검색하면 일봉·주봉·월봉별로 그동안 가장 자주,
+  믿을 만하게 지지/저항 역할을 해온 이동평균선 2~3개를 백테스트로 찾아 차트에 그려준다.
+- **오늘의 지지선 터치** (`/screener` 화면): 시장 전체(국내 거래대금 상위 · 미국 S&P500급)를
+  매일 스캔해 '검증된 지지 이평선에 오늘 저가가 닿은' 종목만 보여준다. 회원 전용(무료) —
+  이메일 로그인은 사이트와 계정 공용.
+
+분석은 전부 **기존 사이트 서버**(`app/server.py`, Render 배포)가 수행하고, 이 앱은 그 API 를
+호출해 화면만 네이티브로 그린다. 서버 주소는 `src/env.ts` 의 `API_BASE_URL` 한 곳에서 바꾼다.
+
+> 차트는 서드파티 라이브러리 없이 순수 React Native View 로 그린다
+> (`src/components/CandleChart.tsx`) — 미니앱 런타임에는 외부 네이티브 모듈이 보장되지 않기 때문.
+
+## 실행 (개발은 무조건 샌드박스로)
+
+```bash
+cd apps-in-toss
+npm install
+npm run dev
+```
+
+1. 앱스토어에서 **"앱인토스 샌드박스"** 설치 (id6745618667, iOS 16+)
+2. 맥과 폰을 **같은 Wi-Fi**(핫스팟 X)에 두고, `ifconfig | grep "inet "` 으로 맥 IP 확인
+3. 샌드박스 앱에서 '로컬 네트워크' 권한 허용 → 서버 주소에 맥 IP 입력
+4. `intoss://wontopia-ma-radar` 로 열기
+5. 오류는 dev 서버 창에서 `j` 를 눌러 DevTools 콘솔로 본다 — **흰 화면이면 번들을 뒤지지 말고
+   먼저 샌드박스 콘솔의 오류부터 읽는다**
+
+## 배포
+
+```bash
+npm run build      # = ait build (.ait 산출물 생성 — granite build 아님)
+npx ait token add --api-key <발급키> [프로필]   # 키 교체 시엔 token remove 먼저
+npm run deploy     # = ait deploy
+```
+
+- `ait` 는 전역 명령이 아니다 — 반드시 `npx ait`
+- 저장된 프로필이 `--api-key` 보다 우선이다. 키를 바꿀 땐 `npx ait token remove` 먼저
+- `granite.config.ts` 에 **`target` 을 적지 않는다** (적으면 두 런타임 번들이 같아짐)
+- 토스 앱 최소 버전: Android 5.220.0 / iOS 5.221.0 (미만이면 앱이 안 그려짐 — 샌드박스는 통과됨)
+
+## 스토어 등록 정보
+
+| 항목 | 값 |
+|---|---|
+| 앱 이름(appName) | `wontopia-ma-radar` — 개발자센터 콘솔에 등록한 이름과 같아야 함 |
+| 표시 이름 | 이평선 레이더 |
+| 사업자 | 원토피아 |
+| 문의 이메일 | wontopiaaa@gmail.com |
+| 아이콘 | `https://<사이트주소>/static/icon.png` — **파일 경로가 아니라 이미지 URL** (재생성: `python apps-in-toss/scripts/make_icon.py`) |
+| 개인정보처리방침 | `https://<사이트주소>/privacy` |
+| 스크린샷 | 세로 636×1048 **최소 3장**, 가로 1504×741 **최소 1장** (규격 밖은 안 세어짐) |
+| 약관 체크박스 | **2개 모두** 체크 (하단 것을 빠뜨리기 쉬움) |
+
+투자 정보 앱이므로 화면 하단마다 면책 문구(투자 권유 아님)를 상시 노출한다 (`src/components/ui.tsx` 의 `Footer`).
+
+## 서버 쪽 전제
+
+- 서버는 `SITE_PASSWORD` 없이 **공개 배포**여야 앱이 API 를 쓸 수 있다.
+- 회원 기능은 서버의 Bearer 토큰 인증을 쓴다 — 로그인/가입 요청에 `client:"app"` 을 보내면
+  응답 본문으로 토큰을 받고, 이후 `Authorization: Bearer` 로 호출한다 (웹 쿠키 세션과 공존).
+- 계정을 영구 보관하려면 서버에 `DATABASE_URL`(외부 Postgres, 예: Neon)이 설정돼 있어야 한다.
+
+## 체크리스트 (새로 만질 때)
+
+```
+[ ] 루트 index.ts / src/pages 재노출용 pages/ / pages/_404.tsx 가 있다  ← 없으면 흰 화면
+[ ] babel.config.js / react-native.config.js 가 있다
+[ ] react-native 0.84.0 / react 19.2.3 / @types/react 19.2.x
+[ ] @granite-js/* 는 최신 유지 (마이그레이션 표의 1.0.18 로 내리지 않기)
+[ ] granite.config.ts 에 target 을 적지 않았다
+[ ] 첫 실행은 배포가 아니라 샌드박스로 한다
+[ ] 스토어 스크린샷은 손으로 그리지 말고 앱의 상수·포맷 함수를 그대로 써서 만든다
+```

@@ -145,7 +145,9 @@ stock-ma-analyzer/
 │       ├── kr_symbols.py# 내장 국내 종목 사전 (목록 실패 시 폴백)
 │       └── cache.py     # TTL 캐시 + 동시요청 single-flight
 ├── app/auth.py          # 이메일 회원/세션 저장소 (SQLite·Postgres 공용, SQLAlchemy)
+├── apps-in-toss/        # 앱인토스 미니앱 (이평선 레이더 + 오늘의 지지선 터치, RN/granite)
 ├── docs/DEPLOY.md       # 배포 가이드 (Render + Neon 무료 Postgres)
+├── docs/APPINTOSS.md    # 앱인토스 출시 준비 (등록 정보·심사 리스크·경쟁 요약)
 ├── static/              # 프런트엔드 7페이지 (홈/이평선/패턴/터치/소개/로그인/개인정보) + JS
 │                        # (lightweight-charts v5 vendored)
 ├── tests/               # pytest 스위트

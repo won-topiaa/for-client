@@ -117,6 +117,48 @@ def test_touches_page_and_api(client):
         client.post("/api/auth/logout")  # 세션 정리 (다른 테스트 영향 방지)
 
 
+def test_app_client_gets_token_and_bearer_auth_works(client):
+    """앱인토스 미니앱 경로: client:"app" 이면 본문으로 토큰을 받고,
+    쿠키 없이 Authorization: Bearer 만으로 회원 전용 API 를 쓸 수 있다."""
+    r = client.post("/api/auth/signup",
+                    json={"email": "appuser@example.com",
+                          "password": "password123", "client": "app"})
+    assert r.status_code == 200
+    token = r.json().get("token")
+    assert token, "앱 클라이언트 응답에 토큰이 없음"
+    client.cookies.clear()  # 쿠키를 지워 헤더만으로 인증되는지 확인
+    try:
+        api = client.get("/api/touches", params={"market": "kr"},
+                         headers={"Authorization": f"Bearer {token}"})
+        assert api.status_code == 200
+        # 로그인도 앱 클라이언트면 토큰을 돌려준다
+        r2 = client.post("/api/auth/login",
+                         json={"email": "appuser@example.com",
+                               "password": "password123", "client": "app"})
+        assert r2.status_code == 200 and r2.json().get("token")
+    finally:
+        # 로그아웃도 Bearer 로 동작해야 한다 (앱은 쿠키가 없다)
+        client.cookies.clear()
+        out = client.post("/api/auth/logout",
+                          headers={"Authorization": f"Bearer {token}"})
+        assert out.status_code == 200
+    # 로그아웃된 토큰은 즉시 무효
+    api = client.get("/api/touches", params={"market": "kr"},
+                     headers={"Authorization": f"Bearer {token}"})
+    assert api.status_code == 401
+
+
+def test_web_client_response_has_no_token(client):
+    """웹(client 미지정) 로그인/가입 응답 본문에는 토큰이 노출되지 않는다."""
+    r = client.post("/api/auth/signup",
+                    json={"email": "webonly@example.com", "password": "password123"})
+    try:
+        assert r.status_code == 200
+        assert "token" not in r.json()
+    finally:
+        client.post("/api/auth/logout")
+
+
 def test_indices_api(client):
     """헤더 티커용 지수 스냅샷 — 샘플 모드에선 4개 모두 합성 데이터로 응답."""
     r = client.get("/api/indices")

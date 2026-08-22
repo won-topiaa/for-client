@@ -408,12 +408,25 @@ def _session_cache_evict(token: str | None) -> None:
         _session_cache.pop(token, None)
 
 
+def _request_token(request: Request) -> str | None:
+    """세션 토큰: 웹은 쿠키, 앱(앱인토스 미니앱)은 Authorization: Bearer 헤더.
+
+    미니앱의 RN fetch 는 브라우저 쿠키 저장소가 없어 쿠키 세션을 신뢰할 수 없다.
+    같은 세션 토큰을 헤더로도 받되, 헤더가 있으면 헤더를 우선한다."""
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        token = auth[7:].strip()
+        if token:
+            return token
+    return request.cookies.get(COOKIE_NAME)
+
+
 async def _current_user(request: Request) -> dict | None:
-    """세션 쿠키로 로그인한 사용자 {'id','email'} 또는 None.
+    """세션 쿠키/Bearer 토큰으로 로그인한 사용자 {'id','email'} 또는 None.
 
     토큰→판정을 짧게 캐시해, 폴링 페이지가 매 요청 세션 DB 를 때리지 않게 한다
     (미스일 때만 DB 조회를 스레드로 넘긴다)."""
-    token = request.cookies.get(COOKIE_NAME)
+    token = _request_token(request)
     if not token:
         return None
     now = time.monotonic()
@@ -427,18 +440,30 @@ async def _current_user(request: Request) -> dict | None:
     return user
 
 
-async def _auth_json(request: Request) -> tuple[str, str]:
+async def _auth_json(request: Request) -> tuple[str, str, bool]:
+    """(email, password, is_app) — is_app 은 앱 클라이언트(client:"app") 여부."""
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001 — 잘못된 JSON 은 400 으로
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
     if not isinstance(body, dict):
         raise HTTPException(400, "요청 형식이 올바르지 않습니다.")
-    return str(body.get("email", "")), str(body.get("password", ""))
+    return (str(body.get("email", "")), str(body.get("password", "")),
+            body.get("client") == "app")
 
 
-def _session_response(email: str, token: str, request: Request) -> JSONResponse:
-    resp = JSONResponse({"email": email.strip().lower()})
+def _session_response(
+    email: str, token: str, request: Request, *, include_token: bool = False
+) -> JSONResponse:
+    """웹은 httponly 쿠키만(XSS 로부터 토큰 보호), 앱은 본문으로도 토큰을 준다.
+
+    앱(RN)은 쿠키 저장소가 없어 본문 토큰을 직접 보관하고 Bearer 헤더로 보낸다.
+    include_token 은 요청 본문에 client:"app" 을 명시한 경우에만 켠다 — 웹 응답
+    형태는 그대로라 기존 보안 성질이 변하지 않는다."""
+    payload: dict[str, str] = {"email": email.strip().lower()}
+    if include_token:
+        payload["token"] = token
+    resp = JSONResponse(payload)
     resp.set_cookie(COOKIE_NAME, token, max_age=SESSION_TTL_SEC, httponly=True,
                     samesite="lax", secure=_cookie_secure(request), path="/")
     return resp
@@ -446,31 +471,31 @@ def _session_response(email: str, token: str, request: Request) -> JSONResponse:
 
 @app.post("/api/auth/signup")
 async def auth_signup(request: Request):
-    email, password = await _auth_json(request)
+    email, password, is_app = await _auth_json(request)
     try:
         token = await asyncio.to_thread(request.app.state.auth.signup, email, password)
     except EmailTaken as exc:
         raise HTTPException(409, str(exc))
     except AuthError as exc:
         raise HTTPException(400, str(exc))
-    return _session_response(email, token, request)
+    return _session_response(email, token, request, include_token=is_app)
 
 
 @app.post("/api/auth/login")
 async def auth_login(request: Request):
-    email, password = await _auth_json(request)
+    email, password, is_app = await _auth_json(request)
     try:
         token = await asyncio.to_thread(request.app.state.auth.login, email, password)
     except InvalidCredentials as exc:
         raise HTTPException(401, str(exc))
     except AuthError as exc:
         raise HTTPException(400, str(exc))
-    return _session_response(email, token, request)
+    return _session_response(email, token, request, include_token=is_app)
 
 
 @app.post("/api/auth/logout")
 async def auth_logout(request: Request):
-    token = request.cookies.get(COOKIE_NAME)
+    token = _request_token(request)
     _session_cache_evict(token)  # 캐시된 '로그인됨' 판정을 먼저 지운다
     await asyncio.to_thread(request.app.state.auth.logout, token)
     resp = JSONResponse({"ok": True})
