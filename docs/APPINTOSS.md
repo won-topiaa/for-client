@@ -129,7 +129,10 @@
     granite.config.ts 의 brand.icon 반영 (SITE_PASSWORD 는 비워 공개 배포)
 [ ] 서버 DATABASE_URL(Neon 등) 설정 — 앱 회원가입이 재배포에도 유지되게
 [ ] 콘솔에 앱 등록 (appName = wontopia-ma-radar) 후 샌드박스로 실기기 확인
-[ ] 스토어 스크린샷 제작 — 손으로 그리지 말고 앱 화면 캡처 또는 앱의 상수·포맷
-    함수를 그대로 쓰는 생성 스크립트로 (세로 636×1048 ×3, 가로 1504×741 ×1)
+[ ] 스토어 스크린샷 — apps-in-toss/store/ 에 규격대로 준비됨(세로 4장 + 가로 1장).
+    단, 개발 컨테이너에서 sample(합성) 데이터로 생성된 상태이므로 제출 전 본인
+    컴퓨터에서 재생성해 실데이터로 교체할 것:
+      python apps-in-toss/scripts/store_screenshot_data.py
+      node apps-in-toss/scripts/make_store_screenshots.mjs
 [ ] 심사 제출 (약관 체크박스 2개 모두)
 ```

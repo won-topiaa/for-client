@@ -52,10 +52,26 @@ npm run deploy     # = ait deploy
 | 문의 이메일 | wontopiaaa@gmail.com |
 | 아이콘 | `https://<사이트주소>/static/icon.png` — **파일 경로가 아니라 이미지 URL** (재생성: `python apps-in-toss/scripts/make_icon.py`) |
 | 개인정보처리방침 | `https://<사이트주소>/privacy` |
-| 스크린샷 | 세로 636×1048 **최소 3장**, 가로 1504×741 **최소 1장** (규격 밖은 안 세어짐) |
+| 스크린샷 | 세로 636×1048 **최소 3장**, 가로 1504×741 **최소 1장** (규격 밖은 안 세어짐) — `store/` 에 준비됨, 재생성은 아래 |
 | 약관 체크박스 | **2개 모두** 체크 (하단 것을 빠뜨리기 쉬움) |
 
 투자 정보 앱이므로 화면 하단마다 면책 문구(투자 권유 아님)를 상시 노출한다 (`src/components/ui.tsx` 의 `Footer`).
+
+### 스토어 스크린샷 재생성
+
+스크린샷은 손으로 그리지 않는다 — 앱의 팔레트(`src/theme.ts`)·문구(`src/env.ts`)·포맷
+함수(`src/format.ts`)를 그대로 import 하고, 수치는 백테스트 엔진의 실제 출력에서 뽑는다.
+
+```bash
+# 저장소 루트에서 (엔진 데이터 추출 → PNG 5장: 세로 4장 + 가로 1장)
+python apps-in-toss/scripts/store_screenshot_data.py
+node apps-in-toss/scripts/make_store_screenshots.mjs   # → apps-in-toss/store/*.png
+```
+
+**제출 전 반드시 실데이터로 재생성할 것** — 외부 시세가 막힌 환경에서는 sample(합성)
+데이터로 떨어진다 (`scripts/store/data.json` 의 `provider` 가 `sample` 이면 제출용 아님).
+본인 컴퓨터에서 위 두 명령을 그대로 실행하면 무료 실시세(FDR/네이버)로 다시 뽑힌다.
+Chromium 경로는 `CHROMIUM_PATH` 환경변수로 지정 가능(맥은 설치된 Chrome 자동 사용).
 
 ## 서버 쪽 전제
 

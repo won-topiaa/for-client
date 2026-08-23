@@ -16,3 +16,6 @@ yarn-error.log
 .ait
 .swc
 .DS_Store
+
+# 스크린샷용 폰트 캐시 (스크립트가 자동 다운로드)
+scripts/store/fonts/

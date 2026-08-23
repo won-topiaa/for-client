@@ -22,7 +22,9 @@ export interface Palette {
   warnBg: string;
 }
 
-const LIGHT: Palette = {
+// export 이유: 스토어 스크린샷 생성 스크립트(scripts/make_store_screenshots.mjs)가
+// 이 팔레트를 그대로 import 해 쓴다 — 그림과 앱의 색이 어긋나지 않게.
+export const LIGHT: Palette = {
   dark: false,
   bg: '#fafafa',
   card: '#ffffff',
@@ -41,7 +43,7 @@ const LIGHT: Palette = {
   warnBg: 'rgba(217,119,6,.1)',
 };
 
-const DARK: Palette = {
+export const DARK: Palette = {
   dark: true,
   bg: '#09090b',
   card: '#18181b',
