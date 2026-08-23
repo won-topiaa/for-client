@@ -140,15 +140,18 @@ function RadarPage() {
       }
       pendingAnalyze.symbol = null;
       void (async () => {
+        // 정확히 같은 심볼만 쓴다 — 첫 결과로 폴백하면 검색 노이즈에 밀려
+        // 엉뚱한 종목(예: KR 카드 → KHC 분석)이 될 수 있다. 검색은 표시용
+        // 이름을 얻는 수단일 뿐이므로, 못 찾으면(또는 검색이 실패하면)
+        // 심볼 그대로 분석한다 (분석 API 는 원시 심볼을 받는다).
+        let hit: SymbolInfo = { symbol: sym, name: sym };
         try {
           const body = await searchSymbols(sym);
-          const hit = body.results.find((x) => x.symbol === sym) ?? body.results[0];
-          if (hit) {
-            pick(hit, true);
-          }
+          hit = body.results.find((x) => x.symbol === sym) ?? hit;
         } catch {
-          // 검색 실패 시 조용히 무시 — 사용자가 직접 검색하면 된다
+          // 검색 실패 → 심볼 그대로 진행
         }
+        pick(hit, true);
       })();
     };
     consumePending();

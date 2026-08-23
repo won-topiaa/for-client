@@ -11,10 +11,13 @@ data/us_stocks.csv (컬럼: ticker,exchange,name_ko,name_en,aliases) 를 내장 
 from __future__ import annotations
 
 import csv
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from .base import SymbolInfo
+
+logger = logging.getLogger("ma-analyzer")
 
 _CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "us_stocks.csv"
 _EXPECTED_HEADER = ("ticker", "exchange", "name_ko", "name_en", "aliases")
@@ -65,12 +68,18 @@ def _parse_rows(rows: list[list[str]]) -> list[_Entry]:
 
 
 def _load() -> list[_Entry]:
+    # utf-8-sig: 엑셀 'CSV UTF-8' 저장이 붙이는 BOM 을 흡수한다 — 아니면
+    # 첫 셀이 '﻿ticker' 가 되어 헤더 인식이 깨진다. (BOM 없는 utf-8 도 동일 처리)
     try:
-        with _CSV_PATH.open(encoding="utf-8") as fh:
+        with _CSV_PATH.open(encoding="utf-8-sig") as fh:
             return _parse_rows(list(csv.reader(fh)))
     except FileNotFoundError:
         return []
     except Exception:  # noqa: BLE001 — 사전이 깨져도 검색 전체를 죽이지 않는다
+        # 조용히 빈 목록이 되면 '미국 이름 검색이 사라진' 이유를 알 수 없다 —
+        # 엑셀이 CP949 로 저장한 경우 등. 원인은 로그로 남긴다.
+        logger.warning("us_stocks.csv 로드 실패 — 미국 이름 검색 비활성화: %s",
+                       _CSV_PATH, exc_info=True)
         return []
 
 
@@ -89,6 +98,23 @@ def is_known_ticker(symbol: str) -> bool:
     """CSV 사전에 있는 티커인지 (검색의 중복/오탐 정리에 쓴다)."""
     s = symbol.strip().lower()
     return any(e.ticker.lower() == s for e in _entries())
+
+
+def matches_name_exactly(query: str) -> bool:
+    """질의가 사전의 '이름/별칭'과 통째로 일치하는지 (티커 자신과의 일치는 제외).
+
+    'Apple'·'Nvidia'처럼 회사 이름을 다 친 경우에만 True — 이때만 직입력
+    후보(가짜 티커 'APPLE')를 버려도 안전하다. 부분 일치만으로 버리면
+    사전에 없는 진짜 티커(KR·AI·DD·ALL …)까지 검색에서 사라진다."""
+    q = query.strip().lower()
+    if not q:
+        return False
+    for e in _entries():
+        ticker_l = e.ticker.lower()
+        for term in e.terms:
+            if term == q and term != ticker_l:
+                return True
+    return False
 
 
 def search_us(query: str, limit: int = 20) -> list[SymbolInfo]:

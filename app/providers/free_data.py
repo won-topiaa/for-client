@@ -24,7 +24,7 @@ from typing import Any
 import pandas as pd
 
 from .base import SymbolInfo, validate_candles
-from .us_symbols import is_known_ticker, search_us
+from .us_symbols import is_known_ticker, matches_name_exactly, search_us
 
 # 종목코드(6자리 숫자)/미국 티커
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
@@ -350,14 +350,15 @@ class FreeDataProvider:
                 continue
             seen.add(info.symbol)
             results.append(info)
-        # 직접 티커 경로: 6자리 코드는 항상, 그 외 영문은 진짜 티커일 때만 앞에 세운다.
-        # ("애플" 같은 한글은 _SYMBOL_RE 에 안 걸리지만, "Apple" 은 걸려 가짜 티커
-        #  'APPLE' 이 될 수 있다 — 이름 매칭 결과가 있으면 가짜 직입력은 버린다.)
+        # 직접 티커 경로: 기본은 항상 유지한다 — 사전은 ~290개뿐이라, 사전에
+        # 없는 진짜 티커(KR·AI·DD·ALL …)가 부분 일치 노이즈에 밀려 사라지면
+        # 그 종목은 아예 검색이 불가능해진다. 버리는 것은 질의가 사전의
+        # 이름/별칭과 '통째로' 일치할 때뿐 ("Apple" → 가짜 티커 'APPLE' 방지).
         if direct is not None and direct.symbol not in seen:
             keep_direct = (
                 direct.symbol.isdigit()
                 or is_known_ticker(direct.symbol)
-                or not results
+                or not matches_name_exactly(q)
             )
             if keep_direct:
                 results.insert(0, direct)

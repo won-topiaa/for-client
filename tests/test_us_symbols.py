@@ -10,6 +10,7 @@ from app.providers.us_symbols import (
     _CSV_PATH,
     _entries,
     is_known_ticker,
+    matches_name_exactly,
     search_us,
 )
 
@@ -92,6 +93,19 @@ def test_is_known_ticker():
     assert not is_known_ticker("005930")  # 국내 코드
 
 
+def test_matches_name_exactly():
+    # 이름/별칭을 '통째로' 친 경우만 True
+    assert matches_name_exactly("Apple")
+    assert matches_name_exactly("nvidia")
+    assert matches_name_exactly("구글")  # 별칭
+    # 부분 일치·티커·미등재는 False
+    assert not matches_name_exactly("KR")  # 'kraft heinz' 의 부분일 뿐
+    assert not matches_name_exactly("AI")
+    assert not matches_name_exactly("AAPL")  # 티커 자신과의 일치는 제외
+    assert not matches_name_exactly("ZZZZ")
+    assert not matches_name_exactly("")
+
+
 # --- SampleProvider 검색 병합 (네트워크 불필요) ---
 
 def test_sample_provider_merges_us_dictionary():
@@ -148,3 +162,16 @@ def test_free_search_known_ticker_not_duplicated():
     results = _run(p.search("AAPL"))
     aapl = [r for r in results if r.symbol == "AAPL"]
     assert len(aapl) == 1, "AAPL 이 직입력+사전으로 중복 노출됨"
+
+
+def test_free_search_real_ticker_survives_substring_noise():
+    # 회귀: 사전에 없는 진짜 티커(KR=크로거, AI=C3.ai, DD=듀폰, ALL=올스테이트)가
+    # 사전의 부분 일치 노이즈('kraft'⊃kr 등) 때문에 버려지면 안 된다 —
+    # 직입력 후보는 맨 앞에 반드시 남아야 한다.
+    p = _free_provider_without_listing()
+    for ticker in ("KR", "AI", "DD", "ALL", "ED"):
+        results = _run(p.search(ticker))
+        assert results and results[0].symbol == ticker, (
+            f"{ticker} 직입력이 사전 노이즈에 밀려 사라짐: "
+            f"{[r.symbol for r in results][:4]}"
+        )

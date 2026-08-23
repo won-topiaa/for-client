@@ -1,6 +1,13 @@
 import { createRoute } from '@granite-js/react-native';
 import React, { useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { login, signup } from '../api/client';
 import { Card, Chip, Footer, PrimaryButton } from '../components/ui';
 import { usePalette } from '../theme';
@@ -16,6 +23,7 @@ function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [consent, setConsent] = useState(false); // 가입 시 개인정보 동의 (웹과 동일 요건)
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -84,13 +92,40 @@ function LoginPage() {
           autoCapitalize="none"
           style={inputStyle}
         />
+        {mode === 'signup' ? (
+          <TouchableOpacity
+            onPress={() => setConsent(!consent)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: consent }}
+            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
+          >
+            <View
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 4,
+                borderWidth: 1.5,
+                marginTop: 1,
+                borderColor: consent ? p.up : p.border,
+                backgroundColor: consent ? p.up : 'transparent',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {consent ? <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>✓</Text> : null}
+            </View>
+            <Text style={{ flex: 1, fontSize: 12, color: p.sub, lineHeight: 17 }}>
+              개인정보처리방침에 동의합니다. 이메일과 비밀번호(암호화 저장)만 수집해요.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {errorMsg ? <Text style={{ fontSize: 12, color: p.down }}>{errorMsg}</Text> : null}
         {busy ? (
           <ActivityIndicator color={p.up} />
         ) : (
           <PrimaryButton
             label={mode === 'login' ? '로그인' : '가입하고 시작하기'}
-            disabled={!email.trim() || !password}
+            disabled={!email.trim() || !password || (mode === 'signup' && !consent)}
             palette={p}
             onPress={() => void submit()}
           />
