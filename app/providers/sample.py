@@ -17,6 +17,7 @@ import pandas as pd
 
 from ..resample import resample_daily
 from .base import SymbolInfo, validate_candles
+from .us_symbols import search_us
 
 UNIVERSE: list[SymbolInfo] = [
     SymbolInfo("005930", "삼성전자", "KOSPI"),
@@ -97,10 +98,17 @@ class SampleProvider:
         pool = UNIVERSE + self._csv_symbols()
         if not q:
             return pool[:20]
-        return [
+        results = [
             s for s in pool
             if q in s.symbol.lower() or q in s.name.lower()
-        ][:20]
+        ]
+        # 미국 종목: 한글/영문 이름으로도 찾게 내장 사전을 병합
+        seen = {s.symbol for s in results}
+        for info in search_us(q):
+            if info.symbol not in seen:
+                seen.add(info.symbol)
+                results.append(info)
+        return results[:20]
 
     # 종목코드/티커로 쓸 수 있는 문자만 허용 — 경로 탈출(../) 등 차단
     _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,20}$")

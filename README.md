@@ -5,7 +5,7 @@
 차트에 그려주는 웹 프로그램입니다.
 
 - **무료 시세 데이터** 기본 사용 — API 키·IP 등록 불필요 (국내: FinanceDataReader/네이버 · 미국: Stooq→yfinance→FDR 3중 폴백)
-- 국내 전 종목 이름 검색 + 미국 티커 지원
+- 국내 전 종목 이름 검색 + 미국 종목 한글 이름 검색(예: "엔비디아"→NVDA, ~290개 사전) · 티커 직접 입력
 - 후보 이평선: 일봉 `5/10/20/50/60/100/120/200/240`, 주봉 `5/10/20/30/52/60/104`, 월봉 `3/6/12/24/36/60` (설정 변경 가능)
 - 추천 이평선을 캔들차트 위에 오버레이 + 지지/저항 이벤트 마커 표시
 - 전체 후보의 성적표(터치·지지성공·저항성공·돌파·성공률·점수) 제공
@@ -72,6 +72,11 @@ API 키도, IP 등록도 필요 없어서 그대로 실행하면 실제 데이�
    전 종목 이름 검색을 원하면 KRX 정보데이터시스템(data.krx.co.kr)에서 상장종목
    목록을 받아 `data/symbols.csv` (컬럼: `symbol,name[,market]`)로 저장하면
    자동으로 검색에 포함됩니다.
+   - **미국 종목은 한글 이름으로도 검색**됩니다 — `app/data/us_stocks.csv`
+     (컬럼: `ticker,exchange,name_ko,name_en,aliases`)에 대표 종목 ~290개를
+     넣어 두었습니다. 예: "애플"→AAPL, "엔비디아"→NVDA, "슈드"→SCHD.
+     엑셀로 열어 자유롭게 추가/수정하면(‘#’ 줄은 주석) 서버 재시작 없이
+     반영됩니다. 사전에 없어도 티커(예: `AAPL`)를 직접 입력하면 분석됩니다.
 2. **봉 단위는 분봉/일봉만 제공**됩니다. 주봉·월봉은 일봉을 자동으로
    리샘플링(주: 월~금 집계, 월: 월별 집계)해서 분석합니다.
 
@@ -143,6 +148,7 @@ stock-ma-analyzer/
 │       ├── toss.py      # 토스증권 Open API 클라이언트 (선택)
 │       ├── sample.py    # 합성 데이터 + data/*.csv 공급자
 │       ├── kr_symbols.py# 내장 국내 종목 사전 (목록 실패 시 폴백)
+│       ├── us_symbols.py# 미국 종목 한글/영문 이름사전 (data/us_stocks.csv 로드)
 │       └── cache.py     # TTL 캐시 + 동시요청 single-flight
 ├── app/auth.py          # 이메일 회원/세션 저장소 (SQLite·Postgres 공용, SQLAlchemy)
 ├── apps-in-toss/        # 앱인토스 미니앱 (이평선 레이더 + 오늘의 지지선 터치, RN/granite)
@@ -151,6 +157,7 @@ stock-ma-analyzer/
 ├── static/              # 프런트엔드 7페이지 (홈/이평선/패턴/터치/소개/로그인/개인정보) + JS
 │                        # (lightweight-charts v5 vendored)
 ├── tests/               # pytest 스위트
+├── app/data/us_stocks.csv # 미국 대표 종목 이름사전 (티커·한글/영문 이름)
 ├── data/                # (선택) 실제 CSV 데이터 넣는 곳
 └── config.example.json
 ```

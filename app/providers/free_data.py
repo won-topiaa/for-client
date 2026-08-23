@@ -24,6 +24,7 @@ from typing import Any
 import pandas as pd
 
 from .base import SymbolInfo, validate_candles
+from .us_symbols import is_known_ticker, search_us
 
 # 종목코드(6자리 숫자)/미국 티커
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,12}$")
@@ -342,8 +343,24 @@ class FreeDataProvider:
                     continue
                 seen.add(row["symbol"])
                 results.append(SymbolInfo(row["symbol"], row["name"], row["market"]))
+        # 미국 종목: 한글/영문 이름·별칭으로 티커를 찾아 준다 (내장 사전).
+        # 국내(KRX) 결과 뒤에 붙이되, 관련도 순은 사전이 이미 매겼다.
+        for info in search_us(q):
+            if info.symbol in seen:
+                continue
+            seen.add(info.symbol)
+            results.append(info)
+        # 직접 티커 경로: 6자리 코드는 항상, 그 외 영문은 진짜 티커일 때만 앞에 세운다.
+        # ("애플" 같은 한글은 _SYMBOL_RE 에 안 걸리지만, "Apple" 은 걸려 가짜 티커
+        #  'APPLE' 이 될 수 있다 — 이름 매칭 결과가 있으면 가짜 직입력은 버린다.)
         if direct is not None and direct.symbol not in seen:
-            results.insert(0, direct)
+            keep_direct = (
+                direct.symbol.isdigit()
+                or is_known_ticker(direct.symbol)
+                or not results
+            )
+            if keep_direct:
+                results.insert(0, direct)
         return results[:20]
 
     async def candles(self, symbol: str, timeframe: str, max_bars: int) -> pd.DataFrame:
