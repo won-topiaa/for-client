@@ -314,7 +314,7 @@ function screenScore(fontCss) {
     <div class="panel">
       <div style="font-size:24px;font-weight:800">${esc(DATA.radar.name)} · 일봉</div>
       <table>
-        <tr><th>이평선</th><th>터치</th><th>지지</th><th>저항</th><th>돌파(실패)</th><th>성공률</th><th>점수</th></tr>
+        <tr><th>이평선</th><th>터치</th><th>지지</th><th>저항</th><th>이탈+돌파</th><th>성공률</th><th>점수</th></tr>
         ${rows.map(tr).join('')}
       </table>
       <div class="small">★ = 추천 이평선 · 점수 = 가중 성공률의 Wilson 신뢰하한 × log(1+가중 성공 횟수)</div>

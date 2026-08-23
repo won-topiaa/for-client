@@ -12,14 +12,15 @@ interface Props {
   palette: Palette;
 }
 
-// '돌파(실패)' = 위/아래로 뚫린 횟수 합계 — 웹 성적표와 같은 표기.
-// 카드의 '돌파'(저항을 위로 뚫음, 상승성)와 헷갈리지 않게 (실패)를 꼭 붙인다.
+// '이탈+돌파' = 위/아래로 뚫린 횟수 합계. 추천 카드는 지지 이탈(하락)을 '이탈',
+// 저항 돌파(상승)를 '돌파'로 따로 표기하므로, 그 둘의 합계인 이 열도 '이탈+돌파'로
+// 불러 카드와 용어를 맞춘다('돌파' 단독으로 쓰면 카드의 상승 신호와 혼동된다).
 const COLS: { key: string; label: string; width: number }[] = [
   { key: 'ma', label: '이평선', width: 76 },
   { key: 'touches', label: '터치', width: 64 },
   { key: 'support', label: '지지', width: 44 },
   { key: 'resist', label: '저항', width: 44 },
-  { key: 'breaks', label: '돌파(실패)', width: 68 },
+  { key: 'breaks', label: '이탈+돌파', width: 68 },
   { key: 'undecided', label: '미확정', width: 52 },
   { key: 'rate', label: '성공률', width: 56 },
   { key: 'score', label: '점수', width: 56 },

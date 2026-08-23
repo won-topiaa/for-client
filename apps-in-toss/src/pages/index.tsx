@@ -224,7 +224,7 @@ function RadarPage() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View>
+        <View style={{ flexShrink: 1, paddingRight: 8 }}>
           <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>📈 이평선 레이더</Text>
           <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
             자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요
@@ -242,7 +242,7 @@ function RadarPage() {
             paddingHorizontal: 10,
           }}
         >
-          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>🚨 오늘의 터치</Text>
+          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>🚨 지지선 터치</Text>
         </TouchableOpacity>
       </View>
 
@@ -281,10 +281,10 @@ function RadarPage() {
                   backgroundColor: p.card,
                 }}
               >
-                <Text style={{ fontSize: 14, color: p.text }} numberOfLines={1}>
+                <Text style={{ fontSize: 14, color: p.text, flexShrink: 1, marginRight: 8 }} numberOfLines={1}>
                   {item.name}
                 </Text>
-                <Text style={{ fontSize: 12, color: p.faint }}>
+                <Text style={{ fontSize: 12, color: p.faint, flexShrink: 0 }} numberOfLines={1}>
                   {item.symbol}
                   {item.market ? ` · ${item.market}` : ''}
                 </Text>

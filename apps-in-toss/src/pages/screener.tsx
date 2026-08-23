@@ -237,7 +237,11 @@ function ScreenerPage() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={{ fontSize: 11, color: p.faint, flexShrink: 1 }}>{statusText(body)}</Text>
             {!body.partial && !body.refreshing ? (
-              <TouchableOpacity onPress={() => void load(market, false)} accessibilityRole="button">
+              <TouchableOpacity
+                onPress={() => void load(market, false)}
+                accessibilityRole="button"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Text style={{ fontSize: 12, color: p.indigo, fontWeight: '600' }}>새로고침</Text>
               </TouchableOpacity>
             ) : null}
@@ -304,7 +308,11 @@ function ScreenerPage() {
                   colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
                   showPriceAxis={false}
                 />
-                <TouchableOpacity onPress={() => openRadar(m)} accessibilityRole="button">
+                <TouchableOpacity
+                  onPress={() => openRadar(m)}
+                  accessibilityRole="button"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                   <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '600' }}>이평선 분석 →</Text>
                 </TouchableOpacity>
               </Card>
