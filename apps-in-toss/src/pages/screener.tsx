@@ -10,7 +10,7 @@ import {
 import { clearSession, fetchTouches, getToken, isAuthError, logout, me } from '../api/client';
 import type { Market, TouchesResponse, TouchMatch } from '../api/types';
 import { CandleChart } from '../components/CandleChart';
-import { Card, Chip, Footer, PrimaryButton } from '../components/ui';
+import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
 import { SCREENER_RULE_LABEL } from '../env';
 import { fmtDistPct, fmtPrice, fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
@@ -178,18 +178,22 @@ function ScreenerPage() {
         <Chip label="🇺🇸 미국" active={market === 'us'} palette={p} onPress={() => setMarket('us')} />
       </View>
 
-      <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16 }}>
-        {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
-      </Text>
+      <Expandable title="스캔 기준" palette={p}>
+        <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16 }}>
+          {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
+        </Text>
+      </Expandable>
 
       {phase === 'needLogin' ? (
         <Card palette={p} style={{ gap: 10 }}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>회원 전용(무료) 기능이에요</Text>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
-            이메일로 가입하면 매일 시장 전체(국내 거래대금 상위 · 미국 S&P500급)를 스캔한 결과를 볼 수
-            있어요. 주식 레이더 사이트와 계정을 같이 씁니다.
-          </Text>
           <PrimaryButton label="로그인 / 회원가입" palette={p} onPress={() => navigation.navigate('/login')} />
+          <Expandable title="자세히 보기" palette={p}>
+            <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+              이메일로 가입하면 매일 시장 전체(국내 거래대금 상위 · 미국 S&P500급)를 스캔한 결과를 볼 수
+              있어요. 주식 레이더 사이트와 계정을 같이 씁니다.
+            </Text>
+          </Expandable>
         </Card>
       ) : null}
 

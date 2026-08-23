@@ -13,7 +13,7 @@ import { analyzeSymbol, searchSymbols } from '../api/client';
 import type { AnalyzeResponse, MAEvent, SymbolInfo, Timeframe } from '../api/types';
 import { CandleChart, type ChartLine, type ChartMarker } from '../components/CandleChart';
 import { ScoreTable } from '../components/ScoreTable';
-import { Card, Chip, Footer, PrimaryButton } from '../components/ui';
+import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
@@ -500,15 +500,14 @@ function RadarPage() {
       ) : null}
 
       {!analysis && !loading && !errorMsg ? (
-        <Card palette={p} style={{ gap: 6 }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>어떻게 쓰나요?</Text>
+        <Expandable title="어떻게 쓰나요?" palette={p}>
           <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
             1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
             2. 일봉·주봉·월봉별로 가장 자주, 믿을 만하게 지지/저항 역할을 해온 이동평균선 2~3개를
             백테스트로 찾아 차트에 그려드려요{'\n'}
             3. 남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요
           </Text>
-        </Card>
+        </Expandable>
       ) : null}
 
       <Footer palette={p} />
