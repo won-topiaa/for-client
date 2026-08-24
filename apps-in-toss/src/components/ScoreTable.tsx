@@ -75,7 +75,7 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
               {cell('resist', String(s.resistanceBounces), 44)}
               {cell('breaks', String(s.breaks), 68)}
               {cell('undecided', String(s.undecided), 52)}
-              {cell('rate', rate, 56)}
+              {cell('rate', rate, 68)}
               {cell('score', s.score.toFixed(3), 56)}
               {cell('last', s.lastTouch ?? '—', 92)}
             </View>

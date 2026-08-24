@@ -110,7 +110,7 @@ def test_quality_floor_rejects_weak_lines(monkeypatch):
             self.touches = support_bounces
             self.weighted_success = weighted_success
             self.score = weighted_success
-            # 지지 전용 성공률이 weighted_success 와 같게 나오도록 에피소드를 심는다
+            self.support_success = weighted_success
             self.episodes = _support_episodes(weighted_success)
 
     class Report:
