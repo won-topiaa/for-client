@@ -352,13 +352,17 @@ function RadarPage() {
             </Card>
           ) : (
             <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {recommended.length > 1 ? (
-                  <TouchableOpacity onPress={() => setFocusPeriod(null)} accessibilityRole="button">
+                  <TouchableOpacity
+                    onPress={() => setFocusPeriod(null)}
+                    accessibilityRole="button"
+                    style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
+                  >
                     <Card
                       palette={p}
                       style={{
-                        width: 150,
+                        width: '100%',
                         gap: 4,
                         borderColor: focusPeriod === null ? p.up : p.border,
                       }}
@@ -393,19 +397,20 @@ function RadarPage() {
                       key={rec.period}
                       onPress={() => setFocusPeriod(focused ? null : rec.period)}
                       accessibilityRole="button"
+                      style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
                     >
                       <Card
                         palette={p}
                         style={{
-                          width: 190,
+                          width: '100%',
                           gap: 4,
                           borderColor: focused ? p.up : p.border,
                           opacity: focusPeriod !== null && !focused ? 0.55 : 1,
                         }}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color }} />
-                          <Text style={{ fontSize: 15, fontWeight: '800', color: p.text }}>MA {rec.period}</Text>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
                         </View>
                         <Text style={{ fontSize: 11, color: p.sub }}>
                           터치 {rec.touches}회 · 성공률 {fmtRate(rec.successRate)}
@@ -430,13 +435,13 @@ function RadarPage() {
                   );
                 })}
                 {recommended.length === 0 ? (
-                  <Card palette={p} style={{ width: 260 }}>
+                  <Card palette={p} style={{ flexBasis: '100%' }}>
                     <Text style={{ fontSize: 12, color: p.amber }}>
                       추천할 만한 이평선을 찾지 못했습니다 (데이터/터치 부족)
                     </Text>
                   </Card>
                 ) : null}
-              </ScrollView>
+              </View>
 
               <Text style={{ fontSize: 11, color: p.faint }}>
                 분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
