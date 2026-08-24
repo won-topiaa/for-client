@@ -138,26 +138,42 @@ function ScreenerPage() {
 
   const openRadar = (m: TouchMatch) => {
     pendingAnalyze.symbol = m.symbol;
-    navigation.navigate('/');
+    navigation.navigate('/radar');
   };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: p.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flexShrink: 1 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>🚨 오늘의 지지선 터치</Text>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>오늘의 지지선</Text>
           <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
             검증된 지지 이평선에 오늘 저가가 닿은 종목만
           </Text>
         </View>
-        {email ? (
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          {email ? (
+            <TouchableOpacity
+              onPress={() => {
+                void logout().then(() => {
+                  setEmail(null);
+                  setPhase('needLogin');
+                });
+              }}
+              accessibilityRole="button"
+              style={{
+                borderWidth: 1,
+                borderColor: p.border,
+                backgroundColor: p.card,
+                borderRadius: 10,
+                paddingVertical: 8,
+                paddingHorizontal: 10,
+              }}
+            >
+              <Text style={{ fontSize: 11, color: p.sub }}>로그아웃</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
-            onPress={() => {
-              void logout().then(() => {
-                setEmail(null);
-                setPhase('needLogin');
-              });
-            }}
+            onPress={() => navigation.navigate('/')}
             accessibilityRole="button"
             style={{
               borderWidth: 1,
@@ -168,9 +184,9 @@ function ScreenerPage() {
               paddingHorizontal: 10,
             }}
           >
-            <Text style={{ fontSize: 11, color: p.sub }}>로그아웃</Text>
+            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
           </TouchableOpacity>
-        ) : null}
+        </View>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6 }}>
