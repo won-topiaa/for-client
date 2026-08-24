@@ -19,3 +19,6 @@ data/*.db-wal
 .env
 .env.*
 !.env.example
+
+# 빌드 아티팩트
+*.ait
