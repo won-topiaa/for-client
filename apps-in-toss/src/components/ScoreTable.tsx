@@ -22,7 +22,7 @@ const COLS: { key: string; label: string; width: number }[] = [
   { key: 'resist', label: '저항', width: 44 },
   { key: 'breaks', label: '이탈+돌파', width: 68 },
   { key: 'undecided', label: '미확정', width: 52 },
-  { key: 'rate', label: '성공률', width: 56 },
+  { key: 'rate', label: '지지성공률', width: 68 },
   { key: 'score', label: '점수', width: 56 },
   { key: 'last', label: '마지막 터치', width: 92 },
 ];

@@ -98,6 +98,16 @@ class MAStat:
     def decided(self) -> int:
         return self.bounces + self.breaks
 
+    @property
+    def support_success(self) -> float:
+        """지지 전용 가중 성공률 (저항 에피소드 제외)."""
+        decided = [e for e in self.episodes
+                   if e.side == "support" and e.outcome in ("bounce", "break")]
+        total_w = sum(e.weight for e in decided)
+        if total_w <= 0:
+            return 0.0
+        return sum(e.weight for e in decided if e.outcome == "bounce") / total_w
+
 
 def sma(values: np.ndarray, window: int) -> np.ndarray:
     return pd.Series(values).rolling(window).mean().to_numpy()

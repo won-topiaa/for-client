@@ -357,7 +357,7 @@
         (e) => e.outcome === "break" && e.side === "resistance").length;
       card.innerHTML =
         `<div class="period"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>` +
-        `<div class="meta">터치 ${rec.touches}회 · 성공률 ${rate}%</div>` +
+        `<div class="meta">터치 ${rec.touches}회 · 지지 성공률 ${rate}%</div>` +
         `<div class="meta">` +
         `<span style="color:${T.events.support}">지지 ${rec.supportBounces}</span> · ` +
         `<span style="color:${T.events.resistance}">저항 ${rec.resistanceBounces}</span> · ` +

@@ -54,11 +54,10 @@ TOUCH_MIN_SUCCESS = 0.60       # 가중 지지 성공률 하한 — 절반이 �
 
 
 def _support_success_rate(stat) -> float:
-    """지지(support) 쪽 에피소드만으로 계산한 가중 성공률.
+    """지지 전용 가중 성공률.
 
-    engine 의 weighted_success 는 지지·저항을 합친 양방향 반등률이라, '지지선'
-    판정에는 지지 전용 값을 써야 한다. 결정된(반등/이탈) 지지 에피소드의
-    가중 반등 비율을 돌려준다 (없으면 0)."""
+    MAStat 은 .support_success 속성을 갖지만, 테스트에서 가짜 Stat 을
+    넘길 수 있으므로 에피소드 기반 계산을 유지한다."""
     decided = [e for e in stat.episodes
                if e.side == "support" and e.outcome in ("bounce", "break")]
     total_w = sum(e.weight for e in decided)

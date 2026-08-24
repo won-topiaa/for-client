@@ -41,7 +41,7 @@ export interface MAStat {
   bounces: number;
   breaks: number;
   undecided: number;
-  successRate: number; // 0~1
+  successRate: number; // 지지 전용 가중 성공률 0~1
   wilsonLb: number;
   score: number;
   qualified: boolean;

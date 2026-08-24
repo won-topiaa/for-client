@@ -40,7 +40,7 @@ def _stat_to_dict(s: MAStat, dates: pd.Series) -> dict[str, Any]:
         "bounces": s.bounces,
         "breaks": s.breaks,
         "undecided": s.undecided,
-        "successRate": round(s.weighted_success, 4),
+        "successRate": round(s.support_success, 4),
         "wilsonLb": round(s.wilson_lb, 4),
         "score": round(s.score, 4),
         "qualified": s.qualified,
