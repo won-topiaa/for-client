@@ -352,37 +352,38 @@ function RadarPage() {
             </Card>
           ) : (
             <>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {recommended.length > 1 ? (
                   <TouchableOpacity
                     onPress={() => setFocusPeriod(null)}
                     accessibilityRole="button"
-                    style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
+                    style={{ flexBasis: '48%', flexGrow: 1, minWidth: 130 }}
                   >
                     <Card
                       palette={p}
                       style={{
                         width: '100%',
-                        gap: 4,
+                        padding: 10,
+                        gap: 3,
                         borderColor: focusPeriod === null ? p.up : p.border,
                       }}
                     >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                         {recommended.map((_, i) => (
                           <View
                             key={i}
                             style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: 4,
+                              width: 7,
+                              height: 7,
+                              borderRadius: 3.5,
                               backgroundColor: p.ma[i % p.ma.length],
                             }}
                           />
                         ))}
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>동시 보기</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: p.text }}>동시 보기</Text>
                       </View>
-                      <Text style={{ fontSize: 11, color: p.sub }}>추천 이평선 전체 표시</Text>
-                      <Text style={{ fontSize: 10, color: p.faint }}>
+                      <Text style={{ fontSize: 10, color: p.sub }}>추천 이평선 전체 표시</Text>
+                      <Text style={{ fontSize: 9, color: p.faint }}>
                         {focusPeriod === null ? '지금 보는 중' : '누르면 전체 표시'}
                       </Text>
                     </Card>
@@ -397,25 +398,26 @@ function RadarPage() {
                       key={rec.period}
                       onPress={() => setFocusPeriod(focused ? null : rec.period)}
                       accessibilityRole="button"
-                      style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
+                      style={{ flexBasis: '48%', flexGrow: 1, minWidth: 130 }}
                     >
                       <Card
                         palette={p}
                         style={{
                           width: '100%',
-                          gap: 4,
+                          padding: 10,
+                          gap: 3,
                           borderColor: focused ? p.up : p.border,
                           opacity: focusPeriod !== null && !focused ? 0.55 : 1,
                         }}
                       >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color }} />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
                         </View>
-                        <Text style={{ fontSize: 11, color: p.sub }}>
+                        <Text style={{ fontSize: 10, color: p.sub }}>
                           터치 {rec.touches}회 · 성공률 {fmtRate(rec.successRate)}
                         </Text>
-                        <Text style={{ fontSize: 11, color: p.sub }}>
+                        <Text style={{ fontSize: 10, color: p.sub }}>
                           <Text style={{ color: p.events.support }}>지지 {rec.supportBounces}</Text>
                           {' · '}
                           <Text style={{ color: p.events.resistance }}>저항 {rec.resistanceBounces}</Text>
@@ -425,9 +427,9 @@ function RadarPage() {
                           <Text style={{ color: p.events.breakUp }}>돌파 {breakUp}</Text>
                         </Text>
                         {rec.qualified ? null : (
-                          <Text style={{ fontSize: 10, color: p.amber }}>⚠ 표본 부족 — 참고용</Text>
+                          <Text style={{ fontSize: 9, color: p.amber }}>⚠ 표본 부족 — 참고용</Text>
                         )}
-                        <Text style={{ fontSize: 10, color: p.faint }}>
+                        <Text style={{ fontSize: 9, color: p.faint }}>
                           {focused ? '누르면 전체 보기' : '누르면 이 선만 보기'}
                         </Text>
                       </Card>
