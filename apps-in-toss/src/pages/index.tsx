@@ -1,7 +1,8 @@
 import { createRoute } from '@granite-js/react-native';
 import React from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Card, Footer } from '../components/ui';
+import { CONTACT_EMAIL } from '../env';
 import { usePalette } from '../theme';
 
 export const Route = createRoute('/', {
@@ -154,6 +155,24 @@ function HomePage() {
           이평선을 자동으로 찾아줍니다. 남들이 많이 쓰는 선이 아닌, 이 종목에
           맞는 선을 알 수 있어요.
         </Text>
+      </Card>
+
+      {/* ── 문의·협업 ── */}
+      <Card palette={p} style={{ gap: 8 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>
+          문의 · 협업
+        </Text>
+        <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
+          문의사항이나 협업 제안은 아래 이메일로 편하게 연락 주세요.
+        </Text>
+        <TouchableOpacity
+          onPress={() => void Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('이평선 레이더 문의')}`)}
+          accessibilityRole="link"
+        >
+          <Text style={{ fontSize: 14, color: p.indigo, fontWeight: '700' }}>
+            {CONTACT_EMAIL}
+          </Text>
+        </TouchableOpacity>
       </Card>
 
       <Footer palette={p} />
