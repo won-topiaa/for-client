@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이용약관 · 주식 레이더</title>
+<meta name="description" content="주식 레이더(원토피아) 서비스 이용약관 — 서비스 내용, 이용자 의무, 면책조항.">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2318181b%22/%3E%3Cline x1=%2220.5%22 y1=%2218%22 x2=%2220.5%22 y2=%2254%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2216%22 y=%2228%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3Cline x1=%2232%22 y1=%2212%22 x2=%2232%22 y2=%2246%22 stroke=%22%23f87171%22 stroke-width=%223%22/%3E%3Crect x=%2227.5%22 y=%2220%22 width=%229%22 height=%2216%22 rx=%222%22 fill=%22%23f87171%22/%3E%3Cline x1=%2243.5%22 y1=%228%22 x2=%2243.5%22 y2=%2242%22 stroke=%22%2334d399%22 stroke-width=%223%22/%3E%3Crect x=%2239%22 y=%2214%22 width=%229%22 height=%2218%22 rx=%222%22 fill=%22%2334d399%22/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5; --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --accent: #059669;
+    --hairline: rgba(16,24,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9,9,11,.5); --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --accent: #10b981;
+      --hairline: rgba(255,255,255,.09);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic",
+      "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.7;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 64px; }
+  .brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); margin-bottom: 26px; }
+  .brand svg { width: 28px; height: 28px; border-radius: 8px; display: block; }
+  .brand b { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .updated { color: var(--muted); font-size: 12.5px; margin: 0 0 28px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 8px 24px 20px;
+  }
+  h2 { font-size: 16px; letter-spacing: -.01em; margin: 24px 0 8px; }
+  p, li { color: var(--text); font-size: 13.7px; }
+  .muted { color: var(--muted); }
+  ul { margin: 6px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .back { display: inline-block; margin-top: 26px; color: var(--muted); font-size: 12.5px; text-decoration: none; }
+  .back:hover { color: var(--accent); }
+  .note { background: var(--panel2); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px 15px; font-size: 12.5px; color: var(--muted); margin-top: 18px; }
+
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 2px;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+  .card { position: relative; overflow: hidden; }
+  .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent 6%,
+      color-mix(in srgb, var(--accent) 55%, transparent) 50%, transparent 94%);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #fafafa; --panel: #ffffff; --panel2: #f4f4f5; --border: #e4e4e7;
+    --text: #18181b; --muted: #71717a; --accent: #059669;
+    --hairline: rgba(16,24,40,.08);
+  }
+  :root[data-theme="dark"] {
+      --bg: #09090b; --panel: #18181b; --panel2: rgba(9,9,11,.5); --border: #27272a;
+      --text: #f4f4f5; --muted: #a1a1aa; --accent: #10b981;
+      --hairline: rgba(255,255,255,.09);
+  }
+
+  .theme-toggle {
+    position: fixed; left: 50%; top: 12px; transform: translateX(-50%);
+    z-index: 50; width: 40px; height: 29px; border-radius: 999px;
+    border: 1px solid var(--border, var(--hairline)); background: var(--panel);
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .theme-toggle:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+</style>
+<script src="/static/theme.js"></script>
+</head>
+<body>
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="라이트/다크 모드 전환" aria-pressed="false">☀️</button>
+  <div class="wrap">
+    <a class="brand" href="/">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="주식 레이더 로고"><rect width="64" height="64" rx="14" fill="#18181b"/><line x1="20.5" y1="18" x2="20.5" y2="54" stroke="#34d399" stroke-width="3"/><rect x="16" y="28" width="9" height="18" rx="2" fill="#34d399"/><line x1="32" y1="12" x2="32" y2="46" stroke="#f87171" stroke-width="3"/><rect x="27.5" y="20" width="9" height="16" rx="2" fill="#f87171"/><line x1="43.5" y1="8" x2="43.5" y2="42" stroke="#34d399" stroke-width="3"/><rect x="39" y="14" width="9" height="18" rx="2" fill="#34d399"/></svg>
+      <b>주식 레이더</b>
+    </a>
+    <h1>이용약관</h1>
+    <p class="updated">원토피아(Wontopia)가 제공하는 주식 레이더(웹·앱인토스 미니앱 '이평선 레이더' 포함) 서비스 이용약관입니다.</p>
+
+    <div class="card">
+      <h2>제1조 (목적)</h2>
+      <p>이 약관은 원토피아(이하 '운영자')가 제공하는 주식 레이더 서비스(웹사이트 및
+        앱인토스 미니앱 '이평선 레이더'를 포함하며, 이하 '서비스')의 이용과 관련하여
+        운영자와 이용자 간의 권리·의무 및 책임사항을 정함을 목적으로 합니다.</p>
+
+      <h2>제2조 (서비스의 내용)</h2>
+      <p>서비스는 과거 시세 데이터를 통계적으로 분석(백테스트)해 종목별 이동평균선의
+        지지/저항 성향, 오늘의 지지선 터치 여부 등 정보성 자료를 제공합니다.</p>
+      <ul>
+        <li>서비스는 <b>전액 무료</b>로 제공되며, 결제·구독·유료 정보 제공 기능이
+          없습니다.</li>
+        <li>서비스는 <b>특정 종목의 매수·매도를 권유하거나 추천하지 않으며</b>,
+          투자자문·투자일임업에 해당하지 않는 단순 통계 정보 제공 도구입니다.</li>
+        <li>표시되는 모든 수치는 과거 데이터를 기반으로 한 통계로, 미래의 수익이나
+          결과를 보장하지 않습니다.</li>
+      </ul>
+
+      <h2>제3조 (이용자의 의무)</h2>
+      <ul>
+        <li>이용자는 서비스에서 제공하는 정보를 투자 참고 자료로만 활용하며, 최종
+          투자 판단과 그 결과에 대한 책임은 이용자 본인에게 있습니다.</li>
+        <li>이용자는 회원가입 시 정확한 이메일 정보를 제공해야 하며, 타인의 정보를
+          도용하거나 서비스를 부정한 목적으로 이용해서는 안 됩니다.</li>
+        <li>서비스에 과도한 트래픽을 유발하는 자동화된 접근(크롤링 등)으로 서비스
+          운영을 방해해서는 안 됩니다.</li>
+      </ul>
+
+      <h2>제4조 (운영자의 의무)</h2>
+      <p>운영자는 관련 법령을 준수하며, 안정적인 서비스 제공을 위해 노력합니다. 다만
+        무료 시세 데이터 소스에 의존하는 서비스 특성상, 데이터 지연·일시 중단이
+        발생할 수 있으며 이에 대해 별도로 보상하지 않습니다.</p>
+
+      <h2>제5조 (면책조항)</h2>
+      <ul>
+        <li>서비스가 제공하는 모든 정보는 <b>과거 데이터에 대한 통계이며 투자 권유가
+          아닙니다.</b> 과거에 잘 지켜진 이동평균선이 미래에도 동일하게 작동한다는
+          보장은 없습니다.</li>
+        <li>운영자는 이용자가 서비스의 정보를 신뢰하여 행한 투자 결정 및 그로 인한
+          손실에 대해 책임을 지지 않습니다.</li>
+        <li>운영자는 천재지변, 시세 데이터 제공사의 장애 등 운영자의 통제범위를 벗어난
+          사유로 인한 서비스 중단에 대해 책임을 지지 않습니다.</li>
+      </ul>
+
+      <h2>제6조 (지적재산권)</h2>
+      <p>서비스에서 제공하는 화면 구성, 분석 로직, 콘텐츠에 대한 저작권은 운영자에게
+        있으며, 무단 복제·배포를 금지합니다.</p>
+
+      <h2>제7조 (약관의 변경)</h2>
+      <p>운영자는 필요한 경우 관련 법령을 위반하지 않는 범위에서 이 약관을 변경할 수
+        있으며, 변경 시 이 페이지를 통해 사전 공지합니다.</p>
+
+      <h2>제8조 (문의처)</h2>
+      <p>서비스 이용 관련 문의: <a href="mailto:wontopiaaa@gmail.com?subject=%5B%EC%9D%B4%EC%9A%A9%EC%95%BD%EA%B4%80%5D%20%EB%AC%B8%EC%9D%98">wontopiaaa@gmail.com</a></p>
+    </div>
+
+    <div class="note">
+      본 약관은 서비스 공개 시점부터 적용되며, 개인정보 처리에 관한 사항은
+      별도의 <a href="/privacy">개인정보처리방침</a>을 따릅니다.
+    </div>
+
+    <a class="back" href="/">← 홈으로 돌아가기</a>
+  </div>
+</body>
+</html>

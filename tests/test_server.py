@@ -427,7 +427,7 @@ def test_theme_toggle_on_every_page(client):
     client.post("/api/auth/signup",
                 json={"email": "themetest@example.com", "password": "password123"})
     try:
-        for page in ("/", "/ma", "/patterns", "/touches", "/about", "/privacy"):
+        for page in ("/", "/ma", "/patterns", "/touches", "/about", "/privacy", "/terms"):
             check(page)
     finally:
         client.post("/api/auth/logout")

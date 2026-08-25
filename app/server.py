@@ -740,3 +740,9 @@ async def about_page():
 async def privacy_page():
     """개인정보처리방침 (회원 이메일 수집 고지)."""
     return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/terms")
+async def terms_page():
+    """서비스 이용약관 (앱인토스 등록에 필요한 이용약관 URL)."""
+    return FileResponse(STATIC_DIR / "terms.html")
