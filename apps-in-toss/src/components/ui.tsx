@@ -128,6 +128,37 @@ export function Expandable({
   );
 }
 
+/** 관심종목 별표 — 카드 오른쪽 위에 놓는다. 채워진 별(★)이면 담긴 상태. */
+export function StarButton({
+  watched,
+  palette: p,
+  onPress,
+  label,
+}: {
+  watched: boolean;
+  palette: Palette;
+  onPress: () => void;
+  /** 스크린리더가 어느 종목인지 알 수 있게 — 목록에서 별이 여러 개일 때 중요 */
+  label?: string;
+}) {
+  const what = label ? `${label} ` : '';
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: watched }}
+      accessibilityLabel={watched ? `${what}관심종목에서 빼기` : `${what}관심종목에 담기`}
+      // 별 자체는 작아서 탭하기 어렵다 — 주변까지 터치 영역을 넓힌다
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      style={{ paddingHorizontal: 2 }}
+    >
+      <Text style={{ fontSize: 19, color: watched ? p.amber : p.faint }}>
+        {watched ? '★' : '☆'}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 export function Footer({ palette: p }: { palette: Palette }) {
   return (
     <View style={{ paddingVertical: 20, gap: 6 }}>

@@ -10,11 +10,12 @@ import {
 import { ApiError, fetchTouches, isRateLimited } from '../api/client';
 import type { Market, TouchesResponse, TouchMatch } from '../api/types';
 import { CandleChart } from '../components/CandleChart';
-import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
+import { Card, Chip, Expandable, Footer, PrimaryButton, StarButton } from '../components/ui';
 import { SCREENER_RULE_LABEL } from '../env';
 import { fmtDistPct, fmtPrice, fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
 import { usePalette } from '../theme';
+import { isWatched, useWatchlist } from '../watchlist';
 
 export const Route = createRoute('/screener', {
   component: ScreenerPage,
@@ -28,6 +29,100 @@ const RETRY_ERROR_MS = 15000;
 // 429 를 맞았을 때 서버가 Retry-After 를 안 줬다면 쓰는 기본 대기 (서버 창은 60초)
 const RATE_LIMIT_BACKOFF_SEC = 30;
 
+/**
+ * 매치 한 건 카드. React.memo 로 감싼 이유:
+ *
+ * 관심종목 목록이 바뀌면(별 한 번 누르면) 배열 정체성이 바뀌어 페이지 전체가
+ * 다시 그려진다. 카드마다 캔들차트가 들어 있고 차트는 봉 하나당 View 2개를
+ * 절대배치로 그리므로, 최대 12장 × 40봉이면 별 한 번에 수천 개 View 가 다시
+ * 배치된다. 카드를 분리하고 watched 를 불리언으로 받으면, 실제로 상태가 바뀐
+ * 카드 하나만 다시 그린다. (차트에 넘기는 배열·객체는 이 안에서 만들어지므로
+ * 카드가 리렌더되지 않는 한 새로 생기지도 않는다.)
+ */
+const MatchCard = React.memo(function MatchCard({
+  match: m,
+  palette: p,
+  watched,
+  onToggleWatch,
+  onOpenRadar,
+}: {
+  match: TouchMatch;
+  palette: ReturnType<typeof usePalette>;
+  watched: boolean;
+  onToggleWatch: (item: { symbol: string; name: string; market?: string | null }) => void;
+  onOpenRadar: (m: TouchMatch) => void;
+}) {
+  const ratePct = Math.max(0, Math.min(100, Math.round(m.successRate * 100)));
+  return (
+    <Card palette={p} style={{ gap: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontSize: 15, color: p.text, flexShrink: 1 }} numberOfLines={1}>
+          <Text style={{ fontWeight: '800' }}>{m.name}</Text>
+          <Text style={{ fontSize: 12, color: p.faint }}>
+            {'  '}
+            {m.symbol}
+            {m.market ? ` · ${m.market}` : ''}
+          </Text>
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View
+            style={{
+              backgroundColor: p.emeraldBg,
+              borderRadius: 6,
+              paddingVertical: 3,
+              paddingHorizontal: 8,
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: p.up }}>MA {m.period}</Text>
+          </View>
+          <StarButton
+            watched={watched}
+            palette={p}
+            label={m.name}
+            onPress={() => onToggleWatch({ symbol: m.symbol, name: m.name, market: m.market })}
+          />
+        </View>
+      </View>
+      <View style={{ height: 6, borderRadius: 3, backgroundColor: p.border, overflow: 'hidden' }}>
+        <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
+      </View>
+      <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+        3년 지지 성공률 <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.successRate)}</Text>
+        {' · '}지지 성공 {m.supportBounces}회 (터치 {m.touches}회){' · '}오늘 종가는 선 대비{' '}
+        <Text style={{ fontWeight: '700', color: p.text }}>{fmtDistPct(m.distPct)}</Text> (선{' '}
+        {fmtPrice(m.maValue)})
+      </Text>
+      <CandleChart
+        candles={m.candles}
+        lines={[{ color: p.amber, points: m.maLine, width: 2 }]}
+        markers={
+          m.candles.length > 0
+            ? [
+                {
+                  time: m.candles[m.candles.length - 1]?.time ?? '',
+                  shape: 'arrowUp',
+                  color: p.indigo,
+                  position: 'below',
+                },
+              ]
+            : []
+        }
+        height={140}
+        maxBars={40}
+        colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
+        showPriceAxis={false}
+      />
+      <TouchableOpacity
+        onPress={() => onOpenRadar(m)}
+        accessibilityRole="button"
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '600' }}>이평선 분석 →</Text>
+      </TouchableOpacity>
+    </Card>
+  );
+});
+
 function ScreenerPage() {
   const p = usePalette();
   const navigation = Route.useNavigation();
@@ -36,6 +131,7 @@ function ScreenerPage() {
   const [phase, setPhase] = useState<Phase>('boot');
   const [body, setBody] = useState<TouchesResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const { items: watched, toggle: toggleWatch } = useWatchlist();
 
   const seqRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,10 +215,15 @@ function ScreenerPage() {
     );
   };
 
-  const openRadar = (m: TouchMatch) => {
-    pendingAnalyze.symbol = m.symbol;
-    navigation.navigate('/radar');
-  };
+  // useCallback: MatchCard 가 React.memo 라 콜백이 매 렌더 새로 생기면
+  // 메모가 무의미해진다 (카드 12장이 전부 다시 그려진다).
+  const openRadar = useCallback(
+    (m: TouchMatch) => {
+      pendingAnalyze.symbol = m.symbol;
+      navigation.navigate('/radar');
+    },
+    [navigation]
+  );
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: p.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -133,20 +234,37 @@ function ScreenerPage() {
             검증된 지지 이평선에 오늘 저가가 닿은 종목만
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('/')}
-          accessibilityRole="button"
-          style={{
-            borderWidth: 1,
-            borderColor: p.border,
-            backgroundColor: p.card,
-            borderRadius: 10,
-            paddingVertical: 8,
-            paddingHorizontal: 10,
-          }}
-        >
-          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('/watchlist')}
+            accessibilityRole="button"
+            accessibilityLabel="관심종목 보기"
+            style={{
+              borderWidth: 1,
+              borderColor: p.border,
+              backgroundColor: p.card,
+              borderRadius: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: p.amber, fontWeight: '600' }}>★</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('/')}
+            accessibilityRole="button"
+            style={{
+              borderWidth: 1,
+              borderColor: p.border,
+              backgroundColor: p.card,
+              borderRadius: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -218,69 +336,16 @@ function ScreenerPage() {
               </Text>
             </Card>
           ) : null}
-          {(body.matches ?? []).map((m) => {
-            const ratePct = Math.max(0, Math.min(100, Math.round(m.successRate * 100)));
-            return (
-              <Card key={`${m.symbol}-${m.period}`} palette={p} style={{ gap: 8 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 15, color: p.text, flexShrink: 1 }} numberOfLines={1}>
-                    <Text style={{ fontWeight: '800' }}>{m.name}</Text>
-                    <Text style={{ fontSize: 12, color: p.faint }}>
-                      {'  '}
-                      {m.symbol}
-                      {m.market ? ` · ${m.market}` : ''}
-                    </Text>
-                  </Text>
-                  <View
-                    style={{
-                      backgroundColor: p.emeraldBg,
-                      borderRadius: 6,
-                      paddingVertical: 3,
-                      paddingHorizontal: 8,
-                    }}
-                  >
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: p.up }}>MA {m.period}</Text>
-                  </View>
-                </View>
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: p.border, overflow: 'hidden' }}>
-                  <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
-                </View>
-                <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
-                  3년 지지 성공률 <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.successRate)}</Text>
-                  {' · '}지지 성공 {m.supportBounces}회 (터치 {m.touches}회){' · '}오늘 종가는 선 대비{' '}
-                  <Text style={{ fontWeight: '700', color: p.text }}>{fmtDistPct(m.distPct)}</Text> (선{' '}
-                  {fmtPrice(m.maValue)})
-                </Text>
-                <CandleChart
-                  candles={m.candles}
-                  lines={[{ color: p.amber, points: m.maLine, width: 2 }]}
-                  markers={
-                    m.candles.length > 0
-                      ? [
-                          {
-                            time: m.candles[m.candles.length - 1]?.time ?? '',
-                            shape: 'arrowUp',
-                            color: p.indigo,
-                            position: 'below',
-                          },
-                        ]
-                      : []
-                  }
-                  height={140}
-                  maxBars={40}
-                  colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
-                  showPriceAxis={false}
-                />
-                <TouchableOpacity
-                  onPress={() => openRadar(m)}
-                  accessibilityRole="button"
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '600' }}>이평선 분석 →</Text>
-                </TouchableOpacity>
-              </Card>
-            );
-          })}
+          {(body.matches ?? []).map((m) => (
+            <MatchCard
+              key={`${m.symbol}-${m.period}`}
+              match={m}
+              palette={p}
+              watched={isWatched(watched, m.symbol)}
+              onToggleWatch={toggleWatch}
+              onOpenRadar={openRadar}
+            />
+          ))}
         </>
       ) : null}
 

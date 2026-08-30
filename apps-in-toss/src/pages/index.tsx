@@ -303,6 +303,29 @@ function HomePage() {
             </Card>
           </TouchableOpacity>
 
+          {/* ── 관심종목 ── */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('/watchlist')}
+            accessibilityRole="button"
+            activeOpacity={0.7}
+          >
+            <Card palette={p} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 17 }}>★</Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: p.text }}>관심종목</Text>
+              </View>
+              <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+                두 화면에서 종목 오른쪽 위의 ☆ 를 누르면 여기에 모여요. 자주 보는 종목을
+                담아 두고 바로 분석해 보세요.
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+                <Text style={{ fontSize: 13, color: p.amber, fontWeight: '700' }}>
+                  관심종목 보기 →
+                </Text>
+              </View>
+            </Card>
+          </TouchableOpacity>
+
           {/* ── 이평선이란? ── */}
           <Card palette={p} style={{ gap: 8 }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>

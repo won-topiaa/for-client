@@ -3,17 +3,20 @@
 import { Route as _IndexRoute } from '../pages/';
 import { Route as _RadarRoute } from '../pages/radar';
 import { Route as _ScreenerRoute } from '../pages/screener';
+import { Route as _WatchlistRoute } from '../pages/watchlist';
 
 declare module '@granite-js/react-native' {
   interface RegisterScreenInput {
     '/': (typeof _IndexRoute)['_inputType'];
     '/radar': (typeof _RadarRoute)['_inputType'];
     '/screener': (typeof _ScreenerRoute)['_inputType'];
+    '/watchlist': (typeof _WatchlistRoute)['_inputType'];
   }
 
   interface RegisterScreen {
     '/': (typeof _IndexRoute)['_outputType'];
     '/radar': (typeof _RadarRoute)['_outputType'];
     '/screener': (typeof _ScreenerRoute)['_outputType'];
+    '/watchlist': (typeof _WatchlistRoute)['_outputType'];
   }
 }

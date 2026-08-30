@@ -13,11 +13,12 @@ import { analyzeSymbol, searchSymbols } from '../api/client';
 import type { AnalyzeResponse, MAEvent, SymbolInfo, Timeframe } from '../api/types';
 import { CandleChart, type ChartLine, type ChartMarker } from '../components/CandleChart';
 import { ScoreTable } from '../components/ScoreTable';
-import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
+import { Card, Chip, Expandable, Footer, PrimaryButton, StarButton } from '../components/ui';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
 import { usePalette } from '../theme';
+import { isWatched, useWatchlist } from '../watchlist';
 
 export const Route = createRoute('/radar', {
   component: RadarPage,
@@ -51,10 +52,15 @@ function RadarPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  // 분석한 종목의 표시 정보. selected 를 그대로 쓰면 안 된다 — 결과를 띄워 둔 채
+  // 검색어를 새로 입력하면 selected 가 null 이 돼(onChangeQuery) 카드가 종목명
+  // 대신 심볼을 보여주고, 그 상태로 별을 누르면 이름이 심볼로 저장된다.
+  const [analyzed, setAnalyzed] = useState<SymbolInfo | null>(null);
   const [tf, setTf] = useState<Timeframe>('day');
   const [focusPeriod, setFocusPeriod] = useState<number | null>(null);
   const [showMarkers, setShowMarkers] = useState(true);
   const [maxBars, setMaxBars] = useState<number>(120);
+  const { items: watched, toggle: toggleWatch } = useWatchlist();
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
@@ -101,12 +107,14 @@ function RadarPage() {
     setLoading(true);
     setErrorMsg('');
     setAnalysis(null);
+    setAnalyzed(null);
     try {
       const body = await analyzeSymbol(item.symbol);
       if (seq !== analyzeSeq.current) {
         return;
       }
       setAnalysis(body);
+      setAnalyzed(item);
       setFocusPeriod(null);
     } catch (err) {
       if (seq === analyzeSeq.current) {
@@ -233,20 +241,37 @@ function RadarPage() {
             자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('/')}
-          accessibilityRole="button"
-          style={{
-            borderWidth: 1,
-            borderColor: p.border,
-            backgroundColor: p.card,
-            borderRadius: 10,
-            paddingVertical: 8,
-            paddingHorizontal: 10,
-          }}
-        >
-          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('/watchlist')}
+            accessibilityRole="button"
+            accessibilityLabel="관심종목 보기"
+            style={{
+              borderWidth: 1,
+              borderColor: p.border,
+              backgroundColor: p.card,
+              borderRadius: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: p.amber, fontWeight: '600' }}>★</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('/')}
+            accessibilityRole="button"
+            style={{
+              borderWidth: 1,
+              borderColor: p.border,
+              backgroundColor: p.card,
+              borderRadius: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Card palette={p} style={{ gap: 10 }}>
@@ -329,6 +354,35 @@ function RadarPage() {
 
       {analysis && !loading ? (
         <>
+          {/* 분석한 종목 — 오른쪽 위 별로 관심종목에 담는다 */}
+          <Card palette={p} style={{ paddingVertical: 11 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <View style={{ flexShrink: 1, paddingRight: 8 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: p.text }} numberOfLines={1}>
+                  {analyzed?.name ?? analysis.symbol}
+                </Text>
+                <Text style={{ fontSize: 11, color: p.faint, marginTop: 2 }}>
+                  {analysis.symbol}
+                  {analyzed?.market ? ` · ${analyzed.market}` : ''}
+                </Text>
+              </View>
+              <StarButton
+                watched={isWatched(watched, analysis.symbol)}
+                palette={p}
+                label={analyzed?.name ?? analysis.symbol}
+                onPress={() => {
+                  void toggleWatch({
+                    symbol: analysis.symbol,
+                    name: analyzed?.name ?? analysis.symbol,
+                    market: analyzed?.market,
+                  });
+                }}
+              />
+            </View>
+          </Card>
+
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {TIMEFRAMES.map((t) => (
               <Chip
