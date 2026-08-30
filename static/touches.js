@@ -156,6 +156,15 @@
         location.href = "/login?next=%2Ftouches";
         return;
       }
+      // 레이트리밋은 실패가 아니라 '잠시 물러서라'는 신호다. 화면을 실패로
+      // 떨어뜨리거나 이미 그린 결과를 지우지 않고, 서버가 준 만큼 기다렸다
+      // 그대로 폴링을 잇는다 (기본 재시도 4초로는 아직 안 풀린 창에 또 걸린다).
+      if (r.status === 429) {
+        const ra = Number(r.headers.get("retry-after"));
+        pollTimer = setTimeout(() => load(true),
+                               (Number.isFinite(ra) && ra > 0 ? ra : 30) * 1000);
+        return;
+      }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = await r.json();
       if (seq !== reqSeq) return;

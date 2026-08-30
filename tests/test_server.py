@@ -283,6 +283,27 @@ def test_touches_bucket_is_separate_and_generous(monkeypatch):
     assert 429 in touches_codes           # 터치도 자기 상한은 지킨다
 
 
+def test_rate_limit_429_carries_retry_after(monkeypatch):
+    """429 는 Retry-After 를 실어 보낸다 — 앱·웹이 이 값만큼 물러섰다 재시도한다.
+
+    앱(screener.tsx)과 웹(touches.js)은 429 를 '실패'가 아니라 '잠시 대기'로
+    다루고 이 헤더를 읽는다. 헤더가 사라지면 클라이언트가 기본값으로 성급히
+    재시도해 아직 안 풀린 창에 다시 걸린다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(server_mod, "TOUCHES_RATE_LIMIT_PER_MIN", 1)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        c.get("/api/touches", params={"market": "kr"})
+        blocked = c.get("/api/touches", params={"market": "kr"})
+    server_mod._rate_windows.clear()
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # 본문은 text/plain 이라 클라이언트가 JSON 으로 파싱하면 안 된다
+    assert blocked.headers["content-type"].startswith("text/plain")
+
+
 def test_search_and_analyze_have_separate_buckets(monkeypatch):
     """검색과 분석은 버킷이 분리돼, 한쪽을 다 써도 다른 쪽 예산은 남는다."""
     import app.server as server_mod

@@ -672,7 +672,11 @@ async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
     자체 로그인을 제공할 수 없어(2026-08 심사 반려) 계정 없이 동작해야 한다.
     내용은 공개 시세의 통계일 뿐 개인정보가 아니라 공개해도 무방하다. 사이트의
     /touches 페이지는 그대로 회원 전용으로 두어 가입 동선을 유지한다.
-    스캔 결과는 서버가 캐시한 스냅숏이라 공개해도 백테스트 부하는 늘지 않는다."""
+
+    부하: 응답은 대개 캐시된 스냅숏이고 요청마다 백테스트가 돌지는 않는다.
+    다만 snapshot() 은 결과가 없거나 만료됐으면 스캔을 한 건 띄우므로
+    (pattern_scan.snapshot), 익명 호출자도 스캔을 유발할 수 있다. 동시에 한
+    건만 돌고 워치독·에러 쿨다운이 걸려 있어 증폭은 되지 않는다."""
     snap = await app.state.touch_scanners[market].snapshot()
     if snap["status"] != "done":
         return snap

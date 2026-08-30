@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { fetchTouches } from '../api/client';
+import { ApiError, fetchTouches, isRateLimited } from '../api/client';
 import type { Market, TouchesResponse, TouchMatch } from '../api/types';
 import { CandleChart } from '../components/CandleChart';
 import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
@@ -25,6 +25,8 @@ type Phase = 'boot' | 'running' | 'done' | 'error';
 const POLL_RUNNING_MS = 2000; // 스캔 진행 중 폴링 간격 (웹과 동일)
 const POLL_PARTIAL_MS = 5000; // 부분 결과가 채워지는 동안
 const RETRY_ERROR_MS = 15000;
+// 429 를 맞았을 때 서버가 Retry-After 를 안 줬다면 쓰는 기본 대기 (서버 창은 60초)
+const RATE_LIMIT_BACKOFF_SEC = 30;
 
 function ScreenerPage() {
   const p = usePalette();
@@ -79,6 +81,14 @@ function ScreenerPage() {
         }
       } catch (err) {
         if (seq !== seqRef.current) {
+          return;
+        }
+        // 레이트리밋은 일시적이다 — 화면을 '스캔 실패'로 떨어뜨리거나 이미 받아
+        // 둔 결과를 지우지 않고, 서버가 알려준 만큼 물러섰다 그대로 다시 폴링한다.
+        // (RETRY_ERROR_MS 로 성급히 재시도하면 아직 안 풀린 창에 또 걸린다.)
+        if (isRateLimited(err)) {
+          const waitSec = (err as ApiError).retryAfterSec ?? RATE_LIMIT_BACKOFF_SEC;
+          timerRef.current = setTimeout(() => void load(mk, true), waitSec * 1000);
           return;
         }
         setErrorMsg(err instanceof Error ? err.message : '스캔 실패');

@@ -8,11 +8,18 @@ import type { AnalyzeResponse, Market, SearchResponse, TouchesResponse } from '.
 export class ApiError extends Error {
   constructor(
     message: string,
-    readonly status: number
+    readonly status: number,
+    /** 429 일 때 서버가 알려준 대기 시간(초). 화면이 그만큼 물러섰다 재시도한다. */
+    readonly retryAfterSec?: number
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** 레이트리밋에 걸렸나 — 일시적이라 실패로 처리하지 않고 물러섰다 다시 시도한다. */
+export function isRateLimited(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 429;
 }
 
 /** FastAPI 의 detail 은 문자열 또는 검증오류 객체 배열 — 사람이 읽을 문장으로 */
@@ -38,6 +45,16 @@ async function api<T>(path: string): Promise<T> {
   } catch {
     // 무료 플랜 서버는 15분 유휴 후 잠들어 첫 요청이 오래 걸리거나 끊길 수 있다
     throw new ApiError('서버에 연결하지 못했어요 — 잠시 후 다시 시도해 주세요.', 0);
+  }
+  if (res.status === 429) {
+    // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
+    // 그대로 두면 'HTTP 429' 라는 날 코드가 화면에 뜬다.
+    const raw = Number(res.headers.get('retry-after'));
+    throw new ApiError(
+      '요청이 너무 잦아요 — 잠시 뒤 자동으로 다시 시도할게요.',
+      429,
+      Number.isFinite(raw) && raw > 0 ? raw : undefined
+    );
   }
   const body: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
