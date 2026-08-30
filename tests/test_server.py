@@ -104,7 +104,8 @@ def test_legacy_symbol_deeplink_redirects_to_ma(client):
 
 
 def test_touches_page_and_api(client):
-    # 터치는 회원 전용 — 가입해 세션을 얻은 뒤 접근
+    # /touches 페이지는 회원 전용 — 가입해 세션을 얻은 뒤 접근
+    # (/api/touches 자체는 공개다. test_auth.py 참고)
     client.post("/api/auth/signup",
                 json={"email": "touchview@example.com", "password": "password123"})
     try:
@@ -118,8 +119,11 @@ def test_touches_page_and_api(client):
 
 
 def test_app_client_gets_token_and_bearer_auth_works(client):
-    """앱인토스 미니앱 경로: client:"app" 이면 본문으로 토큰을 받고,
-    쿠키 없이 Authorization: Bearer 만으로 회원 전용 API 를 쓸 수 있다."""
+    """client:"app" 이면 본문으로 토큰을 받고, 쿠키 없이 Authorization: Bearer
+    만으로 회원 전용 API 를 쓸 수 있다.
+
+    참고: 앱인토스 미니앱은 정책상 자체 로그인을 제공할 수 없어 이 경로를 더는
+    쓰지 않는다(앱은 계정 없이 공개 API 만 호출). 서버 기능 자체는 유지한다."""
     r = client.post("/api/auth/signup",
                     json={"email": "appuser@example.com",
                           "password": "password123", "client": "app"})
@@ -128,7 +132,7 @@ def test_app_client_gets_token_and_bearer_auth_works(client):
     assert token, "앱 클라이언트 응답에 토큰이 없음"
     client.cookies.clear()  # 쿠키를 지워 헤더만으로 인증되는지 확인
     try:
-        api = client.get("/api/touches", params={"market": "kr"},
+        api = client.get("/api/auth/me",
                          headers={"Authorization": f"Bearer {token}"})
         assert api.status_code == 200
         # 로그인도 앱 클라이언트면 토큰을 돌려준다
@@ -143,7 +147,7 @@ def test_app_client_gets_token_and_bearer_auth_works(client):
                           headers={"Authorization": f"Bearer {token}"})
         assert out.status_code == 200
     # 로그아웃된 토큰은 즉시 무효
-    api = client.get("/api/touches", params={"market": "kr"},
+    api = client.get("/api/auth/me",
                      headers={"Authorization": f"Bearer {token}"})
     assert api.status_code == 401
 
@@ -249,6 +253,36 @@ def test_search_rate_limit(monkeypatch):
     assert 429 in codes[3:]
 
 
+def test_touches_bucket_is_separate_and_generous(monkeypatch):
+    """공개된 /api/touches 는 전용 버킷을 쓴다 — 폴링이 분석 예산을 갉지 않고,
+    분석 예산이 바닥나도 터치 폴링은 계속 돼야 한다.
+
+    상한이 넉넉한 것도 함께 확인한다: 앱·웹이 스캔 중 2초 간격(30회/분)으로
+    폴링하고 CGNAT 로 IP 를 공유할 수 있어, 상한이 낮으면 정상 사용자가 429 를
+    맞는다."""
+    import app.server as server_mod
+    from fastapi.testclient import TestClient
+
+    # 실제 상한이 한 사람의 폴링(30회/분)보다 충분히 커야 한다
+    assert server_mod.TOUCHES_RATE_LIMIT_PER_MIN >= 30 * 5
+
+    monkeypatch.setattr(server_mod, "ANALYZE_RATE_LIMIT_PER_MIN", 2)
+    monkeypatch.setattr(server_mod, "TOUCHES_RATE_LIMIT_PER_MIN", 5)
+    server_mod._rate_windows.clear()
+    with TestClient(server_mod.app) as c:
+        analyze_codes = [c.get("/api/analyze", params={"symbol": "005930"}).status_code
+                         for i in range(4)]
+        # 분석 예산을 다 써도 터치 폴링은 통과해야 한다 (버킷 분리)
+        touches_code = c.get("/api/touches", params={"market": "kr"}).status_code
+        # 터치도 자기 버킷을 넘기면 막힌다
+        touches_codes = [c.get("/api/touches", params={"market": "kr"}).status_code
+                         for i in range(6)]
+    server_mod._rate_windows.clear()
+    assert 429 in analyze_codes           # 분석은 2회 초과로 막힘
+    assert touches_code == 200            # 터치 예산은 멀쩡
+    assert 429 in touches_codes           # 터치도 자기 상한은 지킨다
+
+
 def test_search_and_analyze_have_separate_buckets(monkeypatch):
     """검색과 분석은 버킷이 분리돼, 한쪽을 다 써도 다른 쪽 예산은 남는다."""
     import app.server as server_mod
@@ -287,14 +321,15 @@ def test_session_cache_reduces_db_lookups_and_logout_evicts(monkeypatch):
         token = c.cookies.get(server_mod.COOKIE_NAME)
         assert token
         # 첫 폴은 DB 조회(미스), 두 번째는 캐시 히트라 조회하지 않는다
-        assert c.get("/api/touches", params={"market": "kr"}).status_code == 200
-        assert c.get("/api/touches", params={"market": "kr"}).status_code == 200
+        # (프로브는 인증이 필요한 /api/auth/me — /api/touches 는 공개로 바뀌었다)
+        assert c.get("/api/auth/me").status_code == 200
+        assert c.get("/api/auth/me").status_code == 200
         assert calls["n"] == 1, f"두 번째 폴이 캐시를 안 쓰고 DB 를 또 때림 ({calls['n']})"
         assert token in server_mod._session_cache
         # 로그아웃하면 캐시에서 즉시 제거되고 이후 접근은 401
         c.post("/api/auth/logout")
         assert token not in server_mod._session_cache
-        assert c.get("/api/touches", params={"market": "kr"}).status_code == 401
+        assert c.get("/api/auth/me").status_code == 401
     server_mod._session_cache.clear()
 
 

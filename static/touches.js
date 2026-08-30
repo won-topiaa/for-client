@@ -149,6 +149,9 @@
     try {
       const r = await fetch(`/api/touches?market=${market}`);
       if (seq !== reqSeq) return;
+      // /api/touches 는 현재 공개라 401 이 오지 않는다(앱인토스 정책으로 앱이
+      // 계정 없이 써야 해서). 이 페이지 자체는 여전히 회원 전용이고, API 를
+      // 다시 잠글 경우를 대비해 방어적으로 남겨 둔다.
       if (r.status === 401) {  // 세션 만료 등 — 로그인 페이지로
         location.href = "/login?next=%2Ftouches";
         return;

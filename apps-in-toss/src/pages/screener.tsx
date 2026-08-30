@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { clearSession, fetchTouches, getToken, isAuthError, logout, me } from '../api/client';
+import { fetchTouches } from '../api/client';
 import type { Market, TouchesResponse, TouchMatch } from '../api/types';
 import { CandleChart } from '../components/CandleChart';
 import { Card, Chip, Expandable, Footer, PrimaryButton } from '../components/ui';
@@ -20,7 +20,7 @@ export const Route = createRoute('/screener', {
   component: ScreenerPage,
 });
 
-type Phase = 'boot' | 'needLogin' | 'running' | 'done' | 'error';
+type Phase = 'boot' | 'running' | 'done' | 'error';
 
 const POLL_RUNNING_MS = 2000; // 스캔 진행 중 폴링 간격 (웹과 동일)
 const POLL_PARTIAL_MS = 5000; // 부분 결과가 채워지는 동안
@@ -34,7 +34,6 @@ function ScreenerPage() {
   const [phase, setPhase] = useState<Phase>('boot');
   const [body, setBody] = useState<TouchesResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [email, setEmail] = useState<string | null>(null);
 
   const seqRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,13 +53,6 @@ function ScreenerPage() {
         setBody(null);
         setErrorMsg('');
         setPhase('boot');
-      }
-      const token = await getToken();
-      if (!token) {
-        if (seq === seqRef.current) {
-          setPhase('needLogin');
-        }
-        return;
       }
       try {
         const res = await fetchTouches(mk);
@@ -89,11 +81,6 @@ function ScreenerPage() {
         if (seq !== seqRef.current) {
           return;
         }
-        if (isAuthError(err)) {
-          await clearSession(); // 만료 토큰 정리 후 로그인 유도
-          setPhase('needLogin');
-          return;
-        }
         setErrorMsg(err instanceof Error ? err.message : '스캔 실패');
         setPhase('error');
         timerRef.current = setTimeout(() => void load(mk, true), RETRY_ERROR_MS);
@@ -104,7 +91,6 @@ function ScreenerPage() {
 
   useEffect(() => {
     void load(market, false);
-    void me().then(setEmail);
     return () => {
       // 진행 중이던 응답이 화면을 떠난 뒤 도착해 타이머를 다시 걸지 않도록
       // 시퀀스를 올려 무효화한다 (타이머만 지우면 폴링이 몰래 계속된다)
@@ -112,19 +98,6 @@ function ScreenerPage() {
       clearTimer();
     };
   }, [market, load]);
-
-  // 로그인 화면에서 돌아오면 다시 시도
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      void (async () => {
-        if ((await getToken()) && (phase === 'needLogin' || phase === 'error')) {
-          void me().then(setEmail);
-          void load(market, false);
-        }
-      })();
-    });
-    return unsubscribe;
-  }, [navigation, phase, market, load]);
 
   const statusText = (b: TouchesResponse): string => {
     const shown = (b.matches ?? []).length;
@@ -150,43 +123,20 @@ function ScreenerPage() {
             검증된 지지 이평선에 오늘 저가가 닿은 종목만
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          {email ? (
-            <TouchableOpacity
-              onPress={() => {
-                void logout().then(() => {
-                  setEmail(null);
-                  setPhase('needLogin');
-                });
-              }}
-              accessibilityRole="button"
-              style={{
-                borderWidth: 1,
-                borderColor: p.border,
-                backgroundColor: p.card,
-                borderRadius: 10,
-                paddingVertical: 8,
-                paddingHorizontal: 10,
-              }}
-            >
-              <Text style={{ fontSize: 11, color: p.sub }}>로그아웃</Text>
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/')}
-            accessibilityRole="button"
-            style={{
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.card,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 10,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('/')}
+          accessibilityRole="button"
+          style={{
+            borderWidth: 1,
+            borderColor: p.border,
+            backgroundColor: p.card,
+            borderRadius: 10,
+            paddingVertical: 8,
+            paddingHorizontal: 10,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -199,19 +149,6 @@ function ScreenerPage() {
           {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
         </Text>
       </Expandable>
-
-      {phase === 'needLogin' ? (
-        <Card palette={p} style={{ gap: 10 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>회원 전용(무료) 기능이에요</Text>
-          <PrimaryButton label="로그인 / 회원가입" palette={p} onPress={() => navigation.navigate('/login')} />
-          <Expandable title="자세히 보기" palette={p}>
-            <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
-              이메일로 가입하면 매일 시장 전체(국내 거래대금 상위 · 미국 S&P500급)를 스캔한 결과를 볼 수
-              있어요. 주식 레이더 사이트와 계정을 같이 씁니다.
-            </Text>
-          </Expandable>
-        </Card>
-      ) : null}
 
       {phase === 'boot' ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>

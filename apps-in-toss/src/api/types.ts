@@ -108,8 +108,3 @@ export interface TouchesResponse {
   matches?: TouchMatch[];
   totalMatches?: number;
 }
-
-export interface AuthResponse {
-  email: string;
-  token?: string; // client:"app" 요청에만 옴
-}

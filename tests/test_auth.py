@@ -104,25 +104,28 @@ def client():
         yield c
 
 
-def test_touches_requires_login(client):
+def test_touches_page_requires_login_but_api_is_public(client):
+    """사이트의 /touches 페이지는 회원 전용이지만, /api/touches 는 공개다.
+
+    앱인토스 미니앱은 정책상 자체 로그인을 제공할 수 없어(심사 반려) 계정 없이
+    이 API 를 써야 한다. 내용은 공개 시세 통계라 개인정보가 아니다."""
     fresh = TestClient(app)  # 쿠키 없는 클라이언트
-    assert fresh.get("/api/touches?market=kr").status_code == 401
-    # 페이지는 /login 으로 리다이렉트
+    assert fresh.get("/api/touches?market=kr").status_code == 200
+    # 페이지는 여전히 /login 으로 리다이렉트 (웹 가입 동선 유지)
     r = fresh.get("/touches", follow_redirects=False)
     assert r.status_code == 302 and "/login" in r.headers["location"]
 
 
-def test_signup_login_flow_grants_touches(client):
-    # 가입하면 세션 쿠키가 발급되고 터치 API 가 열린다
+def test_signup_login_flow(client):
+    # 가입하면 세션 쿠키가 발급되고 회원 전용 API 가 열린다
     r = client.post("/api/auth/signup",
                     json={"email": "flow@example.com", "password": "password123"})
     assert r.status_code == 200 and r.json()["email"] == "flow@example.com"
     assert client.cookies.get("wt_session")
     assert client.get("/api/auth/me").json()["email"] == "flow@example.com"
-    assert client.get("/api/touches?market=kr").status_code == 200
     # 로그아웃하면 다시 막힌다
     assert client.post("/api/auth/logout").status_code == 200
-    assert client.get("/api/touches?market=kr").status_code == 401
+    assert client.get("/api/auth/me").status_code == 401
 
 
 def test_duplicate_signup_409(client):
@@ -136,7 +139,7 @@ def test_login_wrong_password_401(client):
     client.post("/api/auth/logout")
     r = client.post("/api/auth/login", json={"email": "wp@example.com", "password": "nope-nope-nope"})
     assert r.status_code == 401
-    assert client.get("/api/touches?market=kr").status_code == 401
+    assert client.get("/api/auth/me").status_code == 401
 
 
 def test_signup_validation_400(client):

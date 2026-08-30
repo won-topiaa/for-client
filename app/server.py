@@ -177,12 +177,21 @@ ANALYZE_RATE_LIMIT_PER_MIN = 30   # auth(로그인)·analyze 버킷 공용
 SEARCH_RATE_LIMIT_PER_MIN = 60    # 검색(자동완성)은 사람 타이핑이라 넉넉히
 SIGNUP_RATE_LIMIT_PER_MIN = 10    # 가입: 오탈자 재시도는 넉넉히, 대량 생성은 차단
 PRESENCE_RATE_LIMIT_PER_MIN = 60  # 하트비트 정상치(1~2/분)의 30배 여유
+# 지지선 터치는 인증 없이 공개하므로(앱인토스 정책) 상한을 따로, 아주 넉넉히
+# 둔다. 앱·웹 모두 스캔 진행 중에는 2초 간격으로 폴링해 사용자 한 명이 분당
+# 30회를 쓰는데, 모바일 통신사 CGNAT 로 여러 사용자가 한 IP 를 공유할 수 있다.
+# 상한이 낮으면 정상 사용자가 스캔 도중 429 를 맞아 화면이 '스캔 실패'로
+# 떨어진다 — 동시 스캔 10명분(30×10)을 기준으로 잡았다. 응답은 캐시된
+# 스냅숏(pattern_scan.snapshot)이라 요청당 백테스트가 없어 CPU 는 싸고,
+# 이 상한은 대역폭을 무제한으로 빨리는 것만 막는 안전장치다.
+TOUCHES_RATE_LIMIT_PER_MIN = 300
 _rate_windows: dict[str, tuple[float, int]] = {}
 
 _RATE_LIMITS = {
     "search": lambda: SEARCH_RATE_LIMIT_PER_MIN,
     "signup": lambda: SIGNUP_RATE_LIMIT_PER_MIN,
     "presence": lambda: PRESENCE_RATE_LIMIT_PER_MIN,
+    "touches": lambda: TOUCHES_RATE_LIMIT_PER_MIN,
 }
 
 
@@ -251,7 +260,7 @@ async def security_headers(request: Request, call_next):
 
 # 증폭/무차별 대입 방지를 위해 IP당 분당 호출을 제한하는 경로
 _RATE_LIMITED_PATHS = frozenset(
-    {"/api/analyze", "/api/search", "/api/presence",
+    {"/api/analyze", "/api/search", "/api/presence", "/api/touches",
      "/api/auth/login", "/api/auth/signup"}
 )
 
@@ -267,6 +276,8 @@ def _rate_bucket(path: str) -> str:
         return "search"
     if path == "/api/presence":
         return "presence"
+    if path == "/api/touches":
+        return "touches"
     return "analyze"
 
 
@@ -654,12 +665,14 @@ async def _refresh_indices(now: float):
 
 
 @app.get("/api/touches")
-async def touches_api(request: Request, market: str = Query("kr", pattern=r"^(kr|us)$")):
+async def touches_api(market: str = Query("kr", pattern=r"^(kr|us)$")):
     """오늘의 지지선 터치: 스캔 상태 또는 상위 매칭 반환 (프런트가 폴링).
 
-    회원 전용 — 로그인하지 않았으면 401 (프런트가 /login 으로 보낸다)."""
-    if not await _current_user(request):
-        raise HTTPException(401, "로그인이 필요합니다.")
+    공개 API — 인증이 필요 없다. 앱인토스 미니앱은 정책상 토스 로그인 외의
+    자체 로그인을 제공할 수 없어(2026-08 심사 반려) 계정 없이 동작해야 한다.
+    내용은 공개 시세의 통계일 뿐 개인정보가 아니라 공개해도 무방하다. 사이트의
+    /touches 페이지는 그대로 회원 전용으로 두어 가입 동선을 유지한다.
+    스캔 결과는 서버가 캐시한 스냅숏이라 공개해도 백테스트 부하는 늘지 않는다."""
     snap = await app.state.touch_scanners[market].snapshot()
     if snap["status"] != "done":
         return snap
