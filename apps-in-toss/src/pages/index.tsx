@@ -1,5 +1,5 @@
 import { createRoute } from '@granite-js/react-native';
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Animated,
   Linking,
@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Card, Footer } from '../components/ui';
+import { Card, Footer, InlineToggle, PrimaryButton } from '../components/ui';
 import { CONTACT_EMAIL } from '../env';
 import { usePalette } from '../theme';
 
@@ -97,6 +97,10 @@ function HomePage() {
   const navigation = Route.useNavigation();
   const { height: screenH } = useWindowDimensions();
   const scrollY = useRef(new Animated.Value(0)).current;
+  // 설명은 기본으로 접어 둔다 — 처음 열었을 때 각 기능의 '무엇을 하는지' 와
+  // 버튼이 먼저 보이고, 더 알고 싶은 사람만 펼치게.
+  const [radarOpen, setRadarOpen] = useState(false);
+  const [screenerOpen, setScreenerOpen] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
@@ -189,16 +193,21 @@ function HomePage() {
             </Text>
           </View>
 
-          {/* ── 기능 1: 내 종목 이평선 ── */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/radar')}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <Card palette={p} style={{ gap: 12, borderColor: p.up, borderWidth: 1.5 }}>
+          {/* ── 기능 1: 내 종목 이평선 ──
+              카드 전체를 누르면 이동하던 구조를 없앴다. 긴 설명과 '이동' 이
+              같은 터치 영역에 겹쳐 있어 어디를 눌러야 하는지 알기 어려웠다.
+              이제 카드 안의 탭 대상은 '설명 보기' 와 '분석하기' 둘뿐이고,
+              설명은 기본으로 접어 둬 핵심 동작이 먼저 보인다. */}
+          <Card palette={p} style={{ gap: 12, borderColor: p.up, borderWidth: 1.5 }}>
+            <View>
               <Text style={{ fontSize: 18, fontWeight: '800', color: p.text }}>
                 내 종목 이평선
               </Text>
+              <Text style={{ fontSize: 12.5, color: p.sub, marginTop: 4, lineHeight: 19 }}>
+                종목을 검색하면 그 종목이 실제로 지켜온 이평선을 찾아드려요
+              </Text>
+            </View>
+            {radarOpen ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Text style={{ fontSize: 20 }}>🔍</Text>
@@ -237,24 +246,31 @@ function HomePage() {
                   </View>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-                <Text style={{ fontSize: 13, color: p.up, fontWeight: '700' }}>
-                  종목 분석하기 →
-                </Text>
-              </View>
-            </Card>
-          </TouchableOpacity>
+            ) : null}
+            <PrimaryButton
+              label="종목 분석하기"
+              palette={p}
+              onPress={() => navigation.navigate('/radar')}
+            />
+            <InlineToggle
+              open={radarOpen}
+              label="설명"
+              palette={p}
+              onPress={() => setRadarOpen((v) => !v)}
+            />
+          </Card>
 
           {/* ── 기능 2: 오늘의 지지선 ── */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/screener')}
-            accessibilityRole="button"
-            activeOpacity={0.7}
-          >
-            <Card palette={p} style={{ gap: 12, borderColor: p.amber, borderWidth: 1.5 }}>
+          <Card palette={p} style={{ gap: 12, borderColor: p.amber, borderWidth: 1.5 }}>
+            <View>
               <Text style={{ fontSize: 18, fontWeight: '800', color: p.text }}>
                 오늘의 지지선
               </Text>
+              <Text style={{ fontSize: 12.5, color: p.sub, marginTop: 4, lineHeight: 19 }}>
+                검증된 지지선에 오늘 가격이 닿은 종목만 모아 보여드려요
+              </Text>
+            </View>
+            {screenerOpen ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Text style={{ fontSize: 20 }}>🚨</Text>
@@ -293,13 +309,20 @@ function HomePage() {
                   </View>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-                <Text style={{ fontSize: 13, color: p.amber, fontWeight: '700' }}>
-                  오늘의 지지선 보기 →
-                </Text>
-              </View>
-            </Card>
-          </TouchableOpacity>
+            ) : null}
+            <PrimaryButton
+              label="오늘의 지지선 보기"
+              palette={p}
+              color={p.amber}
+              onPress={() => navigation.navigate('/screener')}
+            />
+            <InlineToggle
+              open={screenerOpen}
+              label="설명"
+              palette={p}
+              onPress={() => setScreenerOpen((v) => !v)}
+            />
+          </Card>
 
           {/* ── 관심종목 ── */}
           <TouchableOpacity

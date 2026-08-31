@@ -65,11 +65,15 @@ export function PrimaryButton({
   disabled,
   palette: p,
   onPress,
+  /** 버튼 색. 기본은 상승/주요색(초록) — '오늘의 지지선' 처럼 카드 강조색이
+   *  다른 곳에서 그 색을 그대로 쓰라고 열어 둔다. */
+  color,
 }: {
   label: string;
   disabled?: boolean;
   palette: Palette;
   onPress: () => void;
+  color?: string;
 }) {
   return (
     <TouchableOpacity
@@ -77,7 +81,7 @@ export function PrimaryButton({
       disabled={disabled}
       accessibilityRole="button"
       style={{
-        backgroundColor: disabled ? p.border : p.up,
+        backgroundColor: disabled ? p.border : (color ?? p.up),
         borderRadius: 10,
         paddingVertical: 13,
         alignItems: 'center',
@@ -125,6 +129,40 @@ export function Expandable({
         <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>{children}</View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * 카드 안에서 쓰는 접이식 설명 토글.
+ *
+ * Expandable 과 달리 자기 테두리를 그리지 않는다 — 이미 카드 안이라 테두리가
+ * 겹치면 지저분해진다. 카드 전체를 누르면 이동하는 구조를 없애고, '설명 보기'
+ * 와 '이동' 버튼을 각각 따로 두기 위한 조각이다.
+ */
+export function InlineToggle({
+  open,
+  label,
+  palette: p,
+  onPress,
+}: {
+  open: boolean;
+  label: string;
+  palette: Palette;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+    >
+      <Text style={{ fontSize: 12, color: p.sub, fontWeight: '600' }}>
+        {open ? `${label} 접기` : `${label} 보기`}
+      </Text>
+      <Text style={{ fontSize: 10, color: p.faint }}>{open ? '▲' : '▼'}</Text>
+    </TouchableOpacity>
   );
 }
 
