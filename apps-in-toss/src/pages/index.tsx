@@ -206,7 +206,7 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       종목을 검색하세요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
                       관심 종목의 이름이나 코드를 입력하면 자동으로 분석이 시작돼요.
                       한국·미국 주식 모두 가능합니다.
                     </Text>
@@ -218,7 +218,7 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       핵심 이평선을 찾아드려요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
                       일봉 3년·주봉 7년·월봉 전체 기간을 백테스트해서, 이 종목에서 가장 자주
                       지지/저항 역할을 해온 이동평균선 2~3개를 골라줍니다.
                     </Text>
@@ -230,10 +230,9 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       투자에 이렇게 써보세요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
                       남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을
-                      확인하세요. 차트에서 지지/저항 마커로 과거에 어떻게 반응했는지
-                      한눈에 볼 수 있어요.
+                      확인하세요. 차트 마커로 과거 반응도 한눈에 볼 수 있어요.
                     </Text>
                   </View>
                 </View>
@@ -263,7 +262,7 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       매일 주요 종목을 스캔해요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
                       국내 거래대금 상위 종목과 미국 대형주를 매일 자동으로
                       백테스트합니다. 종목을 하나하나 찾아볼 필요가 없어요.
                     </Text>
@@ -275,7 +274,7 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       오늘 지지선에 닿은 종목만 알려줘요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
                       3년 백테스트에서 지지 성공률 60% 이상, 반등 3회 이상인 검증된
                       이평선에 오늘 가격이 닿아 있는 종목만 골라줍니다.
                     </Text>
@@ -287,10 +286,9 @@ function HomePage() {
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
                       투자에 이렇게 써보세요
                     </Text>
-                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
-                      장 마감 후 확인하면, 오늘 검증된 지지선 근처에서 반등 가능성이
-                      있는 종목을 한눈에 볼 수 있어요. 성공률과 차트를 보고 매수
-                      타이밍을 판단해 보세요.
+                    <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19, marginTop: 2 }}>
+                      장 마감 후 확인하면 오늘 검증된 지지선에 닿은 종목이 한눈에
+                      보여요. 성공률과 차트로 매수 타이밍을 판단해 보세요.
                     </Text>
                   </View>
                 </View>
