@@ -77,6 +77,10 @@ function RadarPage() {
   }, []);
 
   const onChangeQuery = (text: string) => {
+    // 여기서 바로 시퀀스를 올린다. 디바운스 콜백 안에서만 올리면, 사용자가
+    // 계속 타이핑하는 동안(타이머가 매번 리셋돼 콜백이 안 돔) 시퀀스가 그대로라
+    // 자동 분석용 사전 검색이 늦게 도착해 사용자의 입력을 덮어쓴다.
+    searchSeq.current++;
     setQuery(text);
     setSelected(null);
     if (searchTimer.current) {

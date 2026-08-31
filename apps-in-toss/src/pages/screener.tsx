@@ -90,7 +90,7 @@ const MatchCard = React.memo(function MatchCard({
       <View style={{ height: 6, borderRadius: 3, backgroundColor: p.border, overflow: 'hidden' }}>
         <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
       </View>
-      <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+      <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
         {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
             함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%). 웹과 같은
             표기: "지지 시험 N회 중 M회 성공 · 최근 가중 성공률 X%". */}

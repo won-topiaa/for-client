@@ -17,12 +17,14 @@ interface Props {
 
 interface State {
   error: Error | null;
-  /** 재시도 횟수 — 같은 오류가 반복되면 안내를 바꾼다 */
+  /** 같은 오류의 연속 재시도 횟수 — 반복되면 안내를 바꾼다 */
   retries: number;
+  /** 직전에 잡은 오류 메시지. 다른 오류면 횟수를 초기화하는 기준. */
+  lastMessage: string | null;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State = { error: null, retries: 0 };
+  state: State = { error: null, retries: 0, lastMessage: null };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
@@ -31,6 +33,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
   componentDidCatch(error: Error): void {
     // 미니앱에는 콘솔이 없다시피 하지만, 개발 중에는 여기서 원인을 본다
     console.error('[이평선 레이더] 화면 렌더 실패:', error);
+    // 다른 오류면 재시도 횟수를 초기화한다. 안 그러면 한 번 2회에 도달한 뒤로는
+    // 전혀 무관한 오류에도 "앱을 완전히 닫으세요" 가 계속 뜬다 — 한 번만 다시
+    // 시도하면 풀릴 상황인데도.
+    const msg = String(error?.message ?? error);
+    this.setState((s) => (s.lastMessage === msg ? null : { retries: 0, lastMessage: msg }));
   }
 
   render() {

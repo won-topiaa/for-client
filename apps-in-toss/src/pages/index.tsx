@@ -178,7 +178,10 @@ function HomePage() {
               lineHeight: 22,
             }}
           >
-            일봉 3년 · 주봉 7년 · 월봉 전체 기간{'\n'}백테스트로 검증된 이평선만 찾아드려요
+            {/* 두 줄 안에 들어가야 한다 — 시스템 글자 크기를 키우면 세 번째
+                줄로 넘어가 가운데 정렬이 어색해진다. '이평선' 은 바로 위 제목이
+                말해 주므로 뺀다. */}
+            일봉 3년 · 주봉 7년 · 월봉 전체{'\n'}백테스트로 검증된 선만 찾아드려요
           </Text>
         </IntroSection>
 
@@ -207,6 +210,17 @@ function HomePage() {
                 종목을 검색하면 그 종목이 실제로 지켜온 이평선을 찾아드려요
               </Text>
             </View>
+            <PrimaryButton
+              label="종목 분석하기"
+              palette={p}
+              onPress={() => navigation.navigate('/radar')}
+            />
+            <InlineToggle
+              open={radarOpen}
+              label="설명"
+              palette={p}
+              onPress={() => setRadarOpen((v) => !v)}
+            />
             {radarOpen ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -247,17 +261,6 @@ function HomePage() {
                 </View>
               </View>
             ) : null}
-            <PrimaryButton
-              label="종목 분석하기"
-              palette={p}
-              onPress={() => navigation.navigate('/radar')}
-            />
-            <InlineToggle
-              open={radarOpen}
-              label="설명"
-              palette={p}
-              onPress={() => setRadarOpen((v) => !v)}
-            />
           </Card>
 
           {/* ── 기능 2: 오늘의 지지선 ── */}
@@ -270,6 +273,18 @@ function HomePage() {
                 검증된 지지선에 오늘 가격이 닿은 종목만 모아 보여드려요
               </Text>
             </View>
+            <PrimaryButton
+              label="오늘의 지지선 보기"
+              palette={p}
+              color={p.amber}
+              onPress={() => navigation.navigate('/screener')}
+            />
+            <InlineToggle
+              open={screenerOpen}
+              label="설명"
+              palette={p}
+              onPress={() => setScreenerOpen((v) => !v)}
+            />
             {screenerOpen ? (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -310,18 +325,6 @@ function HomePage() {
                 </View>
               </View>
             ) : null}
-            <PrimaryButton
-              label="오늘의 지지선 보기"
-              palette={p}
-              color={p.amber}
-              onPress={() => navigation.navigate('/screener')}
-            />
-            <InlineToggle
-              open={screenerOpen}
-              label="설명"
-              palette={p}
-              onPress={() => setScreenerOpen((v) => !v)}
-            />
           </Card>
 
           {/* ── 관심종목 ── */}
@@ -335,7 +338,7 @@ function HomePage() {
                 <Text style={{ fontSize: 17 }}>★</Text>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: p.text }}>관심종목</Text>
               </View>
-              <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
                 두 화면에서 종목 오른쪽 위의 ☆ 를 누르면 여기에 모여요. 자주 보는 종목을
                 담아 두고 바로 분석해 보세요.
               </Text>

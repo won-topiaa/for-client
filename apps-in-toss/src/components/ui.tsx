@@ -60,6 +60,37 @@ export function Chip({
   );
 }
 
+/** #rrggbb 의 상대 휘도 (WCAG). 버튼 글자색을 자동으로 고르는 데 쓴다. */
+function luminance(hex: string): number {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) {
+    return 0; // 모르는 형식이면 어두운 배경으로 보고 흰 글씨
+  }
+  const ch = [0, 2, 4].map((i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (ch[0] ?? 0) + 0.7152 * (ch[1] ?? 0) + 0.0722 * (ch[2] ?? 0);
+}
+
+/**
+ * 배경 위에서 대비가 더 높은 글자색을 고른다(흰색 vs 거의 검정).
+ *
+ * 밝기 임계값으로 가르지 않고 둘 다 계산해 높은 쪽을 쓴다. 임계값 방식은
+ * 경계 근처 색에서 나쁜 쪽을 고른다 — 라이트 앰버(#d97706)가 그 예로,
+ * 흰 글씨 3.19:1 vs 어두운 글씨 5.56:1 이라 흰색을 고르면 손해다.
+ *
+ * 이게 필요한 이유: 다크 팔레트의 강조색은 원래 '어두운 배경 위의 글자' 용이라
+ * 밝다. 버튼 배경으로 쓰고 흰 글씨를 얹으면 다크모드에서 초록 1.92:1,
+ * 앰버 1.67:1 로 무너진다.
+ */
+function onColor(bg: string): string {
+  const l = luminance(bg);
+  const withWhite = (1.05) / (l + 0.05);
+  const withDark = (l + 0.05) / (luminance('#18181b') + 0.05);
+  return withDark > withWhite ? '#18181b' : '#ffffff';
+}
+
 export function PrimaryButton({
   label,
   disabled,
@@ -87,7 +118,15 @@ export function PrimaryButton({
         alignItems: 'center',
       }}
     >
-      <Text style={{ color: disabled ? p.faint : '#ffffff', fontSize: 15, fontWeight: '700' }}>{label}</Text>
+      <Text
+        style={{
+          color: disabled ? p.faint : onColor(color ?? p.up),
+          fontSize: 15,
+          fontWeight: '700',
+        }}
+      >
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -144,24 +183,43 @@ export function InlineToggle({
   label,
   palette: p,
   onPress,
+  /** 스크린리더용 — 어느 카드의 설명인지 밝힌다. 화면에는 'label 보기' 만
+   *  보이므로, 이것이 없으면 카드가 여럿일 때 전부 똑같이 읽힌다. */
+  of,
 }: {
   open: boolean;
   label: string;
   palette: Palette;
   onPress: () => void;
+  of?: string;
 }) {
+  const what = of ? `${of} ` : '';
   return (
     <TouchableOpacity
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
-      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+      accessibilityLabel={open ? `${what}${label} 접기` : `${what}${label} 보기`}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        // 이 토글이 설명을 여는 유일한 통로다 — 손가락 기준 최소 44pt 를 준다
+        minHeight: 44,
+      }}
     >
       <Text style={{ fontSize: 12, color: p.sub, fontWeight: '600' }}>
         {open ? `${label} 접기` : `${label} 보기`}
       </Text>
-      <Text style={{ fontSize: 10, color: p.faint }}>{open ? '▲' : '▼'}</Text>
+      {/* 삼각형은 장식 — 스크린리더가 "검은색 아래쪽 삼각형" 을 읽지 않게 숨긴다 */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={{ fontSize: 10, color: p.faint }}
+      >
+        {open ? '▲' : '▼'}
+      </Text>
     </TouchableOpacity>
   );
 }

@@ -53,7 +53,7 @@ function WatchlistPage() {
           <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
             ⚠ 관심종목이 저장되지 않아요
           </Text>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
             이 기기의 저장소를 쓸 수 없어서, 지금 담는 종목은 앱을 껐다 켜면
             사라집니다. 토스 앱을 최신 버전으로 올린 뒤 다시 시도해 주세요.
           </Text>
