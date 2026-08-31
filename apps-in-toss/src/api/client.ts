@@ -38,13 +38,49 @@ function detailMessage(detail: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
-async function api<T>(path: string): Promise<T> {
-  let res: Response;
+/** 요청별 제한 시간(ms). 서버가 잠들어 있으면 깨우는 데만 1분 가까이 걸린다. */
+const TIMEOUT_MS = { search: 15000, analyze: 60000, touches: 30000, default: 30000 };
+
+function timeoutFor(path: string): number {
+  if (path.startsWith('/api/search')) return TIMEOUT_MS.search;
+  if (path.startsWith('/api/analyze')) return TIMEOUT_MS.analyze;
+  if (path.startsWith('/api/touches')) return TIMEOUT_MS.touches;
+  return TIMEOUT_MS.default;
+}
+
+/** 제한 시간을 건 fetch 한 번. 시간이 다 되면 요청을 끊고 null 을 돌려준다. */
+async function fetchOnce(path: string, ms: number): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    res = await fetch(`${API_BASE_URL}${path}`);
+    // signal 캐스팅: RN 타입 정의의 global.AbortSignal 과 lib.dom 의 AbortSignal
+    // 선언이 어긋나 타입만 충돌한다(런타임은 같은 객체라 정상 동작).
+    const init = { signal: ctrl.signal } as unknown as RequestInit;
+    return await fetch(`${API_BASE_URL}${path}`, init);
   } catch {
-    // 무료 플랜 서버는 15분 유휴 후 잠들어 첫 요청이 오래 걸리거나 끊길 수 있다
-    throw new ApiError('서버에 연결하지 못했어요 — 잠시 후 다시 시도해 주세요.', 0);
+    // 끊겼거나(abort) 네트워크 오류 — 호출부가 재시도를 판단한다
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function api<T>(path: string): Promise<T> {
+  // 제한 시간이 없으면 요청이 영원히 안 끝나 화면이 로딩에서 멈춘다.
+  // Render 무료 플랜은 15분 유휴 후 인스턴스를 내리므로, 잠든 서버를 깨우는
+  // 첫 요청은 정상적으로도 1분 가까이 걸리거나 한 번 끊긴다 — 그래서 끊기면
+  // 한 번은 다시 시도한다(그 사이 서버가 깨어난다). 두 번째도 실패하면 포기.
+  const ms = timeoutFor(path);
+  let res = await fetchOnce(path, ms);
+  if (res === null) {
+    res = await fetchOnce(path, ms);
+  }
+  if (res === null) {
+    throw new ApiError(
+      '서버가 응답하지 않아요. 잠시 쉬고 있던 서버를 깨우는 중일 수 있어요 — ' +
+        '30초쯤 뒤에 다시 시도해 주세요.',
+      0
+    );
   }
   if (res.status === 429) {
     // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
