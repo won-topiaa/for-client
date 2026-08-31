@@ -6,7 +6,8 @@
     "dev": "granite dev",
     "build": "ait build",
     "deploy": "ait deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:api": "node scripts/check_api_contract.mjs"
   },
   "dependencies": {
     "@apps-in-toss/framework": "2.10.10",

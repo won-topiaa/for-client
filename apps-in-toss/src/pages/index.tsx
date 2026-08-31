@@ -261,10 +261,10 @@ function HomePage() {
                   <Text style={{ fontSize: 20 }}>🚨</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
-                      매일 시장 전체를 스캔해요
+                      매일 주요 종목을 스캔해요
                     </Text>
                     <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18, marginTop: 2 }}>
-                      국내 거래대금 상위 종목과 미국 S&P500급 종목을 매일 자동으로
+                      국내 거래대금 상위 종목과 미국 대형주를 매일 자동으로
                       백테스트합니다. 종목을 하나하나 찾아볼 필요가 없어요.
                     </Text>
                   </View>

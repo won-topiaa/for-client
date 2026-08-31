@@ -52,7 +52,11 @@ const MatchCard = React.memo(function MatchCard({
   onToggleWatch: (item: { symbol: string; name: string; market?: string | null }) => void;
   onOpenRadar: (m: TouchMatch) => void;
 }) {
-  const ratePct = Math.max(0, Math.min(100, Math.round(m.successRate * 100)));
+  // Number.isFinite 검사: 값이 없으면 Math.round 가 NaN 이 되고 style.width 가
+  // "NaN%" 라는 잘못된 값이 돼 막대가 사라진다 (서버 필드명이 바뀌면 실제로 그랬다).
+  const ratePct = Number.isFinite(m.supportRate)
+    ? Math.max(0, Math.min(100, Math.round(m.supportRate * 100)))
+    : 0;
   return (
     <Card palette={p} style={{ gap: 8 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -87,7 +91,7 @@ const MatchCard = React.memo(function MatchCard({
         <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
       </View>
       <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
-        3년 지지 성공률 <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.successRate)}</Text>
+        3년 지지 성공률 <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.supportRate)}</Text>
         {' · '}지지 성공 {m.supportBounces}회 (터치 {m.touches}회){' · '}오늘 종가는 선 대비{' '}
         <Text style={{ fontWeight: '700', color: p.text }}>{fmtDistPct(m.distPct)}</Text> (선{' '}
         {fmtPrice(m.maValue)})

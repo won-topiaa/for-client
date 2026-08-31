@@ -11,13 +11,23 @@ export function fmtPrice(v: number): string {
   return v.toFixed(2);
 }
 
-/** 성공률 0~1 → "83%" */
+/** 성공률 0~1 → "83%". 값이 없으면 "—" (fmtPrice 와 같은 규약).
+ *
+ * 유한성 검사가 중요하다: 서버 응답의 필드 이름이 바뀌면 여기로 undefined 가
+ * 흘러들어오는데(api 응답은 무검증 캐스팅이라 타입체커가 못 잡는다), 검사가
+ * 없으면 화면에 "NaN%" 가 그대로 찍힌다. 실제로 그런 적이 있다. */
 export function fmtRate(rate: number): string {
+  if (!Number.isFinite(rate)) {
+    return '—';
+  }
   return `${(rate * 100).toFixed(0)}%`;
 }
 
 /** 이격 % → "+1.2%" / "-0.8%" */
 export function fmtDistPct(pct: number): string {
+  if (!Number.isFinite(pct)) {
+    return '—';
+  }
   return pct > 0 ? `+${pct}%` : `${pct}%`;
 }
 

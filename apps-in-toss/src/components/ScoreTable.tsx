@@ -29,7 +29,9 @@ const COLS: { key: string; label: string; width: number }[] = [
 
 export function ScoreTable({ stats, recommended, palette: p }: Props) {
   const recoSet = new Set(recommended);
-  const rows = [...stats].sort((a, b) => b.score - a.score);
+  // 서버의 ★추천은 지지 전용 점수(supportScore)로 뽑는다 — 표도 같은 기준으로
+  // 정렬해야 ★가 위로 모이고, 보이는 '점수' 열로 순서를 납득할 수 있다.
+  const rows = [...stats].sort((a, b) => b.supportScore - a.supportScore);
 
   const cell = (key: string, text: string, width: number, opts?: { bold?: boolean; color?: string }) => (
     <Text
@@ -57,7 +59,9 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
         {rows.map((s) => {
           const isReco = recoSet.has(s.period);
           const dim = !isReco && (s.insufficientData || !s.touches);
-          const rate = s.insufficientData ? '—' : fmtRate(s.successRate);
+          // '지지성공률' 열 — 서버의 supportRate(지지 전용). successRate 는
+          // 저항까지 포함한 양방향 값이라 이 라벨과 뜻이 다르다.
+          const rate = s.insufficientData ? '—' : fmtRate(s.supportRate);
           return (
             <View
               key={s.period}
@@ -76,7 +80,7 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
               {cell('breaks', String(s.breaks), 68)}
               {cell('undecided', String(s.undecided), 52)}
               {cell('rate', rate, 68)}
-              {cell('score', s.score.toFixed(3), 56)}
+              {cell('score', s.supportScore.toFixed(3), 56)}
               {cell('last', s.lastTouch ?? '—', 92)}
             </View>
           );

@@ -90,6 +90,11 @@ Chromium 경로는 `CHROMIUM_PATH` 환경변수로 지정 가능(맥은 설치�
 
 - 서버는 `SITE_PASSWORD` 없이 **공개 배포**여야 앱이 API 를 쓸 수 있다.
 - 앱이 쓰는 API 는 전부 인증이 필요 없다 — `/api/search`, `/api/analyze`, `/api/touches`.
+- ⚠️ **서버 저장소가 따로라 응답 필드가 말없이 바뀔 수 있다.** `api/client.ts` 는
+  응답을 `body as T` 로 무검증 캐스팅하므로 타입체커가 못 잡고, 화면에 `NaN%` 나
+  `undefined` 가 뜬다(실제로 `successRate` → `supportRate` 변경을 놓쳐 '오늘의
+  지지선' 성공률이 전부 NaN% 인 채 제출 직전까지 갔다). **번들을 올리기 전에
+  반드시 `npm run check:api`** — 실서버 응답과 `src/api/types.ts` 를 대조한다.
   (`/api/touches` 는 앱을 위해 공개로 바뀌었다. 사이트의 `/touches` **페이지**는 여전히
   회원 전용이라 웹 가입 동선은 그대로다.)
 - 서버의 `client:"app"` Bearer 토큰 인증은 남아 있지만 **앱은 더 이상 쓰지 않는다.**
@@ -97,6 +102,7 @@ Chromium 경로는 `CHROMIUM_PATH` 환경변수로 지정 가능(맥은 설치�
 ## 체크리스트 (새로 만질 때)
 
 ```
+[ ] .ait 를 올리기 전에 `npm run check:api` 가 통과한다  ← 안 하면 화면에 NaN% 가 뜬다
 [ ] 루트 index.ts / src/pages 재노출용 pages/ / pages/_404.tsx 가 있다  ← 없으면 흰 화면
 [ ] babel.config.js / react-native.config.js 가 있다
 [ ] react-native 0.84.0 / react 19.2.3 / @types/react 19.2.x

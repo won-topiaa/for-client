@@ -33,6 +33,9 @@ export interface MAEvent {
   period: number;
 }
 
+// 주의: 서버는 '지지 전용' 과 '양방향(저항 포함)' 을 이름으로 구분한다.
+// 화면에 '지지 성공률' 로 보여줄 대표 수치는 supportRate·supportScore 다.
+// successRate·score 는 저항까지 포함한 참고값이라 라벨과 뜻이 다르다.
 export interface MAStat {
   period: number;
   touches: number;
@@ -41,8 +44,16 @@ export interface MAStat {
   bounces: number;
   breaks: number;
   undecided: number;
-  successRate: number; // 지지 전용 가중 성공률 0~1
+  /** 지지 전용 가중 성공률 0~1 — 화면 대표 수치 */
+  supportRate: number;
+  /** 지지 판정 시도 횟수(지지 성공률의 모수) */
+  supportTests: number;
+  /** 지지 전용 점수 — 서버의 ★추천 선정 기준 */
+  supportScore: number;
+  /** 저항까지 포함한 양방향 가중 성공률 0~1 — 참고값 */
+  successRate: number;
   wilsonLb: number;
+  /** 양방향 점수 — 참고값 */
   score: number;
   qualified: boolean;
   insufficientData: boolean;
@@ -80,7 +91,12 @@ export interface TouchMatch {
   name: string;
   market?: string | null;
   period: number;
-  successRate: number; // 지지 전용 성공률 0~1
+  /** 지지 전용 성공률 0~1 — 화면 대표 수치 (서버가 successRate 에서 이름을 바꿨다) */
+  supportRate: number;
+  /** 지지 판정 시도 횟수(지지 성공률의 모수) */
+  supportTests: number;
+  /** 저항까지 포함한 양방향 성공률 0~1 — 참고값 */
+  bothSidesRate: number;
   touches: number;
   supportBounces: number;
   maScore: number;
