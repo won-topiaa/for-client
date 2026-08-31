@@ -105,8 +105,11 @@ async function api<T>(path: string): Promise<T> {
     // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
     // 그대로 두면 'HTTP 429' 라는 날 코드가 화면에 뜬다.
     const raw = Number(res.headers.get('retry-after'));
+    // 문구가 '자동으로 다시 시도한다'고 약속하면 안 된다 — 자동 재폴링을 거는
+    // 화면은 스크리너뿐이고, 그 화면은 이 메시지를 아예 띄우지 않는다(백오프 후
+    // 조용히 재시도). 즉 이 문구가 보이는 곳은 자동 재시도가 없는 화면뿐이다.
     throw new ApiError(
-      '요청이 너무 잦아요 — 잠시 뒤 자동으로 다시 시도할게요.',
+      '요청이 너무 잦아요 — 30초쯤 뒤에 다시 시도해 주세요.',
       429,
       Number.isFinite(raw) && raw > 0 ? raw : undefined
     );

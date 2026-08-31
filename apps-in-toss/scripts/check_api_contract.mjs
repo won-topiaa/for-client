@@ -30,7 +30,16 @@ function declaredFields(name) {
   if (start < 0) throw new Error(`types.ts 에 interface ${name} 가 없습니다.`);
   const body = TYPES.slice(start, TYPES.indexOf('\n}', start));
   // 들여쓰기 2칸의 `field?: type` 만 — 주석과 중첩 블록은 걸리지 않는다
-  return new Set([...body.matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]));
+  const fields = new Set([...body.matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]));
+  // 파싱이 빈 집합을 내면 이후 비교가 전부 공허하게 '통과'한다(fails open).
+  // 포맷이 바뀌어 정규식이 안 먹은 것이므로 조용히 넘기지 않고 멈춘다.
+  if (fields.size === 0) {
+    throw new Error(
+      `interface ${name} 에서 필드를 하나도 뽑지 못했습니다 — types.ts 포맷이 바뀌었는지 ` +
+        `확인하세요(이 스크립트의 정규식은 들여쓰기 2칸을 전제합니다).`
+    );
+  }
+  return fields;
 }
 
 async function get(path) {
