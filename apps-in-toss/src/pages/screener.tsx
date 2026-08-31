@@ -91,8 +91,14 @@ const MatchCard = React.memo(function MatchCard({
         <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
       </View>
       <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
-        3년 지지 성공률 <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.supportRate)}</Text>
-        {' · '}지지 성공 {m.supportBounces}회 (터치 {m.touches}회){' · '}오늘 종가는 선 대비{' '}
+        {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
+            함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%). 웹과 같은
+            표기: "지지 시험 N회 중 M회 성공 · 최근 가중 성공률 X%". */}
+        3년 지지 시험 {m.supportTests}회 중{' '}
+        <Text style={{ fontWeight: '700', color: p.text }}>{m.supportBounces}회 성공</Text>
+        {' · '}최근 가중 성공률{' '}
+        <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.supportRate)}</Text>
+        {' · '}오늘 종가는 선 대비{' '}
         <Text style={{ fontWeight: '700', color: p.text }}>{fmtDistPct(m.distPct)}</Text> (선{' '}
         {fmtPrice(m.maValue)})
       </Text>

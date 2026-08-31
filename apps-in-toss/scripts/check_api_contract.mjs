@@ -39,10 +39,16 @@ async function get(path) {
   return res.json();
 }
 
+// 타입에는 선언돼 있지만 화면이 실제로 읽지는 않는 '참고용' 필드들.
+// 서버가 이것들을 정리해도 화면은 멀쩡하므로, 없다고 릴리스를 막지 않는다.
+// (게이트가 잡아야 할 것은 '화면이 읽는데 서버가 안 주는' 필드뿐이다.)
+const REFERENCE_ONLY = ['bounces', 'successRate', 'wilsonLb', 'score', 'bothSidesRate'];
+
 /** 서버에만 있는 키는 경고, 앱 타입에만 있는 키는 오류(= 화면에 undefined 가 뜬다) */
 function compare(label, declared, actual, { optional = [] } = {}) {
+  const skip = new Set([...optional, ...REFERENCE_ONLY]);
   const server = new Set(Object.keys(actual));
-  const missing = [...declared].filter((f) => !server.has(f) && !optional.includes(f));
+  const missing = [...declared].filter((f) => !server.has(f) && !skip.has(f));
   const extra = [...server].filter((f) => !declared.has(f));
   if (extra.length) {
     console.log(`  ℹ ${label}: 서버에만 있는 키 (앱이 안 씀) — ${extra.join(', ')}`);
@@ -86,19 +92,30 @@ if (!rec || !stat) {
 }
 
 // ---- /api/touches ----
-const touches = await get('/api/touches?market=kr');
-if (touches.status !== 'done') {
-  console.log(`  ⚠ /api/touches: status=${touches.status} — 스캔 중이라 매치를 대조하지 못했습니다.`);
-  console.log('    잠시 뒤 다시 실행해 주세요 (스캔이 끝나야 matches 가 채워집니다).');
-} else {
+// TouchMatch 는 이름이 바뀌어 사고가 났던 바로 그 인터페이스다. 대조를 못 했으면
+// '통과'로 넘기지 않는다 — 스캔이 도는 중이거나 매치가 0건이면 잠시 뒤 다시
+// 실행해야 한다. 검사하지 못한 것을 합격으로 처리하면 이 게이트는 무의미해진다.
+let touchesChecked = false;
+for (const market of ['kr', 'us']) {
+  const touches = await get(`/api/touches?market=${market}`);
+  if (touches.status !== 'done') {
+    console.log(`  … /api/touches?market=${market}: status=${touches.status} — 스캔 중`);
+    continue;
+  }
   const m = (touches.matches ?? [])[0];
   if (!m) {
-    console.log('  ⚠ /api/touches: 오늘 매치가 0건이라 대조하지 못했습니다.');
-  } else {
-    ok = compare('TouchMatch (/api/touches)', declaredFields('TouchMatch'), m, {
-      optional: ['market'],
-    }) && ok;
+    console.log(`  … /api/touches?market=${market}: 오늘 매치 0건`);
+    continue;
   }
+  ok = compare(`TouchMatch (/api/touches?market=${market})`, declaredFields('TouchMatch'), m, {
+    optional: ['market'],
+  }) && ok;
+  touchesChecked = true;
+}
+if (!touchesChecked) {
+  console.error('  ✗ TouchMatch: 두 시장 모두 대조하지 못했습니다 (스캔 중이거나 매치 0건).');
+  console.error('    스캔이 끝난 뒤 다시 실행해 주세요 — 확인하지 못한 것을 통과로 두지 않습니다.');
+  ok = false;
 }
 
 console.log();

@@ -31,7 +31,9 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
   const recoSet = new Set(recommended);
   // 서버의 ★추천은 지지 전용 점수(supportScore)로 뽑는다 — 표도 같은 기준으로
   // 정렬해야 ★가 위로 모이고, 보이는 '점수' 열로 순서를 납득할 수 있다.
-  const rows = [...stats].sort((a, b) => b.supportScore - a.supportScore);
+  // 값이 없으면 0 으로 — 정렬 비교가 NaN 이 되면 순서가 뒤죽박죽이 된다
+  const score = (s: MAStat) => (Number.isFinite(s.supportScore) ? s.supportScore : 0);
+  const rows = [...stats].sort((a, b) => score(b) - score(a));
 
   const cell = (key: string, text: string, width: number, opts?: { bold?: boolean; color?: string }) => (
     <Text
@@ -80,7 +82,8 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
               {cell('breaks', String(s.breaks), 68)}
               {cell('undecided', String(s.undecided), 52)}
               {cell('rate', rate, 68)}
-              {cell('score', s.supportScore.toFixed(3), 56)}
+              {/* toFixed 를 그대로 부르면 필드가 없을 때 TypeError 로 화면이 죽는다 */}
+              {cell('score', Number.isFinite(s.supportScore) ? s.supportScore.toFixed(3) : '—', 56)}
               {cell('last', s.lastTouch ?? '—', 92)}
             </View>
           );

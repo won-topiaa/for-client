@@ -48,18 +48,29 @@ function timeoutFor(path: string): number {
   return TIMEOUT_MS.default;
 }
 
-/** 제한 시간을 건 fetch 한 번. 시간이 다 되면 요청을 끊고 null 을 돌려준다. */
-async function fetchOnce(path: string, ms: number): Promise<Response | null> {
+/** fetch 한 번의 결과 — 응답을 받았거나, 제한 시간을 넘겼거나, 연결 자체가 실패. */
+type Attempt =
+  | { kind: 'ok'; res: Response }
+  | { kind: 'timeout' }
+  | { kind: 'offline' };
+
+/** 제한 시간을 건 fetch 한 번. */
+async function fetchOnce(path: string, ms: number): Promise<Attempt> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, ms);
   try {
     // signal 캐스팅: RN 타입 정의의 global.AbortSignal 과 lib.dom 의 AbortSignal
     // 선언이 어긋나 타입만 충돌한다(런타임은 같은 객체라 정상 동작).
     const init = { signal: ctrl.signal } as unknown as RequestInit;
-    return await fetch(`${API_BASE_URL}${path}`, init);
+    return { kind: 'ok', res: await fetch(`${API_BASE_URL}${path}`, init) };
   } catch {
-    // 끊겼거나(abort) 네트워크 오류 — 호출부가 재시도를 판단한다
-    return null;
+    // 우리가 끊은 것(시간 초과)과 연결 자체가 안 된 것(비행기모드 등)은 다르다.
+    // 뭉뚱그리면 오프라인 사용자에게 "서버를 깨우는 중"이라는 엉뚱한 안내가 간다.
+    return timedOut ? { kind: 'timeout' } : { kind: 'offline' };
   } finally {
     clearTimeout(timer);
   }
@@ -68,20 +79,28 @@ async function fetchOnce(path: string, ms: number): Promise<Response | null> {
 async function api<T>(path: string): Promise<T> {
   // 제한 시간이 없으면 요청이 영원히 안 끝나 화면이 로딩에서 멈춘다.
   // Render 무료 플랜은 15분 유휴 후 인스턴스를 내리므로, 잠든 서버를 깨우는
-  // 첫 요청은 정상적으로도 1분 가까이 걸리거나 한 번 끊긴다 — 그래서 끊기면
-  // 한 번은 다시 시도한다(그 사이 서버가 깨어난다). 두 번째도 실패하면 포기.
+  // 첫 요청은 끊기기 쉽다 — 그때만 한 번 다시 시도한다(그 사이 서버가 깨어난다).
   const ms = timeoutFor(path);
-  let res = await fetchOnce(path, ms);
-  if (res === null) {
-    res = await fetchOnce(path, ms);
+  let a = await fetchOnce(path, ms);
+
+  // 재시도는 '연결 실패'에만. 제한 시간을 다 쓴 뒤 또 기다리면 사용자가 보는
+  // 대기 시간이 두 배가 된다(분석 60초 → 120초). 끊긴 연결은 대개 즉시 돌아오니
+  // 재시도해도 체감이 늘지 않는다.
+  if (a.kind === 'offline') {
+    a = await fetchOnce(path, ms);
   }
-  if (res === null) {
+
+  if (a.kind === 'offline') {
+    throw new ApiError('네트워크에 연결할 수 없어요. 연결 상태를 확인해 주세요.', 0);
+  }
+  if (a.kind === 'timeout') {
     throw new ApiError(
       '서버가 응답하지 않아요. 잠시 쉬고 있던 서버를 깨우는 중일 수 있어요 — ' +
         '30초쯤 뒤에 다시 시도해 주세요.',
       0
     );
   }
+  const res = a.res;
   if (res.status === 429) {
     // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
     // 그대로 두면 'HTTP 429' 라는 날 코드가 화면에 뜬다.

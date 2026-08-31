@@ -469,7 +469,9 @@ function RadarPage() {
                           <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
                         </View>
                         <Text style={{ fontSize: 10, color: p.sub }}>
-                          터치 {rec.touches}회 · 지지 성공률 {fmtRate(rec.supportRate)}
+                          {/* 분모는 supportTests — touches(저항 포함)로 적으면
+                              옆의 성공률과 계산이 맞지 않는다. 웹과 같은 표기. */}
+                          지지 시험 {rec.supportTests}회 · 성공률 {fmtRate(rec.supportRate)}
                         </Text>
                         <Text style={{ fontSize: 10, color: p.sub }}>
                           <Text style={{ color: p.events.support }}>지지 {rec.supportBounces}</Text>
