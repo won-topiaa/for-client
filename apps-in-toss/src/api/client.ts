@@ -184,6 +184,8 @@ export interface BriefResponse {
   asOf?: string | null;
   /** 값을 못 받아 문구에서 빠진 항목. */
   missing: string[];
+  /** 알림 본문 길이 한도 때문에 푸시에서 빠지는 항목 (앱 화면에는 다 나온다). */
+  pushDropped?: string[];
 }
 
 export function fetchBrief(): Promise<BriefResponse> {

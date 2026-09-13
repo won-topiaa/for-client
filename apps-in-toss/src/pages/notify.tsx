@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { fetchBrief, type BriefResponse } from '../api/client';
 import { Card, Footer, PrimaryButton } from '../components/ui';
+import { PUSH_TIME_LABEL } from '../env';
 import { isPushAvailable, useMorningPush } from '../notify';
 import { usePalette } from '../theme';
 
@@ -48,7 +49,7 @@ function NotifyPage() {
         <View style={{ flexShrink: 1, paddingRight: 8 }}>
           <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>아침 시장 알림</Text>
           <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-            매일 아침 한 줄로 시장 분위기를 받아요
+            {PUSH_TIME_LABEL}에 한 줄로 받아요
           </Text>
         </View>
         <TouchableOpacity
@@ -77,6 +78,14 @@ function NotifyPage() {
             </Text>
             {brief.asOf ? (
               <Text style={{ fontSize: 11, color: p.faint }}>{brief.asOf} 기준</Text>
+            ) : null}
+            {/* 알림 본문 길이 한도 때문에 푸시에는 일부만 담긴다 — 무엇이
+                빠지는지 켜기 전에 알 수 있어야 한다 */}
+            {brief.pushDropped && brief.pushDropped.length > 0 ? (
+              <Text style={{ fontSize: 11, color: p.faint, lineHeight: 17 }}>
+                알림 문구가 길면 {brief.pushDropped.join('·')}은 알림에서 빠져요.
+                알림을 누르면 위 한 줄을 그대로 볼 수 있어요.
+              </Text>
             ) : null}
             {brief.missing.length > 0 ? (
               <Text style={{ fontSize: 11, color: p.faint, lineHeight: 17 }}>
@@ -107,7 +116,7 @@ function NotifyPage() {
         ) : (
           <>
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>
-              {push.enabled ? '알림을 받고 있어요' : '아직 받지 않고 있어요'}
+              {push.enabled ? `알림을 받고 있어요 · ${PUSH_TIME_LABEL}` : '아직 받지 않고 있어요'}
             </Text>
             <PrimaryButton
               label={push.busy ? '처리 중…' : push.enabled ? '알림 끄기' : '아침 알림 받기'}
@@ -152,6 +161,14 @@ function NotifyPage() {
         </Text>
         <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
           · 지수는 시장 상황에 따라 값을 못 받는 날이 있어요. 그럴 땐 받은 항목만 보내 드려요.
+        </Text>
+        <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
+          · 알림이 오지 않으면 토스 앱 설정 → 알림에서 이 미니앱 알림이 켜져 있는지
+          확인해 주세요.
+        </Text>
+        <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
+          · 공포탐욕지수는 CNN Business 의 Fear &amp; Greed Index 수치를 그대로
+          전해 드리는 것으로, 저희와 제휴 관계는 없어요.
         </Text>
       </Card>
 

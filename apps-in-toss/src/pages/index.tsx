@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Card, Footer, InlineToggle, PrimaryButton } from '../components/ui';
+import { PUSH_TIME_LABEL } from '../env';
 import { isPushAvailable } from '../notify';
 import { CONTACT_EMAIL } from '../env';
 import { usePalette } from '../theme';
@@ -369,8 +370,8 @@ function HomePage() {
                   </Text>
                 </View>
                 <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
-                  나스닥 · 코스피 · S&amp;P500 지수와 미국 공포탐욕지수를 매일 아침 한 줄로
-                  보내 드려요.
+                  {PUSH_TIME_LABEL}, 주요 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요.
+                  알림을 누르면 나스닥 · 코스피 · S&amp;P500 · 공포탐욕을 모두 볼 수 있어요.
                 </Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
                   <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '700' }}>
