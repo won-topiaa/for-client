@@ -186,6 +186,8 @@ export interface BriefResponse {
   missing: string[];
   /** 알림 본문 길이 한도 때문에 푸시에서 빠지는 항목 (앱 화면에는 다 나온다). */
   pushDropped?: string[];
+  /** 실제 알림에 나가는 본문(나스닥·공포탐욕) 그대로. */
+  pushBody?: string;
 }
 
 export function fetchBrief(): Promise<BriefResponse> {

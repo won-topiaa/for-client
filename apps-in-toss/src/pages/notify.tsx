@@ -73,18 +73,17 @@ function NotifyPage() {
         <Text style={{ fontSize: 12, color: p.faint, fontWeight: '600' }}>이렇게 도착해요</Text>
         {brief ? (
           <>
-            <Text style={{ fontSize: 13, color: p.text, lineHeight: 21 }}>
-              {brief.line || '지금은 지수를 불러올 수 없어요.'}
+            {/* 실제 알림에 나가는 문구(나스닥·공포탐욕) 그대로 */}
+            <Text style={{ fontSize: 13, color: p.text, lineHeight: 21, fontWeight: '600' }}>
+              {brief.pushBody || brief.line || '지금은 지수를 불러올 수 없어요.'}
             </Text>
             {brief.asOf ? (
               <Text style={{ fontSize: 11, color: p.faint }}>{brief.asOf} 기준</Text>
             ) : null}
-            {/* 알림 본문 길이 한도 때문에 푸시에는 일부만 담긴다 — 무엇이
-                빠지는지 켜기 전에 알 수 있어야 한다 */}
+            {/* 알림엔 두 개만, 앱에선 전부 — 무엇이 더 있는지 켜기 전에 알 수 있게 */}
             {brief.pushDropped && brief.pushDropped.length > 0 ? (
-              <Text style={{ fontSize: 11, color: p.faint, lineHeight: 17 }}>
-                알림 문구가 길면 {brief.pushDropped.join('·')}은 알림에서 빠져요.
-                알림을 누르면 위 한 줄을 그대로 볼 수 있어요.
+              <Text style={{ fontSize: 11, color: p.sub, lineHeight: 17 }}>
+                {brief.pushDropped.join('·')}까지 보고 싶으면 알림을 눌러 앱에서 확인하세요.
               </Text>
             ) : null}
             {brief.missing.length > 0 ? (
@@ -96,7 +95,8 @@ function NotifyPage() {
           </>
         ) : briefFailed ? (
           <Text style={{ fontSize: 13, color: p.sub, lineHeight: 21 }}>
-            나스닥 · 코스피 · S&amp;P500 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요.
+            평일 아침, 나스닥 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요.
+            (나머지 지수는 알림을 눌러 앱에서 볼 수 있어요.)
           </Text>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
