@@ -13,3 +13,10 @@ export const BRAND_NAME = '원토피아';
 export const CONTACT_EMAIL = 'wontopiaaa@gmail.com';
 export const DISCLAIMER =
   '과거 데이터 통계이며 투자 권유가 아닙니다. 과거에 잘 지켜진 이평선이 미래에도 지켜진다는 보장은 없습니다.';
+
+// 아침 시장 알림(스마트 발송) 템플릿 코드.
+// 앱인토스 콘솔 > 미니앱 > 스마트 발송 에서 '기능성' 메시지를 만들고 문구
+// 검수가 승인되면 코드가 나온다. 그 값을 여기에 넣으면 알림 기능이 켜진다.
+// 비어 있는 동안에는 홈에 알림 카드가 아예 보이지 않는다 — 동의 화면을 열 수
+// 없는 스위치를 내보내면 사용자에게도, 심사자에게도 고장으로 보인다.
+export const PUSH_TEMPLATE_CODE = '';

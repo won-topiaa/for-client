@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Card, Footer, InlineToggle, PrimaryButton } from '../components/ui';
+import { isPushAvailable } from '../notify';
 import { CONTACT_EMAIL } from '../env';
 import { usePalette } from '../theme';
 
@@ -349,6 +350,36 @@ function HomePage() {
               </View>
             </Card>
           </TouchableOpacity>
+
+          {/* ── 아침 시장 알림 ── */}
+          {/* 템플릿 코드가 없으면 카드를 아예 내보내지 않는다 — 눌러도 동의
+              화면이 열리지 않는 스위치는 사용자에게도 심사자에게도 고장이다.
+              (src/env.ts PUSH_TEMPLATE_CODE 를 채우면 나타난다) */}
+          {isPushAvailable() ? (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('/notify')}
+              accessibilityRole="button"
+              activeOpacity={0.7}
+            >
+              <Card palette={p} style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 17 }}>🔔</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: p.text }}>
+                    아침 시장 알림
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
+                  나스닥 · 코스피 · S&amp;P500 지수와 미국 공포탐욕지수를 매일 아침 한 줄로
+                  보내 드려요.
+                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+                  <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '700' }}>
+                    알림 설정 →
+                  </Text>
+                </View>
+              </Card>
+            </TouchableOpacity>
+          ) : null}
 
           {/* ── 이평선이란? ── */}
           <Card palette={p} style={{ gap: 8 }}>
