@@ -137,6 +137,15 @@ function askAgreement(): Promise<'agreed' | 'rejected'> {
           ),
         onError: (error) => finish(() => reject(agreementError(error))),
       });
+      if (done) {
+        // 콜백이 동기로 불린 경우 — finish 가 이미 지나갔고 그때 cleanup 은
+        // 아직 null 이었다. 여기서 직접 해제하지 않으면 구독이 남는다.
+        try {
+          cleanup?.();
+        } catch {
+          // 해제 실패는 사용자에게 알릴 일이 아니다
+        }
+      }
     } catch (error) {
       finish(() => reject(agreementError(error)));
     }
