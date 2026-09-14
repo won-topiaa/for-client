@@ -65,6 +65,34 @@ async function anonKey(): Promise<string> {
   return cachedKey;
 }
 
+/**
+ * requestNotificationAgreement 의 에러를 사람이 읽을 안내로 바꾼다.
+ *
+ * 문서에 나온 error.code 별 처리 (developers-apps-in-toss smart-message):
+ * - UNSUPPORTED_APP_VERSION: 토스 앱이 이 기능의 최소 버전보다 낮다 → 업데이트 안내
+ * - TERMS_DISAGREED_MEMBER: 토스 '사용자 최적화 제품 동의'가 꺼져 있어 도달 불가
+ *   → 어디서 켜는지 알려 준다 (안 그러면 '왜 안 오지'로 남는다)
+ * - 그 외(NOTIFICATION_AGREEMENT_FAILED 등)는 일반 안내
+ */
+function agreementError(error: unknown): NotifyError {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : '';
+  if (code === 'UNSUPPORTED_APP_VERSION') {
+    return new NotifyError(
+      '토스 앱을 최신 버전으로 업데이트하면 알림을 받을 수 있어요.',
+      'unsupported'
+    );
+  }
+  if (code === 'TERMS_DISAGREED_MEMBER') {
+    return new NotifyError(
+      '토스 설정 > 약관 및 개인정보 처리 동의 > \'사용자 최적화 제품 동의\'를 켜면 알림을 받을 수 있어요.'
+    );
+  }
+  return new NotifyError('알림 동의를 받지 못했어요. 다시 시도해 주세요.');
+}
+
 /** 토스 알림 동의 화면을 띄우고 결과를 기다린다. */
 function askAgreement(): Promise<'agreed' | 'rejected'> {
   return new Promise((resolve, reject) => {
@@ -107,11 +135,10 @@ function askAgreement(): Promise<'agreed' | 'rejected'> {
             // 남아 있지만 우리 서버의 목록은 비어 있어서, 여기서 다시 등록해야 한다.
             resolve(result?.type === 'agreementRejected' ? 'rejected' : 'agreed')
           ),
-        onError: () =>
-          finish(() => reject(new NotifyError('알림 동의를 받지 못했어요. 다시 시도해 주세요.'))),
+        onError: (error) => finish(() => reject(agreementError(error))),
       });
-    } catch {
-      finish(() => reject(new NotifyError('알림 동의를 받지 못했어요. 다시 시도해 주세요.')));
+    } catch (error) {
+      finish(() => reject(agreementError(error)));
     }
   });
 }

@@ -19,7 +19,7 @@ export const DISCLAIMER =
 // 검수가 승인되면 코드가 나온다. 그 값을 여기에 넣으면 알림 기능이 켜진다.
 // 비어 있는 동안에는 홈에 알림 카드가 아예 보이지 않는다 — 동의 화면을 열 수
 // 없는 스위치를 내보내면 사용자에게도, 심사자에게도 고장으로 보인다.
-export const PUSH_TEMPLATE_CODE = '';
+export const PUSH_TEMPLATE_CODE = 'wontopia-ma-radar-morning-brief';
 
 // 알림이 가는 시각. 서버의 크론(ma-radar/.github/workflows/morning-push.yml,
 // '30 23 * * 1-5' UTC)과 **같은 값**이어야 한다 — 화면이 '아침'이라고만 말하면
