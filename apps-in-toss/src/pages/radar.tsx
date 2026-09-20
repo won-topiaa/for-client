@@ -13,7 +13,16 @@ import { analyzeSymbol, searchSymbols } from '../api/client';
 import type { AnalyzeResponse, MAEvent, SymbolInfo, Timeframe } from '../api/types';
 import { CandleChart, type ChartLine, type ChartMarker } from '../components/CandleChart';
 import { ScoreTable } from '../components/ScoreTable';
-import { Card, Chip, Expandable, Footer, PrimaryButton, StarButton } from '../components/ui';
+import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
+import {
+  Card,
+  Chip,
+  Expandable,
+  Footer,
+  InlineToggle,
+  PrimaryButton,
+  StarButton,
+} from '../components/ui';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
@@ -60,6 +69,10 @@ function RadarPage() {
   const [focusPeriod, setFocusPeriod] = useState<number | null>(null);
   const [showMarkers, setShowMarkers] = useState(true);
   const [maxBars, setMaxBars] = useState<number>(120);
+  // 통계 밀도 2단 구조: 기본은 '몇 번 중 몇 번 성공'만 보여주고, 반감기·
+  // 지지/저항/이탈/돌파 내역·전체 성적표는 이 토글을 켠 사람에게만 보여준다.
+  // (초보는 숫자가 많으면 읽기를 포기하고, 전문가는 다 보고 싶어 한다)
+  const [showStats, setShowStats] = useState(false);
   const { items: watched, toggle: toggleWatch } = useWatchlist();
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -241,49 +254,18 @@ function RadarPage() {
   /* ---------- 렌더 ---------- */
 
   return (
+    <View style={{ flex: 1, backgroundColor: p.bg }}>
     <ScrollView
       style={{ flex: 1, backgroundColor: p.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ flexShrink: 1, paddingRight: 8 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>내 종목 이평선</Text>
-          <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-            자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/watchlist')}
-            accessibilityRole="button"
-            accessibilityLabel="관심종목 보기"
-            style={{
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.card,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 10,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: p.amber, fontWeight: '600' }}>★</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/')}
-            accessibilityRole="button"
-            style={{
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.card,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 10,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-          </TouchableOpacity>
-        </View>
+      {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
+      <View style={{ flexShrink: 1, paddingRight: 8 }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>내 종목 이평선</Text>
+        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
+          자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요
+        </Text>
       </View>
 
       <Card palette={p} style={{ gap: 10 }}>
@@ -481,19 +463,23 @@ function RadarPage() {
                           <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
                         </View>
                         <Text style={{ fontSize: 10, color: p.sub }}>
-                          {/* 분모는 supportTests — touches(저항 포함)로 적으면
-                              옆의 성공률과 계산이 맞지 않는다. 웹과 같은 표기. */}
-                          지지 시험 {rec.supportTests}회 · 성공률 {fmtRate(rec.supportRate)}
+                          {/* 기본 표기는 '몇 번 중 몇 번' — 비율만 있으면 표본이
+                              2회인지 200회인지 모른 채 숫자를 믿게 된다.
+                              분모는 supportTests (touches 는 저항 포함이라 안 맞다). */}
+                          지지 시험 {rec.supportTests}회 중 {rec.supportBounces}회 성공 (
+                          {fmtRate(rec.supportRate)})
                         </Text>
-                        <Text style={{ fontSize: 10, color: p.sub }}>
-                          <Text style={{ color: p.events.support }}>지지 {rec.supportBounces}</Text>
-                          {' · '}
-                          <Text style={{ color: p.events.resistance }}>저항 {rec.resistanceBounces}</Text>
-                          {' · '}
-                          <Text style={{ color: p.events.breakDown }}>이탈 {breakDown}</Text>
-                          {' · '}
-                          <Text style={{ color: p.events.breakUp }}>돌파 {breakUp}</Text>
-                        </Text>
+                        {showStats ? (
+                          <Text style={{ fontSize: 10, color: p.sub }}>
+                            <Text style={{ color: p.events.support }}>지지 {rec.supportBounces}</Text>
+                            {' · '}
+                            <Text style={{ color: p.events.resistance }}>저항 {rec.resistanceBounces}</Text>
+                            {' · '}
+                            <Text style={{ color: p.events.breakDown }}>이탈 {breakDown}</Text>
+                            {' · '}
+                            <Text style={{ color: p.events.breakUp }}>돌파 {breakUp}</Text>
+                          </Text>
+                        ) : null}
                         {rec.qualified ? null : (
                           <Text style={{ fontSize: 9, color: p.amber }}>⚠ 표본 부족 — 참고용</Text>
                         )}
@@ -513,11 +499,26 @@ function RadarPage() {
                 ) : null}
               </View>
 
-              <Text style={{ fontSize: 11, color: p.faint }}>
-                분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
-                {data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ', 전체 기간'}) · 최근 가중 반감기{' '}
-                {data.halfLifeBars}봉
+              {/* 성공률을 '오를 확률'로 읽지 않게 — 카드 바로 아래 한 번만 */}
+              <Text style={{ fontSize: 11, color: p.amber, lineHeight: 17 }}>
+                성공률은 과거에 이 선에서 몇 번 버텼는지를 센 통계예요. 앞으로도 그렇다는
+                보장이나 매수 신호가 아닙니다.
               </Text>
+
+              {/* 숫자 자세히 — 기본은 접어 둔다 (반감기·이벤트 내역·성적표) */}
+              <InlineToggle
+                open={showStats}
+                label="숫자 자세히"
+                palette={p}
+                onPress={() => setShowStats((v) => !v)}
+              />
+              {showStats ? (
+                <Text style={{ fontSize: 11, color: p.faint }}>
+                  분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
+                  {data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ', 전체 기간'}) · 최근 가중
+                  반감기 {data.halfLifeBars}봉
+                </Text>
+              ) : null}
 
               <Card palette={p} style={{ gap: 10 }}>
                 <View
@@ -562,16 +563,20 @@ function RadarPage() {
                 </Text>
               </Card>
 
-              <Card palette={p} style={{ gap: 8 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>
-                  전체 후보 성적표 — {TF_LABEL[tf]}
-                </Text>
-                <ScoreTable
-                  stats={data.stats ?? []}
-                  recommended={recommended.map((r) => r.period)}
-                  palette={p}
-                />
-              </Card>
+              {/* 전체 후보 성적표는 열이 빽빽해 초보에겐 벽이다 — '숫자 자세히'
+                  를 켠 사람에게만 보여준다 */}
+              {showStats ? (
+                <Card palette={p} style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>
+                    전체 후보 성적표 — {TF_LABEL[tf]}
+                  </Text>
+                  <ScoreTable
+                    stats={data.stats ?? []}
+                    recommended={recommended.map((r) => r.period)}
+                    palette={p}
+                  />
+                </Card>
+              ) : null}
             </>
           )}
         </>
@@ -590,5 +595,7 @@ function RadarPage() {
 
       <Footer palette={p} />
     </ScrollView>
+    <TabBar current="/radar" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+    </View>
   );
 }

@@ -10,6 +10,7 @@ import {
 import { ApiError, fetchTouches, isRateLimited } from '../api/client';
 import type { Market, TouchesResponse, TouchMatch } from '../api/types';
 import { CandleChart } from '../components/CandleChart';
+import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import { Card, Chip, Expandable, Footer, PrimaryButton, StarButton } from '../components/ui';
 import { SCREENER_RULE_LABEL } from '../env';
 import { fmtDistPct, fmtPrice, fmtRate } from '../format';
@@ -236,51 +237,30 @@ function ScreenerPage() {
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: p.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ flexShrink: 1 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>오늘의 지지선</Text>
-          <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-            검증된 지지 이평선에 오늘 저가가 닿은 종목만
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/watchlist')}
-            accessibilityRole="button"
-            accessibilityLabel="관심종목 보기"
-            style={{
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.card,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 10,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: p.amber, fontWeight: '600' }}>★</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('/')}
-            accessibilityRole="button"
-            style={{
-              borderWidth: 1,
-              borderColor: p.border,
-              backgroundColor: p.card,
-              borderRadius: 10,
-              paddingVertical: 8,
-              paddingHorizontal: 10,
-            }}
-          >
-            <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-          </TouchableOpacity>
-        </View>
+    <View style={{ flex: 1, backgroundColor: p.bg }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: p.bg }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
+    >
+      {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
+      <View style={{ flexShrink: 1 }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>오늘의 지지선</Text>
+        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
+          검증된 지지 이평선에 오늘 저가가 닿은 종목만
+        </Text>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6 }}>
         <Chip label="🇰🇷 국내" active={market === 'kr'} palette={p} onPress={() => setMarket('kr')} />
         <Chip label="🇺🇸 미국" active={market === 'us'} palette={p} onPress={() => setMarket('us')} />
       </View>
+
+      {/* '닿음'을 매수 신호로 읽지 않게 — 카드마다 반복하면 잔소리가 되므로
+          목록 위에 한 번만 둔다 */}
+      <Text style={{ fontSize: 11, color: p.amber, lineHeight: 17 }}>
+        지지선에 닿았다는 건 &apos;지켜보기 좋은 지점&apos;이라는 뜻이에요. 성공률은 과거
+        통계일 뿐, 매수 신호가 아닙니다.
+      </Text>
 
       <Expandable title="스캔 기준" palette={p}>
         <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16 }}>
@@ -361,5 +341,7 @@ function ScreenerPage() {
 
       <Footer palette={p} />
     </ScrollView>
+    <TabBar current="/screener" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+    </View>
   );
 }

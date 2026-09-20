@@ -1,5 +1,12 @@
 import { API_BASE_URL } from '../env';
-import type { AnalyzeResponse, Market, SearchResponse, TouchesResponse } from './types';
+import type {
+  AnalyzeResponse,
+  Market,
+  PatternKey,
+  PatternsResponse,
+  SearchResponse,
+  TouchesResponse,
+} from './types';
 
 // 앱인토스 정책상 미니앱은 토스 로그인 외의 자체 로그인을 제공할 수 없다.
 // 그래서 앱은 계정 없이 동작한다 — 모든 조회는 인증 없는 공개 API 를 쓴다.
@@ -151,6 +158,18 @@ export function analyzeSymbol(symbol: string): Promise<AnalyzeResponse> {
 
 export function fetchTouches(market: Market): Promise<TouchesResponse> {
   return api<TouchesResponse>(`/api/touches?market=${market}`);
+}
+
+/* ---------- 차트 패턴 스크리너 ---------- */
+
+// 한 번의 스캔 결과에 모든 패턴이 함께 들어 있다(서버가 시장별로 한 번만
+// 훑는다). 그래서 패턴 칩을 바꾸는 건 같은 스냅샷에서 다른 목록을 꺼내는
+// 것뿐이라, 스캔이 다시 돌지 않는다.
+export function fetchPatterns(
+  pattern: PatternKey,
+  market: Market
+): Promise<PatternsResponse> {
+  return api<PatternsResponse>(`/api/patterns?pattern=${pattern}&market=${market}`);
 }
 
 /* ---------- 아침 알림 (구독 등록·해지) ---------- */

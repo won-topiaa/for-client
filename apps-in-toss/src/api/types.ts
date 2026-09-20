@@ -124,3 +124,54 @@ export interface TouchesResponse {
   matches?: TouchMatch[];
   totalMatches?: number;
 }
+
+/* ---------- 차트 패턴 스크리너 ---------- */
+
+// 서버(/api/patterns)가 받는 패턴 키. 앱 화면에는 이 중 셋만 노출하지만,
+// 타입은 서버가 주는 값 전부를 인정한다 — 나중에 노출을 늘릴 때 타입을
+// 건드리지 않아도 되고, 서버가 다른 키를 돌려줘도 타입이 거짓말하지 않는다.
+export type PatternKey =
+  | 'stage2'
+  | 'triangle'
+  | 'head_shoulders'
+  | 'inv_head_shoulders'
+  | 'cup_handle';
+
+/** 차트에 겹쳐 그리는 보조선 (넥라인·추세선·컵 테두리 등). */
+export interface PatternOverlay {
+  /** 사람이 읽는 이름 — 범례에 쓴다 ("넥라인", "지지선" …). */
+  name: string;
+  points: TimeValue[];
+}
+
+export interface PatternMatch {
+  symbol: string;
+  name: string;
+  market?: string | null;
+  /** 패턴 적합도 점수 (서버 정렬 기준). */
+  score: number;
+  /** 왜 이 패턴으로 봤는지 — 서버가 만든 한 줄 설명. */
+  summary: string;
+  summaryEn?: string;
+  candles: Candle[];
+  overlays: PatternOverlay[];
+}
+
+export interface PatternsResponse {
+  status: 'running' | 'done' | 'error';
+  detail?: string;
+  // running 일 때
+  done?: number;
+  total?: number;
+  // done 일 때
+  pattern?: string;
+  market?: string;
+  scanned?: number;
+  universe?: number;
+  elapsedSec?: number;
+  refreshing?: boolean;
+  partial?: boolean;
+  generatedAt?: string | number;
+  matches?: PatternMatch[];
+  totalMatches?: number;
+}

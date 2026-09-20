@@ -1,6 +1,7 @@
 import { createRoute } from '@granite-js/react-native';
 import React from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import { Card, Footer, StarButton } from '../components/ui';
 import { pendingAnalyze } from '../store';
 import { usePalette } from '../theme';
@@ -21,31 +22,18 @@ function WatchlistPage() {
   };
 
   return (
+    <View style={{ flex: 1, backgroundColor: p.bg }}>
     <ScrollView
       style={{ flex: 1, backgroundColor: p.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ flexShrink: 1, paddingRight: 8 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>관심종목</Text>
-          <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-            별표로 담아 둔 종목을 모아서 봐요
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('/')}
-          accessibilityRole="button"
-          style={{
-            borderWidth: 1,
-            borderColor: p.border,
-            backgroundColor: p.card,
-            borderRadius: 10,
-            paddingVertical: 8,
-            paddingHorizontal: 10,
-          }}
-        >
-          <Text style={{ fontSize: 12, color: p.text, fontWeight: '600' }}>홈</Text>
-        </TouchableOpacity>
+      {/* 우상단 '홈' 버튼은 하단 탭바로 대체했다 — 같은 이동을 두 군데 두면
+          어디를 눌러야 할지 고민만 늘린다 */}
+      <View style={{ flexShrink: 1, paddingRight: 8 }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>관심종목</Text>
+        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
+          별표로 담아 둔 종목을 모아서 봐요
+        </Text>
       </View>
 
       {saveBroken ? (
@@ -147,5 +135,7 @@ function WatchlistPage() {
 
       <Footer palette={p} />
     </ScrollView>
+    <TabBar current="/watchlist" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+    </View>
   );
 }
