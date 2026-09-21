@@ -1,6 +1,5 @@
-import { Storage } from '@apps-in-toss/framework';
 import { createRoute } from '@granite-js/react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Animated,
   Linking,
@@ -20,47 +19,55 @@ export const Route = createRoute('/', {
   component: HomePage,
 });
 
-/** 인트로(풀스크린 2장)를 이미 본 기기인지. 처음 한 번만 보여준다. */
-const INTRO_SEEN_KEY = 'wontopia.introSeen';
+// 인트로 한 장의 높이 = 화면 높이 × 이 비율.
+//
+// 예전엔 한 장이 화면 전체(1.0)라 기능 카드까지 두 화면을 스크롤해야 했다.
+// 연출은 남기되 지나가는 시간을 줄이려고 비율만 낮춘다 — 0.55 면 두 장을
+// 합쳐도 한 화면 남짓이라 체감 스크롤이 절반 가까이 짧아진다.
+// (작은 기기에서 제목·부제가 눌리지 않게 최소 높이를 함께 둔다)
+const INTRO_RATIO = 0.55;
+const INTRO_MIN_H = 300;
 
 function IntroSection({
   scrollY,
-  screenH,
+  sectionH,
   index,
   children,
 }: {
   scrollY: Animated.Value;
-  screenH: number;
+  /** 이 장의 높이. 페이드·이동 타이밍도 전부 이 값을 기준으로 잡는다 —
+   *  높이만 줄이고 기준을 화면 높이로 두면 연출이 스크롤과 어긋난다. */
+  sectionH: number;
   index: number;
   children: React.ReactNode;
 }) {
-  const start = index * screenH;
+  const start = index * sectionH;
 
   const opacity = scrollY.interpolate({
     inputRange: [
-      start - screenH * 0.3,
+      start - sectionH * 0.3,
       start,
-      start + screenH * 0.45,
-      start + screenH * 0.8,
+      start + sectionH * 0.45,
+      start + sectionH * 0.8,
     ],
     outputRange: [0, 1, 1, 0],
     extrapolate: 'clamp',
   });
 
   const translateY = scrollY.interpolate({
-    inputRange: [start - screenH * 0.3, start, start + screenH * 0.8],
+    inputRange: [start - sectionH * 0.3, start, start + sectionH * 0.8],
     outputRange: [36, 0, -36],
     extrapolate: 'clamp',
   });
 
   const scale = scrollY.interpolate({
-    inputRange: [start, start + screenH * 0.8],
+    inputRange: [start, start + sectionH * 0.8],
     outputRange: [1, 0.92],
     extrapolate: 'clamp',
   });
 
   return (
-    <View style={{ height: screenH, justifyContent: 'center', alignItems: 'center' }}>
+    <View style={{ height: sectionH, justifyContent: 'center', alignItems: 'center' }}>
       <Animated.View
         style={{
           opacity,
@@ -75,9 +82,9 @@ function IntroSection({
   );
 }
 
-function ScrollHint({ scrollY, screenH, palette: p }: { scrollY: Animated.Value; screenH: number; palette: ReturnType<typeof usePalette> }) {
+function ScrollHint({ scrollY, sectionH, palette: p }: { scrollY: Animated.Value; sectionH: number; palette: ReturnType<typeof usePalette> }) {
   const opacity = scrollY.interpolate({
-    inputRange: [0, screenH * 0.2],
+    inputRange: [0, sectionH * 0.2],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
@@ -110,42 +117,9 @@ function HomePage() {
   const [radarOpen, setRadarOpen] = useState(false);
   const [screenerOpen, setScreenerOpen] = useState(false);
   const [patternsOpen, setPatternsOpen] = useState(false);
-  // null = 아직 확인 중. 인트로는 '처음 한 번'만 — 매번 풀스크린 2장을
-  // 스크롤로 지나야 기능이 나오면, 자주 쓰는 사람에게는 마찰일 뿐이다.
-  const [showIntro, setShowIntro] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      let seen = false;
-      try {
-        seen = (await Storage.getItem(INTRO_SEEN_KEY)) === '1';
-      } catch {
-        // 저장소를 못 쓰는 기기 — 첫 방문으로 보고 인트로를 보여준다
-        seen = false;
-      }
-      if (!alive) {
-        return;
-      }
-      setShowIntro(!seen);
-      if (!seen) {
-        try {
-          await Storage.setItem(INTRO_SEEN_KEY, '1');
-        } catch {
-          // 기록 실패는 '다음에 또 본다' 정도의 문제라 조용히 넘어간다
-        }
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 플래그를 읽는 한 프레임 동안 빈 배경 — 먼저 그렸다가 인트로가 뒤늦게
-  // 끼어들면 화면이 튄다
-  if (showIntro === null) {
-    return <View style={{ flex: 1, backgroundColor: p.bg }} />;
-  }
+  // 인트로 한 장의 높이. 화면을 꽉 채우는 대신 절반 남짓만 쓴다 — 연출은
+  // 그대로 두고 기능 카드까지 내려오는 거리를 줄이기 위해서다.
+  const sectionH = Math.max(INTRO_MIN_H, screenH * INTRO_RATIO);
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
@@ -159,10 +133,8 @@ function HomePage() {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        {showIntro ? (
-        <>
         {/* ── Intro 1: 나에게 맞는 이평선 ── */}
-        <IntroSection scrollY={scrollY} screenH={screenH} index={0}>
+        <IntroSection scrollY={scrollY} sectionH={sectionH} index={0}>
           <Text
             style={{
               fontSize: 34,
@@ -189,7 +161,7 @@ function HomePage() {
         </IntroSection>
 
         {/* ── Intro 2: 이평선 레이더 ── */}
-        <IntroSection scrollY={scrollY} screenH={screenH} index={1}>
+        <IntroSection scrollY={scrollY} sectionH={sectionH} index={1}>
           <View
             style={{
               width: 56,
@@ -232,8 +204,6 @@ function HomePage() {
             일봉 3년 · 주봉 7년 · 월봉 전체{'\n'}백테스트로 검증된 선만 찾아드려요
           </Text>
         </IntroSection>
-        </>
-        ) : null}
 
         {/* ── Main content ── */}
         <View style={{ padding: 16, gap: 16 }}>
@@ -532,8 +502,8 @@ function HomePage() {
         </View>
       </Animated.ScrollView>
 
-      {/* ── 첫 화면 스크롤 힌트 (인트로를 띄운 첫 실행에만) ── */}
-      {showIntro ? <ScrollHint scrollY={scrollY} screenH={screenH} palette={p} /> : null}
+      {/* ── 첫 화면 스크롤 힌트 (스크롤하면 사라짐) ── */}
+      <ScrollHint scrollY={scrollY} sectionH={sectionH} palette={p} />
 
       <TabBar current="/" palette={p} onNavigate={(to) => navigation.navigate(to)} />
     </View>
