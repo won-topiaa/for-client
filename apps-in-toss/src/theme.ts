@@ -223,61 +223,86 @@ const MODE_KEY = 'wontopia.theme';
 // 모듈 캐시 + 구독. 관심종목(watchlist.ts)과 같은 방식이다 — 여러 화면이
 // 같은 값을 보고, 한 화면에서 바꾸면 나머지도 즉시 따라 바뀐다.
 let themeMode: ThemeMode = 'auto';
-let modeLoaded = false;
+/** 이번 실행에서 사용자가 직접 골랐는가. 읽는 도중에 고른 경우, 늦게 도착한
+ *  저장값이 그 선택을 덮어쓰지 않게 하는 표시다. */
+let userChose = false;
+/** 진행 중이거나 끝난 읽기. 성공하면 그대로 남아 두 번 읽지 않는다. */
+let modeLoad: Promise<void> | null = null;
 const modeListeners = new Set<(m: ThemeMode) => void>();
 
 function isMode(v: unknown): v is ThemeMode {
   return v === 'auto' || v === 'light' || v === 'dark';
 }
 
+function emitMode(m: ThemeMode): void {
+  for (const fn of modeListeners) {
+    fn(m);
+  }
+}
+
 /**
- * 저장된 설정을 한 번만 읽는다. 실패하면 '자동'으로 둔다 — 테마는 못 읽었다고
- * 화면을 막을 이유가 없는 값이다.
+ * 저장된 설정을 읽는다. 실패하면 '자동'으로 둔다 — 테마는 못 읽었다고 화면을
+ * 막을 이유가 없는 값이다.
+ *
+ * 실패를 '읽었다'로 캐시하지 않는다(modeLoad 를 비운다). 한 번의 일시적
+ * 실패로 그 실행 내내 저장해 둔 설정을 못 읽게 되면, 다크를 골라 둔 사람이
+ * 앱을 켤 때마다 라이트를 보게 된다. (watchlist.ts 가 같은 이유로 실패를
+ * 캐시하지 않는다.)
  *
  * Storage 가 비동기라, '다크'를 골라 둔 사람은 앱을 열 때 아주 잠깐 라이트를
  * 본 뒤 바뀐다. 동기로 읽을 방법이 없어 남겨 두는 한계다 — 읽기는 앱이 뜨는
  * 즉시(_app.tsx 의 usePalette) 시작하므로 한 프레임 수준이다.
  */
-async function loadThemeMode(): Promise<void> {
-  if (modeLoaded) {
-    return;
+function loadThemeMode(): Promise<void> {
+  if (!modeLoad) {
+    modeLoad = (async () => {
+      let raw: string | null = null;
+      try {
+        raw = await Storage.getItem(MODE_KEY);
+      } catch {
+        modeLoad = null; // 다음 화면이 다시 시도할 수 있게
+        return;
+      }
+      // 읽는 사이에 사용자가 직접 골랐다면 그쪽이 이긴다. 안 그러면 방금 누른
+      // 선택이 저장소의 옛 값으로 되돌아가고(화면만), 저장된 값과도 어긋난다.
+      if (userChose || !isMode(raw) || raw === themeMode) {
+        return;
+      }
+      themeMode = raw;
+      emitMode(raw);
+    })();
   }
-  modeLoaded = true;
-  let raw: string | null = null;
-  try {
-    raw = await Storage.getItem(MODE_KEY);
-  } catch {
-    return;
-  }
-  if (isMode(raw) && raw !== themeMode) {
-    themeMode = raw;
-    for (const fn of modeListeners) {
-      fn(raw);
-    }
-  }
+  return modeLoad;
 }
+
+// 저장만 한 줄로 세운다. 화면 갱신은 동기라 유실될 일이 없고, Storage 쓰기만
+// 순서가 뒤집히면 나중에 누른 값이 먼저 기록돼 화면과 저장값이 어긋난다.
+let modeWriteQueue: Promise<unknown> = Promise.resolve();
 
 /** 테마를 바꾸고 저장한다. 저장 실패는 조용히 넘긴다(이번 실행에는 적용된다). */
 export function setThemeMode(mode: ThemeMode): void {
+  userChose = true;
   if (themeMode === mode) {
     return;
   }
   themeMode = mode;
   // 화면을 먼저 바꾸고 저장은 뒤따르게 — 저장이 늦거나 실패해도 누른 즉시 바뀐다
-  for (const fn of modeListeners) {
-    fn(mode);
-  }
-  void Storage.setItem(MODE_KEY, mode).catch(() => undefined);
+  emitMode(mode);
+  modeWriteQueue = modeWriteQueue
+    .then(() => Storage.setItem(MODE_KEY, mode))
+    .catch(() => undefined); // 실패해도 큐가 막히지 않게
 }
 
 /** 지금 고른 테마 설정(자동/라이트/다크)과 바꾸는 함수. */
 export function useThemeMode(): { mode: ThemeMode; setMode: (m: ThemeMode) => void } {
-  const [mode, setMode] = useState<ThemeMode>(themeMode);
+  const [mode, setLocal] = useState<ThemeMode>(themeMode);
   useEffect(() => {
-    modeListeners.add(setMode);
-    void loadThemeMode();
+    modeListeners.add(setLocal);
+    // 구독을 붙이기 전에 읽기가 끝나 있을 수 있다 — 그러면 알림을 못 받고
+    // 이 화면만 '자동'에 머문다. 끝난 뒤 현재 값으로 한 번 맞춘다.
+    void loadThemeMode().then(() => setLocal(themeMode));
     return () => {
-      modeListeners.delete(setMode);
+      modeListeners.delete(setLocal);
     };
   }, []);
   return { mode, setMode: setThemeMode };
