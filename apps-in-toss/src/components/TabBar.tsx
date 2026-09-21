@@ -24,6 +24,10 @@ export const TAB_BAR_SPACER = TAB_BAR_HEIGHT + 16;
 
 export type TabKey = '/' | '/radar' | '/screener' | '/patterns' | '/watchlist';
 
+/** 탭바가 있는 화면의 경로. 탭 자리를 나눠 쓰는 화면(/lines)이 있어서
+ *  '켜 보이는 탭(TabKey)'과 '지금 열린 화면'을 같은 타입으로 둘 수 없다. */
+export type TabRoute = TabKey | '/lines';
+
 const ICON_BOX = { width: 22, height: 20 } as const;
 
 /** 집 — 지붕(테두리 삼각형) + 몸통 */
@@ -116,14 +120,24 @@ const TABS: { key: TabKey; label: string; Icon: (props: { color: string }) => Re
 
 export function TabBar({
   current,
+  route,
   palette: p,
   onNavigate,
 }: {
+  /** 어느 탭을 '켜진 것'으로 보일지. */
   current: TabKey;
+  /** 지금 실제로 열려 있는 화면. 생략하면 current 와 같다고 본다.
+   *
+   *  둘을 나눈 이유: '오늘의 지지선'과 '맞춤 이평선'이 지지선 탭 하나를 나눠
+   *  쓴다. 맞춤 이평선에 있을 때도 지지선 탭이 켜져 보여야 하는데, 그 상태에서
+   *  같은 탭을 누르면 '현재 탭은 무시' 규칙에 걸려 아무 일도 안 일어난다 —
+   *  돌아갈 길이 막힌다. 실제 화면을 따로 받아 그때는 이동시킨다. */
+  route?: TabRoute;
   palette: Palette;
   /** navigation.navigate 를 그대로 넘긴다 (화면마다 Route 가 달라서 주입받는다). */
   onNavigate: (to: TabKey) => void;
 }) {
+  const here = route ?? current;
   return (
     <View
       style={{
@@ -146,10 +160,11 @@ export function TabBar({
         return (
           <TouchableOpacity
             key={key}
-            // 현재 탭을 다시 누르면 아무것도 하지 않는다 — 같은 화면을
-            // 쌓아 올려 뒤로가기가 이상해지는 것을 막는다.
+            // 지금 열려 있는 화면을 다시 누르면 아무것도 하지 않는다 — 같은
+            // 화면을 쌓아 올려 뒤로가기가 이상해지는 것을 막는다. 판단 기준은
+            // '켜져 보이는가(active)'가 아니라 '지금 그 화면인가(here)'다.
             onPress={() => {
-              if (!active) {
+              if (key !== here) {
                 onNavigate(key);
               }
             }}

@@ -127,6 +127,35 @@ if (!touchesChecked) {
   ok = false;
 }
 
+// ---- /api/lines (맞춤 이평선) ----
+// TouchMatch 와 같은 이유로 '확인 못 함'을 통과로 두지 않는다. 다만 이쪽은
+// (시장, 기간) 조합마다 스캐너가 따로라, 그날 처음 묻는 조합이면 1~2분 걸린다.
+// 화면이 쓰는 기본값(kr/us × 20일)만 대조한다 — 나머지 기간도 같은 코드가
+// 같은 모양으로 만든다.
+let linesChecked = false;
+for (const market of ['kr', 'us']) {
+  const lines = await get(`/api/lines?market=${market}&period=20`);
+  if (lines.status !== 'done') {
+    console.log(`  … /api/lines?market=${market}: status=${lines.status} — 스캔 중`);
+    continue;
+  }
+  // 지지·저항 어느 쪽이든 한 건이면 필드 모양을 확인할 수 있다
+  const m = (lines.support ?? [])[0] ?? (lines.resistance ?? [])[0];
+  if (!m) {
+    console.log(`  … /api/lines?market=${market}: 오늘 매치 0건`);
+    continue;
+  }
+  ok = compare(`LineMatch (/api/lines?market=${market})`, declaredFields('LineMatch'), m, {
+    optional: ['market'],
+  }) && ok;
+  linesChecked = true;
+}
+if (!linesChecked) {
+  console.error('  ✗ LineMatch: 두 시장 모두 대조하지 못했습니다 (스캔 중이거나 매치 0건).');
+  console.error('    처음 묻는 (시장, 기간) 조합은 서버가 1~2분 훑습니다 — 잠시 뒤 다시 실행해 주세요.');
+  ok = false;
+}
+
 console.log();
 if (!ok) {
   console.error('계약 불일치 — 이대로 번들을 올리면 화면에 NaN/undefined 가 뜹니다.');

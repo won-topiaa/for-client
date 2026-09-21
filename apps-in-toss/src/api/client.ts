@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../env';
 import type {
   AnalyzeResponse,
+  LinesResponse,
   Market,
   PatternKey,
   PatternsResponse,
@@ -158,6 +159,18 @@ export function analyzeSymbol(symbol: string): Promise<AnalyzeResponse> {
 
 export function fetchTouches(market: Market): Promise<TouchesResponse> {
   return api<TouchesResponse>(`/api/touches?market=${market}`);
+}
+
+/* ---------- 맞춤 이평선 ---------- */
+
+// 사용자가 고른 기간의 이평선으로 유니버스를 훑어, 그 선의 지지를 받는 종목과
+// 저항에 막힌 종목을 나눠 받는다. 서버는 (시장, 기간) 조합마다 스캐너를 두고
+// 결과를 하루 고정하므로, 같은 조합을 다시 물어도 재계산이 돌지 않는다.
+//
+// 기간을 아무 숫자나 보내지 않고 화면이 대표 기간만 쓰는 이유: 조합 하나가
+// 스캐너 하나라, 흩뿌리면 서버가 슬롯 상한(16)에 부딪혀 429 로 되민다.
+export function fetchLines(market: Market, period: number): Promise<LinesResponse> {
+  return api<LinesResponse>(`/api/lines?market=${market}&period=${period}`);
 }
 
 /* ---------- 차트 패턴 스크리너 ---------- */

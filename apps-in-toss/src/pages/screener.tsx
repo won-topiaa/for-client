@@ -299,6 +299,23 @@ function ScreenerPage() {
           palette={p}
         />
 
+        {/* '오늘의 지지선'과 '맞춤 이평선'은 같은 종류(오늘 이 선에 닿은
+            종목)라 탭 하나를 나눠 쓴다 — 탭바를 여섯 칸으로 늘리면 폰에서
+            글자가 눌린다 */}
+        <Segmented
+          options={[
+            { value: 'touches', label: '오늘의 지지선' },
+            { value: 'lines', label: '맞춤 이평선' },
+          ]}
+          value="touches"
+          palette={p}
+          onChange={(v) => {
+            if (v === 'lines') {
+              navigation.navigate('/lines');
+            }
+          }}
+        />
+
         <Segmented
           options={MARKET_OPTIONS}
           value={market}

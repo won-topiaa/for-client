@@ -125,6 +125,56 @@ export interface TouchesResponse {
   totalMatches?: number;
 }
 
+/* ---------- 맞춤 이평선 (내가 고른 N일선) ---------- */
+
+/** 지지를 받는 중인가, 저항에 막혀 있는가. */
+export type LineSide = 'support' | 'resistance';
+
+export interface LineMatch {
+  symbol: string;
+  name: string;
+  market?: string | null;
+  side: LineSide;
+  period: number;
+  /** 그 선이 해당 방향에서 지켜진 비율 0~1 (최근 가중). 화면 대표 수치. */
+  respectRate: number;
+  /** 그 방향에서 결판난(반등/이탈) 에피소드 수 — respectRate 의 모수. */
+  decided: number;
+  /** 양방향 터치 총합 — 참고값. respectRate 의 모수가 아니다. */
+  touches: number;
+  maScore: number;
+  distPct: number;
+  /** 이평선 자체의 기울기 %(10봉 기준). 하락하는 선의 지지는 신뢰가 낮다. */
+  slopePct: number;
+  maValue: number;
+  close: number;
+  candles: Candle[];
+  maLine: TimeValue[];
+}
+
+export interface LinesResponse {
+  status: 'running' | 'done' | 'error';
+  detail?: string;
+  // running 일 때
+  done?: number;
+  total?: number;
+  // done 일 때
+  market?: string;
+  period?: number;
+  scanned?: number;
+  universe?: number;
+  elapsedSec?: number;
+  refreshing?: boolean;
+  partial?: boolean;
+  generatedAt?: string | number;
+  /** 직전에 받은 결과와 같으면 서버가 목록 없이 이 값만 준다(대역폭 절약). */
+  unchanged?: boolean;
+  support?: LineMatch[];
+  resistance?: LineMatch[];
+  totalSupport?: number;
+  totalResistance?: number;
+}
+
 /* ---------- 차트 패턴 스크리너 ---------- */
 
 // 서버(/api/patterns)가 받는 패턴 키. 앱 화면에는 이 중 셋만 노출하지만,

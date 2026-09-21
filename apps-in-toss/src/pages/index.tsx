@@ -478,6 +478,16 @@ function HomePage() {
               같은 모양이라, 위의 '기능 카드'와 무게 차이가 눈에 보인다. */}
           <Card palette={p} style={{ padding: 0 }}>
             <MenuRow
+              title="맞춤 이평선"
+              desc="내가 고른 선이 지금 버티고 있는 종목 · 막고 있는 종목"
+              glyph="📏"
+              accent="blue"
+              palette={p}
+              onPress={() => navigation.navigate('/lines')}
+              logName={LOG.openFeature}
+            />
+            <RowDivider palette={p} />
+            <MenuRow
               title="관심종목"
               desc="종목 오른쪽 위의 ☆ 를 누르면 여기에 모여요"
               glyph="★"
