@@ -11,8 +11,6 @@ import { BRAND_NAME, CONTACT_EMAIL } from '../env';
 
 interface Props {
   children: React.ReactNode;
-  /** 팔레트를 못 쓰는 최상위에서도 동작해야 하므로 색은 고정값으로 받는다 */
-  dark?: boolean;
 }
 
 interface State {
@@ -50,31 +48,29 @@ export class ErrorBoundary extends React.Component<Props, State> {
     // 마운트하고, 사용자가 보던 화면이 아니라 시작 화면으로 돌아간다.
     // 같은 오류가 또 나면 재시도로는 못 벗어나므로 안내를 바꾼다.
     const stuck = retries >= 2;
-    const dark = !!this.props.dark;
-    const bg = dark ? '#09090b' : '#fafafa';
-    const card = dark ? '#18181b' : '#ffffff';
-    const border = dark ? '#27272a' : '#e4e4e7';
-    const text = dark ? '#f4f4f5' : '#18181b';
-    const sub = dark ? '#a1a1aa' : '#52525b';
-    const accent = dark ? '#34d399' : '#059669';
+    // 팔레트 훅을 못 쓰는 자리(클래스 컴포넌트, 라우터 바깥)라 토스 색을
+    // 고정값으로 적는다 — src/theme.ts 의 LIGHT 와 같은 값이어야 한다.
+    const bg = '#F9FAFB';
+    const card = '#FFFFFF';
+    const text = '#191F28';
+    const sub = '#4E5968';
+    const accent = '#3182F6';
 
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: bg }} contentContainerStyle={{ padding: 16 }}>
+      <ScrollView style={{ flex: 1, backgroundColor: bg }} contentContainerStyle={{ padding: 20 }}>
         <View
           style={{
             backgroundColor: card,
-            borderWidth: 1,
-            borderColor: border,
-            borderRadius: 12,
-            padding: 16,
-            gap: 10,
+            borderRadius: 16,
+            padding: 20,
+            gap: 12,
             marginTop: 24,
           }}
         >
-          <Text style={{ fontSize: 17, fontWeight: '800', color: text }}>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: text }}>
             화면을 그리지 못했어요
           </Text>
-          <Text style={{ fontSize: 13, color: sub, lineHeight: 20 }}>
+          <Text style={{ fontSize: 14.5, color: sub, lineHeight: 23 }}>
             {stuck
               ? '같은 문제가 반복되고 있어요. 앱을 완전히 닫았다가 다시 열어 주세요. ' +
                 '그래도 같으면 아래 이메일로 알려주시면 빠르게 고치겠습니다.'
@@ -85,18 +81,18 @@ export class ErrorBoundary extends React.Component<Props, State> {
             accessibilityRole="button"
             style={{
               backgroundColor: accent,
-              borderRadius: 10,
-              paddingVertical: 12,
+              borderRadius: 14,
+              paddingVertical: 15,
               alignItems: 'center',
               marginTop: 2,
             }}
           >
-            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '700' }}>다시 시도</Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>다시 시도</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 11, color: sub, marginTop: 6 }}>
+          <Text style={{ fontSize: 12, color: sub, marginTop: 6 }}>
             {BRAND_NAME} · 문의 {CONTACT_EMAIL}
           </Text>
-          <Text style={{ fontSize: 10, color: sub, marginTop: 2 }} numberOfLines={3}>
+          <Text style={{ fontSize: 11, color: '#8B95A1', marginTop: 2 }} numberOfLines={3}>
             {String(error?.message ?? error)}
           </Text>
         </View>

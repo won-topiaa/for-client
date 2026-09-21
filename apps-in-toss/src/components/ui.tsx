@@ -1,9 +1,72 @@
 import React, { useState, type PropsWithChildren } from 'react';
 import { Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
+import { maybeTrack } from '../analytics';
 import { BRAND_NAME, CONTACT_EMAIL, DISCLAIMER } from '../env';
-import type { Palette } from '../theme';
+import { ACCENT, GUTTER, RADIUS, type AccentKey, type Palette } from '../theme';
 
-// 페이지 공용 소형 UI — 카드/칩/버튼/접이식 설명/면책 문구
+// 페이지 공용 소형 UI — 토스 앱의 시각 언어(TDS)를 따른다.
+//
+// 토스와 맞춘 것
+//  · 카드에 테두리를 두르지 않는다. 옅은 회색 배경 위의 흰 카드로 층을 나눈다.
+//  · 모서리를 크게(16) 굴리고 안쪽 여백을 넉넉히(20) 준다.
+//  · 버튼은 한 가지 파랑 하나뿐. 기능마다 다른 색 버튼을 두지 않는다.
+//  · 본문 글자를 키운다(15). 예전 12~13px 은 토스 화면에서 유독 작아 보였다.
+
+/* ── 페이지 머리 ─────────────────────────────────────────────── */
+
+/** 화면 제목. 토스의 큰 제목처럼 24pt 굵게, 부제는 15pt 회색. */
+export function PageHeader({
+  title,
+  subtitle,
+  palette: p,
+}: {
+  title: string;
+  subtitle?: string;
+  palette: Palette;
+}) {
+  return (
+    <View style={{ paddingTop: 8, paddingBottom: 4 }}>
+      <Text
+        accessibilityRole="header"
+        style={{ fontSize: 24, fontWeight: '700', color: p.text, letterSpacing: -0.4 }}
+      >
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text style={{ fontSize: 15, color: p.sub, marginTop: 6, lineHeight: 22 }}>{subtitle}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** 목록 위의 작은 구역 제목. 오른쪽에 보조 동작(새로고침 등)을 둘 수 있다. */
+export function SectionTitle({
+  title,
+  palette: p,
+  right,
+}: {
+  title: string;
+  palette: Palette;
+  right?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 8,
+      }}
+    >
+      <Text style={{ fontSize: 17, fontWeight: '700', color: p.text, letterSpacing: -0.2 }}>
+        {title}
+      </Text>
+      {right}
+    </View>
+  );
+}
+
+/* ── 면 ─────────────────────────────────────────────────────── */
 
 export function Card({
   palette: p,
@@ -15,10 +78,8 @@ export function Card({
       style={[
         {
           backgroundColor: p.card,
-          borderWidth: 1,
-          borderColor: p.border,
-          borderRadius: 12,
-          padding: 14,
+          borderRadius: RADIUS.card,
+          padding: 20,
         },
         style,
       ]}
@@ -28,6 +89,166 @@ export function Card({
   );
 }
 
+/**
+ * 안내·주의 문구 상자.
+ *
+ * 예전에는 주의 문구를 주황색 맨글씨로 본문 사이에 흘려 두었다. 토스는 이런
+ * 고지를 옅은 회색 상자에 담아 본문과 분리한다 — 읽히기는 하되 화면을
+ * 어지럽히지 않는다. 투자 고지는 반드시 보여야 하므로 접지 않는다.
+ */
+export function Notice({
+  palette: p,
+  tone = 'plain',
+  children,
+}: PropsWithChildren<{ palette: Palette; tone?: 'plain' | 'warn' }>) {
+  const warn = tone === 'warn';
+  return (
+    <View
+      style={{
+        backgroundColor: warn ? p.warnBg : p.sunken,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+      }}
+    >
+      <Text style={{ fontSize: 13, color: warn ? p.warnText : p.sub, lineHeight: 20 }}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+/** 옅은 색 원 안의 아이콘 — 토스 '전체 메뉴'의 기능 아이콘과 같은 모양. */
+export function IconChip({
+  glyph,
+  accent,
+  size = 40,
+}: {
+  glyph: string;
+  accent: AccentKey;
+  size?: number;
+}) {
+  const a = ACCENT[accent];
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: a.bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text style={{ fontSize: Math.round(size * 0.48) }}>{glyph}</Text>
+    </View>
+  );
+}
+
+/**
+ * 토스식 메뉴 행 — 아이콘 · 제목/설명 · 오른쪽 꺾쇠.
+ *
+ * 홈에서 기능마다 색이 다른 큰 버튼을 세워 두던 구조를 이걸로 바꿨다.
+ * 버튼이 여러 개면 무엇이 주된 동작인지 알 수 없고, 토스 화면에서 그런 모양을
+ * 보는 일도 없다. 행 전체가 하나의 터치 대상이라 어디를 눌러야 할지도 분명하다.
+ */
+export function MenuRow({
+  title,
+  desc,
+  glyph,
+  accent,
+  palette: p,
+  onPress,
+  badge,
+  logName,
+}: {
+  title: string;
+  desc?: string;
+  glyph: string;
+  accent: AccentKey;
+  palette: Palette;
+  onPress: () => void;
+  badge?: string;
+  /** 콘솔 전환 지표용 이름 (src/analytics.tsx LOG). 없으면 기록하지 않는다. */
+  logName?: string;
+}) {
+  return maybeTrack(
+    logName,
+    title,
+    true,
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={desc ? `${title}. ${desc}` : title}
+      activeOpacity={0.6}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+      }}
+    >
+      <IconChip glyph={glyph} accent={accent} />
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: p.text, letterSpacing: -0.2 }}>
+            {title}
+          </Text>
+          {badge ? <Badge label={badge} palette={p} tone="primary" /> : null}
+        </View>
+        {desc ? (
+          <Text style={{ fontSize: 13.5, color: p.sub, marginTop: 3, lineHeight: 20 }}>{desc}</Text>
+        ) : null}
+      </View>
+      {/* 꺾쇠는 장식 — 스크린리더가 "오른쪽 꺾쇠 괄호"를 읽지 않게 숨긴다 */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={{ fontSize: 18, color: p.disabled, marginLeft: 2 }}
+      >
+        ›
+      </Text>
+    </TouchableOpacity>,
+  );
+}
+
+/** 행 사이 구분선 — 왼쪽은 아이콘 폭만큼 들여쓴다(토스와 같은 방식). */
+export function RowDivider({ palette: p, inset = 74 }: { palette: Palette; inset?: number }) {
+  return <View style={{ height: 1, backgroundColor: p.border, marginLeft: inset }} />;
+}
+
+/* ── 조각 ───────────────────────────────────────────────────── */
+
+export function Badge({
+  label,
+  palette: p,
+  tone = 'primary',
+}: {
+  label: string;
+  palette: Palette;
+  tone?: 'primary' | 'up' | 'warn' | 'plain';
+}) {
+  const fg =
+    tone === 'up' ? p.up : tone === 'warn' ? p.warn : tone === 'plain' ? p.sub : p.primary;
+  const bg =
+    tone === 'up' ? p.upBg : tone === 'warn' ? p.warnBg : tone === 'plain' ? p.sunken : p.primaryBg;
+  return (
+    <View
+      style={{
+        backgroundColor: bg,
+        borderRadius: RADIUS.badge,
+        paddingVertical: 3,
+        paddingHorizontal: 7,
+        flexShrink: 0,
+      }}
+    >
+      <Text style={{ fontSize: 11.5, fontWeight: '700', color: fg }}>{label}</Text>
+    </View>
+  );
+}
+
+/** 알약 모양 선택 칩 — 테두리 없이 면색으로만 상태를 나타낸다(토스 방식). */
 export function Chip({
   label,
   active,
@@ -44,90 +265,177 @@ export function Chip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: !!active }}
+      activeOpacity={0.7}
       style={{
-        paddingVertical: 7,
-        paddingHorizontal: 12,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: active ? p.up : p.border,
-        backgroundColor: active ? p.emeraldBg : p.card,
+        paddingVertical: 9,
+        paddingHorizontal: 14,
+        borderRadius: RADIUS.chip,
+        backgroundColor: active ? p.primaryBg : p.sunken,
       }}
     >
-      <Text style={{ fontSize: 13, color: active ? p.up : p.text, fontWeight: active ? '700' : '400' }}>
+      <Text
+        style={{
+          fontSize: 14,
+          color: active ? p.primary : p.sub,
+          fontWeight: active ? '700' : '500',
+        }}
+      >
         {label}
       </Text>
     </TouchableOpacity>
   );
 }
 
-/** #rrggbb 의 상대 휘도 (WCAG). 버튼 글자색을 자동으로 고르는 데 쓴다. */
-function luminance(hex: string): number {
-  const h = hex.replace('#', '');
-  if (h.length !== 6) {
-    return 0; // 모르는 형식이면 어두운 배경으로 보고 흰 글씨
-  }
-  const ch = [0, 2, 4].map((i) => {
-    const v = parseInt(h.slice(i, i + 2), 16) / 255;
-    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * (ch[0] ?? 0) + 0.7152 * (ch[1] ?? 0) + 0.0722 * (ch[2] ?? 0);
+/**
+ * 분절 선택기(국내/미국, 일봉/주봉/월봉).
+ *
+ * 토스가 '둘 중 하나'를 고르게 할 때 쓰는 모양 — 회색 바닥 위를 흰 손잡이가
+ * 옮겨 다닌다. 칩을 여러 개 늘어놓는 것보다 '한 번에 하나'라는 뜻이 분명하다.
+ */
+export function Segmented<T extends string | number>({
+  options,
+  value,
+  palette: p,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  palette: Palette;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        backgroundColor: p.sunken,
+        borderRadius: 12,
+        padding: 4,
+        gap: 4,
+      }}
+    >
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <TouchableOpacity
+            key={String(o.value)}
+            onPress={() => {
+              if (!active) {
+                onChange(o.value);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            activeOpacity={0.8}
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 9,
+              borderRadius: 9,
+              backgroundColor: active ? p.card : 'transparent',
+              // 흰 손잡이가 바닥에서 살짝 떠 보이게 — 토스와 같은 아주 옅은 그림자
+              ...(active
+                ? {
+                    shadowColor: '#000000',
+                    shadowOpacity: 0.06,
+                    shadowRadius: 4,
+                    shadowOffset: { width: 0, height: 1 },
+                    elevation: 1,
+                  }
+                : null),
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 14,
+                fontWeight: active ? '700' : '500',
+                color: active ? p.text : p.faint,
+              }}
+              numberOfLines={1}
+            >
+              {o.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 }
 
 /**
- * 배경 위에서 대비가 더 높은 글자색을 고른다(흰색 vs 거의 검정).
+ * 주요 버튼 — 토스 버튼과 같은 치수(높이 52 · 모서리 14 · 글자 16 굵게).
  *
- * 밝기 임계값으로 가르지 않고 둘 다 계산해 높은 쪽을 쓴다. 임계값 방식은
- * 경계 근처 색에서 나쁜 쪽을 고른다 — 라이트 앰버(#d97706)가 그 예로,
- * 흰 글씨 3.19:1 vs 어두운 글씨 5.56:1 이라 흰색을 고르면 손해다.
- *
- * 이게 필요한 이유: 다크 팔레트의 강조색은 원래 '어두운 배경 위의 글자' 용이라
- * 밝다. 버튼 배경으로 쓰고 흰 글씨를 얹으면 다크모드에서 초록 1.92:1,
- * 앰버 1.67:1 로 무너진다.
+ * 색은 tone 으로만 고른다. 예전엔 화면마다 버튼 색을 따로 넘겼는데(초록·앰버·
+ * 인디고), 그러면 '무엇이 주된 동작인지'를 색으로 알 수 없다. 토스는 파랑 하나뿐이다.
  */
-function onColor(bg: string): string {
-  const l = luminance(bg);
-  const withWhite = (1.05) / (l + 0.05);
-  const withDark = (l + 0.05) / (luminance('#18181b') + 0.05);
-  return withDark > withWhite ? '#18181b' : '#ffffff';
-}
-
 export function PrimaryButton({
   label,
   disabled,
   palette: p,
   onPress,
-  /** 버튼 색. 기본은 상승/주요색(초록) — '오늘의 지지선' 처럼 카드 강조색이
-   *  다른 곳에서 그 색을 그대로 쓰라고 열어 둔다. */
-  color,
+  tone = 'primary',
+  logName,
 }: {
   label: string;
   disabled?: boolean;
   palette: Palette;
   onPress: () => void;
-  color?: string;
+  tone?: 'primary' | 'secondary';
+  /** 콘솔 전환 지표용 이름 (src/analytics.tsx LOG). 없으면 기록하지 않는다. */
+  logName?: string;
 }) {
-  return (
+  const secondary = tone === 'secondary';
+  const bg = disabled ? p.sunken : secondary ? p.sunken : p.primary;
+  const fg = disabled ? p.disabled : secondary ? p.sub : p.onPrimary;
+  return maybeTrack(
+    logName,
+    label,
+    !disabled,
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
+      activeOpacity={0.85}
       style={{
-        backgroundColor: disabled ? p.border : (color ?? p.up),
-        borderRadius: 10,
-        paddingVertical: 13,
+        backgroundColor: bg,
+        borderRadius: RADIUS.button,
+        paddingVertical: 15,
         alignItems: 'center',
       }}
     >
-      <Text
-        style={{
-          color: disabled ? p.faint : onColor(color ?? p.up),
-          fontSize: 15,
-          fontWeight: '700',
-        }}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
+      <Text style={{ color: fg, fontSize: 16, fontWeight: '700' }}>{label}</Text>
+    </TouchableOpacity>,
+  );
+}
+
+/** 글자만 있는 보조 동작(새로고침·분석하기 →) — 토스의 파란 텍스트 버튼. */
+export function TextButton({
+  label,
+  palette: p,
+  onPress,
+  size = 14,
+  logName,
+}: {
+  label: string;
+  palette: Palette;
+  onPress: () => void;
+  size?: number;
+  /** 콘솔 전환 지표용 이름 (src/analytics.tsx LOG). 없으면 기록하지 않는다. */
+  logName?: string;
+}) {
+  return maybeTrack(
+    logName,
+    label,
+    true,
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      activeOpacity={0.6}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    >
+      <Text style={{ fontSize: size, color: p.primary, fontWeight: '600' }}>{label}</Text>
+    </TouchableOpacity>,
   );
 }
 
@@ -137,36 +445,44 @@ export function Expandable({
   title,
   palette: p,
   initiallyOpen,
+  /** 자기 면색. 기본은 흰 카드 — 흰 카드 *안에* 넣을 때는 p.sunken 을 넘겨야
+   *  흰 위에 흰이 겹쳐 토글이 보이지 않는 일이 없다. */
+  surface,
   children,
-}: PropsWithChildren<{ title: string; palette: Palette; initiallyOpen?: boolean }>) {
+}: PropsWithChildren<{
+  title: string;
+  palette: Palette;
+  initiallyOpen?: boolean;
+  surface?: string;
+}>) {
   const [open, setOpen] = useState(!!initiallyOpen);
   return (
-    <View
-      style={{
-        backgroundColor: p.card,
-        borderWidth: 1,
-        borderColor: p.border,
-        borderRadius: 12,
-      }}
-    >
+    <View style={{ backgroundColor: surface ?? p.card, borderRadius: RADIUS.card }}>
       <TouchableOpacity
         onPress={() => setOpen(!open)}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
+        activeOpacity={0.6}
         style={{
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
-          paddingVertical: 12,
-          paddingHorizontal: 14,
+          paddingVertical: 16,
+          paddingHorizontal: 20,
         }}
       >
-        <Text style={{ fontSize: 13, fontWeight: '600', color: p.sub }}>{title}</Text>
-        <Text style={{ fontSize: 12, color: p.faint }}>{open ? '접기 ▲' : '보기 ▼'}</Text>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: p.text, flexShrink: 1 }}>
+          {title}
+        </Text>
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={{ fontSize: 13, color: p.disabled, marginLeft: 8 }}
+        >
+          {open ? '⌃' : '⌄'}
+        </Text>
       </TouchableOpacity>
-      {open ? (
-        <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>{children}</View>
-      ) : null}
+      {open ? <View style={{ paddingHorizontal: 20, paddingBottom: 18 }}>{children}</View> : null}
     </View>
   );
 }
@@ -174,9 +490,8 @@ export function Expandable({
 /**
  * 카드 안에서 쓰는 접이식 설명 토글.
  *
- * Expandable 과 달리 자기 테두리를 그리지 않는다 — 이미 카드 안이라 테두리가
- * 겹치면 지저분해진다. 카드 전체를 누르면 이동하는 구조를 없애고, '설명 보기'
- * 와 '이동' 버튼을 각각 따로 두기 위한 조각이다.
+ * Expandable 과 달리 자기 면을 그리지 않는다 — 이미 카드 안이라 면이 겹치면
+ * 지저분해진다.
  */
 export function InlineToggle({
   open,
@@ -200,6 +515,7 @@ export function InlineToggle({
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       accessibilityLabel={open ? `${what}${label} 접기` : `${what}${label} 보기`}
+      activeOpacity={0.6}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -209,16 +525,16 @@ export function InlineToggle({
         minHeight: 44,
       }}
     >
-      <Text style={{ fontSize: 12, color: p.sub, fontWeight: '600' }}>
+      <Text style={{ fontSize: 14, color: p.primary, fontWeight: '600' }}>
         {open ? `${label} 접기` : `${label} 보기`}
       </Text>
-      {/* 삼각형은 장식 — 스크린리더가 "검은색 아래쪽 삼각형" 을 읽지 않게 숨긴다 */}
+      {/* 꺾쇠는 장식 — 스크린리더가 읽지 않게 숨긴다 */}
       <Text
         accessibilityElementsHidden
         importantForAccessibility="no"
-        style={{ fontSize: 10, color: p.faint }}
+        style={{ fontSize: 11, color: p.primary }}
       >
-        {open ? '▲' : '▼'}
+        {open ? '⌃' : '⌄'}
       </Text>
     </TouchableOpacity>
   );
@@ -230,15 +546,21 @@ export function StarButton({
   palette: p,
   onPress,
   label,
+  logName,
 }: {
   watched: boolean;
   palette: Palette;
   onPress: () => void;
   /** 스크린리더가 어느 종목인지 알 수 있게 — 목록에서 별이 여러 개일 때 중요 */
   label?: string;
+  /** 콘솔 전환 지표용 이름. '담을 때'만 기록한다 — 빼는 동작은 전환이 아니다. */
+  logName?: string;
 }) {
   const what = label ? `${label} ` : '';
-  return (
+  return maybeTrack(
+    logName,
+    label,
+    !watched,
     <TouchableOpacity
       onPress={onPress}
       accessibilityRole="button"
@@ -248,20 +570,22 @@ export function StarButton({
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       style={{ paddingHorizontal: 2 }}
     >
-      <Text style={{ fontSize: 19, color: watched ? p.amber : p.faint }}>
+      <Text style={{ fontSize: 20, color: watched ? p.warn : p.disabled }}>
         {watched ? '★' : '☆'}
       </Text>
-    </TouchableOpacity>
+    </TouchableOpacity>,
   );
 }
 
 export function Footer({ palette: p }: { palette: Palette }) {
   return (
-    <View style={{ paddingVertical: 20, gap: 6 }}>
-      <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16 }}>⚠ {DISCLAIMER}</Text>
-      <Text style={{ fontSize: 11, color: p.faint }}>
+    <View style={{ paddingVertical: 24, paddingHorizontal: 2, gap: 8 }}>
+      <Text style={{ fontSize: 12, color: p.disabled, lineHeight: 18 }}>⚠ {DISCLAIMER}</Text>
+      <Text style={{ fontSize: 12, color: p.disabled }}>
         {BRAND_NAME} · 문의 {CONTACT_EMAIL}
       </Text>
     </View>
   );
 }
+
+export { GUTTER };

@@ -45,10 +45,10 @@ function loadTS(rel, shims = {}) {
   return mod.exports;
 }
 
-const theme = loadTS('src/theme.ts', { 'react-native': { useColorScheme: () => 'light' } });
+const theme = loadTS('src/theme.ts');
 const env = loadTS('src/env.ts');
 const fmt = loadTS('src/format.ts');
-const P = theme.LIGHT; // 스토어 스크린샷은 라이트 테마 기준
+const P = theme.LIGHT; // 앱인토스 TDS 는 라이트 모드만 지원한다
 
 // index.tsx 의 QUICK_PICKS 배열 리터럴을 그대로 파싱 (출처 단일화)
 const indexSrc = fs.readFileSync(path.join(APP, 'src', 'pages', 'index.tsx'), 'utf8');
@@ -100,14 +100,14 @@ function baseCss(fontCss) {
   body { font-family: ${FONT_STACK}; background: ${P.bg}; color: ${P.text};
          -webkit-font-smoothing: antialiased; overflow: hidden; }
   .cap { padding: 44px 40px 24px; }
-  .eyebrow { font-size: 20px; font-weight: 700; color: ${P.up}; letter-spacing: .06em; margin-bottom: 10px; }
+  .eyebrow { font-size: 20px; font-weight: 700; color: ${P.primary}; letter-spacing: .06em; margin-bottom: 10px; }
   .headline { font-size: 43px; font-weight: 900; line-height: 1.24; letter-spacing: -0.02em; }
   .subline { font-size: 21px; color: ${P.sub}; margin-top: 12px; line-height: 1.45; }
   .panel { margin: 8px 28px 0; background: ${P.card}; border: 2px solid ${P.border};
            border-radius: 28px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
   .chip { display: inline-flex; align-items: center; font-size: 19px; padding: 9px 18px;
           border-radius: 999px; border: 2px solid ${P.border}; background: ${P.card}; color: ${P.text}; }
-  .chip.on { border-color: ${P.up}; background: ${P.emeraldBg}; color: ${P.up}; font-weight: 700; }
+  .chip.on { border-color: ${P.primary}; background: ${P.primaryBg}; color: ${P.primary}; font-weight: 700; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .card { background: ${P.card}; border: 2px solid ${P.border}; border-radius: 18px; padding: 16px; }
   .small { font-size: 16px; color: ${P.faint}; line-height: 1.5; }
@@ -115,7 +115,7 @@ function baseCss(fontCss) {
           color: ${P.faint}; line-height: 1.5; }
   .dot { display: inline-block; width: 13px; height: 13px; border-radius: 7px; margin-right: 8px; }
   .meter { height: 10px; border-radius: 5px; background: ${P.border}; overflow: hidden; }
-  .meter > i { display: block; height: 10px; background: ${P.up}; }
+  .meter > i { display: block; height: 10px; background: ${P.primary}; }
   `;
 }
 
@@ -251,7 +251,7 @@ const matchCard = (m, chartId) => `
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:23px"><b>${esc(m.name)}</b>
         <span class="small">${esc(m.symbol)}${m.market ? ' · ' + esc(m.market) : ''}</span></div>
-      <span style="background:${P.emeraldBg};color:${P.up};font-weight:800;font-size:19px;
+      <span style="background:${P.primaryBg};color:${P.primary};font-weight:800;font-size:19px;
         border-radius:10px;padding:4px 12px">MA ${m.period}</span>
     </div>
     <div class="meter"><i style="width:${Math.max(0, Math.min(100, Math.round(m.successRate * 100)))}%"></i></div>
@@ -294,7 +294,7 @@ function screenScore(fontCss) {
   const tr = (s) => {
     const isReco = recoSet.has(s.period);
     const dim = !isReco && (s.insufficientData || !s.touches);
-    return `<tr style="${isReco ? `background:${P.emeraldBg};font-weight:700` : ''};opacity:${dim ? 0.55 : 1}">
+    return `<tr style="${isReco ? `background:${P.primaryBg};font-weight:700` : ''};opacity:${dim ? 0.55 : 1}">
       <td>MA ${s.period}${isReco ? ' ★' : ''}</td>
       <td>${s.insufficientData ? '데이터 부족' : s.touches}</td>
       <td>${s.supportBounces}</td><td>${s.resistanceBounces}</td><td>${s.breaks}</td>
@@ -327,10 +327,10 @@ function screenScreener(fontCss) {
   const ms = DATA.screener.matches.slice(0, 2);
   const scripts = ms.map((m, i) => {
     const markers = m.todayTouch !== false && m.candles.length
-      ? [{ time: m.candles[m.candles.length - 1].time, shape: 'arrowUp', position: 'below', color: P.indigo }]
+      ? [{ time: m.candles[m.candles.length - 1].time, shape: 'arrowUp', position: 'below', color: P.primary }]
       : [];
     return `drawChart('m${i}', ${JSON.stringify(m.candles.slice(-40))},
-      [{ color:'${P.amber}', width:3, points: ${JSON.stringify(m.maLine.slice(-46))} }],
+      [{ color:'${P.ma[0]}', width:3, points: ${JSON.stringify(m.maLine.slice(-46))} }],
       ${JSON.stringify(markers)},
       { up:'${P.up}', down:'${P.down}', grid:'${P.grid}', textColor:'${P.faint}',
         maxBars:40, axis:false, fmtPrice: fmtHelpers.fmtPrice, fmtDate: fmtHelpers.fmtDate });`;
@@ -361,7 +361,7 @@ function screenStart(fontCss) {
         종목 이름 · 코드 · 미국 티커 (예: 삼성전자, AAPL)</div>
       <div class="row">${QUICK_PICKS.map((q, i) =>
         `<span class="chip${i === 0 ? ' on' : ''}">${esc(q.name)}</span>`).join('')}</div>
-      <div style="background:${P.up};color:#fff;border-radius:14px;text-align:center;
+      <div style="background:${P.primary};color:#fff;border-radius:14px;text-align:center;
         font-size:23px;font-weight:800;padding:16px">분석</div>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
         <div style="font-size:21px;font-weight:800">어떻게 쓰나요?</div>
@@ -402,7 +402,7 @@ function screenWide(fontCss) {
         ${m ? `<div class="card" style="border:none;box-shadow:0 14px 44px rgba(0,0,0,.22);padding:20px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="font-size:20px;font-weight:800">${esc(m.name)} <span class="small">${esc(m.symbol)}</span></div>
-            <span style="background:${P.emeraldBg};color:${P.up};font-weight:800;font-size:17px;border-radius:9px;padding:3px 11px">MA ${m.period}</span>
+            <span style="background:${P.primaryBg};color:${P.primary};font-weight:800;font-size:17px;border-radius:9px;padding:3px 11px">MA ${m.period}</span>
           </div>
           <div class="meter" style="margin-bottom:8px"><i style="width:${Math.round(m.successRate * 100)}%"></i></div>
           <div class="small" style="font-size:16px">3년 지지 성공률 <b style="color:${P.text}">${fmt.fmtRate(m.successRate)}</b>

@@ -4,10 +4,18 @@ import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'rea
 import { fetchTouches } from '../api/client';
 import type { Market } from '../api/types';
 import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
-import { Card, Footer, StarButton } from '../components/ui';
+import {
+  Badge,
+  Card,
+  Footer,
+  PageHeader,
+  PrimaryButton,
+  RowDivider,
+  StarButton,
+} from '../components/ui';
 import { SCREENER_REFRESH_HOUR_KST, SCREENER_REFRESH_MIN_KST } from '../env';
 import { pendingAnalyze } from '../store';
-import { usePalette } from '../theme';
+import { GUTTER, usePalette } from '../theme';
 import { useWatchlist } from '../watchlist';
 
 export const Route = createRoute('/watchlist', {
@@ -111,148 +119,134 @@ function WatchlistPage() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
-    <ScrollView
-      style={{ flex: 1, backgroundColor: p.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
-    >
-      {/* 우상단 '홈' 버튼은 하단 탭바로 대체했다 — 같은 이동을 두 군데 두면
-          어디를 눌러야 할지 고민만 늘린다 */}
-      <View style={{ flexShrink: 1, paddingRight: 8 }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>관심종목</Text>
-        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-          별표로 담아 둔 종목을 모아서 봐요
-        </Text>
-      </View>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: p.bg }}
+        contentContainerStyle={{
+          paddingHorizontal: GUTTER,
+          paddingBottom: TAB_BAR_SPACER,
+          gap: 12,
+        }}
+      >
+        {/* 우상단 '홈' 버튼은 하단 탭바로 대체했다 — 같은 이동을 두 군데 두면
+            어디를 눌러야 할지 고민만 늘린다 */}
+        <PageHeader title="관심종목" subtitle="별표로 담아 둔 종목을 모아서 봐요" palette={p} />
 
-      {saveBroken ? (
-        <Card palette={p} style={{ gap: 4, borderColor: p.amber, backgroundColor: p.warnBg }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
-            ⚠ 관심종목이 저장되지 않아요
-          </Text>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
-            이 기기의 저장소를 쓸 수 없어서, 지금 담는 종목은 앱을 껐다 켜면
-            사라집니다. 토스 앱을 최신 버전으로 올린 뒤 다시 시도해 주세요.
-          </Text>
-        </Card>
-      ) : null}
-
-      {!ready ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
-          <ActivityIndicator color={p.up} />
-          <Text style={{ fontSize: 13, color: p.sub }}>관심종목 불러오는 중…</Text>
-        </View>
-      ) : items.length === 0 ? (
-        <Card palette={p} style={{ gap: 8 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>아직 담은 종목이 없어요</Text>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
-            '내 종목 이평선'이나 '오늘의 지지선' 화면에서 종목 오른쪽 위의 ☆ 를 누르면
-            여기에 모입니다.
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('/radar')}
-              accessibilityRole="button"
-              style={{
-                borderWidth: 1,
-                borderColor: p.up,
-                borderRadius: 10,
-                paddingVertical: 9,
-                paddingHorizontal: 12,
-              }}
-            >
-              <Text style={{ fontSize: 13, color: p.up, fontWeight: '700' }}>종목 분석하기 →</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('/screener')}
-              accessibilityRole="button"
-              style={{
-                borderWidth: 1,
-                borderColor: p.amber,
-                borderRadius: 10,
-                paddingVertical: 9,
-                paddingHorizontal: 12,
-              }}
-            >
-              <Text style={{ fontSize: 13, color: p.amber, fontWeight: '700' }}>오늘의 지지선 →</Text>
-            </TouchableOpacity>
-          </View>
-        </Card>
-      ) : (
-        <>
-          <Text style={{ fontSize: 11, color: p.faint }}>
-            {items.length}개 · 누르면 이평선을 분석해요
-          </Text>
-          {items.map((it) => (
-            // padding 0 — 안쪽 터치 영역이 카드 끝까지 닿도록 각자 여백을 준다
-            <Card key={it.symbol} palette={p} style={{ padding: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {/* 카드 본문 전체가 분석 버튼 — 별은 그 바깥이라 눌러도 이동하지 않는다 */}
-                <TouchableOpacity
-                  onPress={() => openRadar(it.symbol)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${it.name} 이평선 분석`}
-                  style={{ flex: 1, paddingVertical: 14, paddingLeft: 14, paddingRight: 4 }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text
-                      style={{ fontSize: 15, fontWeight: '700', color: p.text, flexShrink: 1 }}
-                      numberOfLines={1}
-                    >
-                      {it.name}
-                    </Text>
-                    {/* 오늘 검증된 지지선에 닿은 종목 — 담아만 두는 목록에서
-                        '지금 볼 만한 것'이 바로 눈에 띄게 한다 */}
-                    {touched.has(it.symbol) ? (
-                      <View
-                        style={{
-                          backgroundColor: p.emeraldBg,
-                          borderRadius: 6,
-                          paddingVertical: 2,
-                          paddingHorizontal: 6,
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: p.up }}>
-                          오늘 지지선 · MA {touched.get(it.symbol)}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={{ fontSize: 11, color: p.faint, marginTop: 2 }}>
-                    {it.symbol}
-                    {it.market ? ` · ${it.market}` : ''}
-                  </Text>
-                </TouchableOpacity>
-                {/* 별을 빼는 건 되돌릴 수 없다 — 옆 '분석' 영역과 충분히 떼어
-                    놓아야 잘못 눌러 목록에서 사라지지 않는다 (별의 hitSlop 이
-                    좌측으로 10 뻗는다). */}
-                <View style={{ paddingRight: 14, paddingLeft: 18 }}>
-                  <StarButton
-                    watched
-                    palette={p}
-                    label={it.name}
-                    onPress={() => void remove(it.symbol)}
-                  />
-                </View>
-              </View>
-            </Card>
-          ))}
-          {touched.size > 0 ? (
-            <Text style={{ fontSize: 11, color: p.faint, lineHeight: 17 }}>
-              <Text style={{ color: p.up, fontWeight: '700' }}>오늘 지지선</Text> 배지는 그 종목이
-              오늘 검증된 지지 이평선에 닿아 있다는 뜻이에요. 매수 신호가 아니라 지켜보기 좋은
-              지점입니다.
+        {saveBroken ? (
+          <Card palette={p} style={{ gap: 6, backgroundColor: p.warnBg }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>
+              ⚠ 관심종목이 저장되지 않아요
             </Text>
-          ) : null}
-          <Text style={{ fontSize: 11, color: p.faint, lineHeight: 17 }}>
-            관심종목은 이 기기에만 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
-          </Text>
-        </>
-      )}
+            <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+              이 기기의 저장소를 쓸 수 없어서, 지금 담는 종목은 앱을 껐다 켜면 사라집니다. 토스
+              앱을 최신 버전으로 올린 뒤 다시 시도해 주세요.
+            </Text>
+          </Card>
+        ) : null}
 
-      <Footer palette={p} />
-    </ScrollView>
-    <TabBar current="/watchlist" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+        {!ready ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
+            <ActivityIndicator color={p.primary} />
+            <Text style={{ fontSize: 14, color: p.sub }}>관심종목 불러오는 중…</Text>
+          </View>
+        ) : items.length === 0 ? (
+          <Card palette={p} style={{ gap: 14 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>
+              아직 담은 종목이 없어요
+            </Text>
+            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+              &apos;내 종목 이평선&apos;이나 &apos;오늘의 지지선&apos; 화면에서 종목 오른쪽 위의 ☆
+              를 누르면 여기에 모입니다.
+            </Text>
+            <PrimaryButton
+              label="종목 분석하러 가기"
+              palette={p}
+              onPress={() => navigation.navigate('/radar')}
+            />
+            <PrimaryButton
+              label="오늘의 지지선 보기"
+              tone="secondary"
+              palette={p}
+              onPress={() => navigation.navigate('/screener')}
+            />
+          </Card>
+        ) : (
+          <>
+            <Text style={{ fontSize: 12, color: p.faint }}>
+              {items.length}개 · 누르면 이평선을 분석해요
+            </Text>
+            {/* 한 장의 카드에 행을 쌓는다 — 토스의 목록과 같은 모양이라,
+                종목이 늘어도 화면이 카드 더미로 쪼개지지 않는다 */}
+            <Card palette={p} style={{ padding: 0, overflow: 'hidden' }}>
+              {items.map((it, i) => (
+                <View key={it.symbol}>
+                  {i === 0 ? null : <RowDivider palette={p} inset={20} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {/* 행 본문 전체가 분석 버튼 — 별은 그 바깥이라 눌러도 이동하지 않는다 */}
+                    <TouchableOpacity
+                      onPress={() => openRadar(it.symbol)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${it.name} 이평선 분석`}
+                      activeOpacity={0.6}
+                      style={{ flex: 1, paddingVertical: 16, paddingLeft: 20, paddingRight: 4 }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text
+                          style={{
+                            fontSize: 16,
+                            fontWeight: '700',
+                            color: p.text,
+                            flexShrink: 1,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {it.name}
+                        </Text>
+                        {/* 오늘 검증된 지지선에 닿은 종목 — 담아만 두는 목록에서
+                            '지금 볼 만한 것'이 바로 눈에 띄게 한다 */}
+                        {touched.has(it.symbol) ? (
+                          <Badge
+                            label={`오늘 지지선 · MA ${touched.get(it.symbol)}`}
+                            palette={p}
+                            tone="primary"
+                          />
+                        ) : null}
+                      </View>
+                      <Text style={{ fontSize: 13, color: p.faint, marginTop: 3 }}>
+                        {it.symbol}
+                        {it.market ? ` · ${it.market}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                    {/* 별을 빼는 건 되돌릴 수 없다 — 옆 '분석' 영역과 충분히 떼어
+                        놓아야 잘못 눌러 목록에서 사라지지 않는다 (별의 hitSlop 이
+                        좌측으로 10 뻗는다). */}
+                    <View style={{ paddingRight: 20, paddingLeft: 18 }}>
+                      <StarButton
+                        watched
+                        palette={p}
+                        label={it.name}
+                        onPress={() => void remove(it.symbol)}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </Card>
+            {touched.size > 0 ? (
+              <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
+                <Text style={{ color: p.primary, fontWeight: '700' }}>오늘 지지선</Text> 배지는 그
+                종목이 오늘 검증된 지지 이평선에 닿아 있다는 뜻이에요. 매수 신호가 아니라 지켜보기
+                좋은 지점입니다.
+              </Text>
+            ) : null}
+            <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
+              관심종목은 이 기기에만 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
+            </Text>
+          </>
+        )}
+
+        <Footer palette={p} />
+      </ScrollView>
+      <TabBar current="/watchlist" palette={p} onNavigate={(to) => navigation.navigate(to)} />
     </View>
   );
 }

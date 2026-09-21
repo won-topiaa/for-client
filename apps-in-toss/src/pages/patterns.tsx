@@ -1,19 +1,26 @@
 import { createRoute } from '@granite-js/react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { ApiError, fetchPatterns, isRateLimited } from '../api/client';
 import type { Market, PatternKey, PatternMatch, PatternsResponse } from '../api/types';
 import { CandleChart, type ChartLine } from '../components/CandleChart';
 import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
-import { Card, Chip, Expandable, Footer, PrimaryButton, StarButton } from '../components/ui';
+import {
+  Card,
+  Chip,
+  Expandable,
+  Footer,
+  IconChip,
+  Notice,
+  PageHeader,
+  PrimaryButton,
+  Segmented,
+  StarButton,
+  TextButton,
+} from '../components/ui';
+import { LOG } from '../analytics';
 import { pendingAnalyze } from '../store';
-import { usePalette } from '../theme';
+import { GUTTER, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
 
 export const Route = createRoute('/patterns', {
@@ -32,6 +39,11 @@ const RATE_LIMIT_BACKOFF_SEC = 30;
 // 200봉 창에 맞춰 좌표가 매겨져 있어서, 봉을 잘라내면 보조선이 중간에서
 // 끊겨 패턴 모양이 깨져 보인다.
 const CHART_BARS = 200;
+
+const MARKET_OPTIONS: { value: Market; label: string }[] = [
+  { value: 'kr', label: '국내' },
+  { value: 'us', label: '미국' },
+];
 
 /**
  * 화면에 노출하는 패턴. 서버는 5종(헤드앤숄더·역헤드앤숄더 포함)을 주지만,
@@ -90,40 +102,42 @@ const PatternCard = React.memo(function PatternCard({
   onOpenRadar,
 }: {
   match: PatternMatch;
-  palette: ReturnType<typeof usePalette>;
+  palette: Palette;
   watched: boolean;
   onToggleWatch: (item: { symbol: string; name: string; market?: string | null }) => void;
   onOpenRadar: (m: PatternMatch) => void;
 }) {
   // 보조선은 이평선과 같은 형태({time,value})라 차트의 lines 로 그대로 넘긴다.
   const lines: ChartLine[] = (m.overlays ?? []).map((ov, i) => ({
-    color: p.ma[i % p.ma.length] ?? p.indigo,
+    color: p.ma[i % p.ma.length] ?? p.primary,
     points: ov.points,
     width: 2,
   }));
 
   return (
-    <Card palette={p} style={{ gap: 8 }}>
+    <Card palette={p} style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 15, color: p.text, flexShrink: 1 }} numberOfLines={1}>
-          <Text style={{ fontWeight: '800' }}>{m.name}</Text>
-          <Text style={{ fontSize: 12, color: p.faint }}>
-            {'  '}
+        <View style={{ flexShrink: 1, paddingRight: 8 }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }} numberOfLines={1}>
+            {m.name}
+          </Text>
+          <Text style={{ fontSize: 13, color: p.faint, marginTop: 3 }}>
             {m.symbol}
             {m.market ? ` · ${m.market}` : ''}
           </Text>
-        </Text>
+        </View>
         <StarButton
           watched={watched}
           palette={p}
           label={m.name}
+          logName={LOG.watchlistAdd}
           onPress={() => onToggleWatch({ symbol: m.symbol, name: m.name, market: m.market })}
         />
       </View>
 
       {/* 왜 이 패턴으로 봤는지 — 서버가 만든 한 줄 */}
       {m.summary ? (
-        <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>{m.summary}</Text>
+        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>{m.summary}</Text>
       ) : null}
 
       <CandleChart
@@ -139,28 +153,30 @@ const PatternCard = React.memo(function PatternCard({
       {(m.overlays ?? []).length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
           {m.overlays.map((ov, i) => (
-            <View key={`${ov.name}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View
+              key={`${ov.name}-${i}`}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+            >
               <View
                 style={{
-                  width: 10,
+                  width: 12,
                   height: 3,
                   borderRadius: 1.5,
-                  backgroundColor: p.ma[i % p.ma.length] ?? p.indigo,
+                  backgroundColor: p.ma[i % p.ma.length] ?? p.primary,
                 }}
               />
-              <Text style={{ fontSize: 10, color: p.faint }}>{ov.name}</Text>
+              <Text style={{ fontSize: 12, color: p.faint }}>{ov.name}</Text>
             </View>
           ))}
         </View>
       ) : null}
 
-      <TouchableOpacity
+      <TextButton
+        label="이평선 분석 →"
+        palette={p}
         onPress={() => onOpenRadar(m)}
-        accessibilityRole="button"
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Text style={{ fontSize: 13, color: p.indigo, fontWeight: '600' }}>이평선 분석 →</Text>
-      </TouchableOpacity>
+        logName={LOG.analyze}
+      />
     </Card>
   );
 });
@@ -264,131 +280,142 @@ function PatternsPage() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
-    <ScrollView
-      style={{ flex: 1, backgroundColor: p.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
-    >
-      {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
-      <View style={{ flexShrink: 1 }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>차트 패턴</Text>
-        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-          지금 이 모양을 만들고 있는 종목을 찾아드려요
-        </Text>
-      </View>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: p.bg }}
+        contentContainerStyle={{
+          paddingHorizontal: GUTTER,
+          paddingBottom: TAB_BAR_SPACER,
+          gap: 12,
+        }}
+      >
+        {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
+        <PageHeader
+          title="차트 패턴"
+          subtitle="지금 이 모양을 만들고 있는 종목을 찾아드려요"
+          palette={p}
+        />
 
-      {/* 패턴 선택 */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {PATTERNS.map((x) => (
-          <Chip
-            key={x.key}
-            label={`${x.emoji} ${x.label}`}
-            active={pattern === x.key}
-            palette={p}
-            onPress={() => setPattern(x.key)}
-          />
-        ))}
-      </View>
-
-      {/* 고른 패턴이 뭔지 한 줄로 — 초보가 이름만 보고 멈추지 않게 */}
-      <Card palette={p} style={{ gap: 8 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>
-          {current.emoji} {current.label}
-        </Text>
-        <Text style={{ fontSize: 12.5, color: p.sub, lineHeight: 20 }}>{current.plain}</Text>
-        <Expandable title="좀 더 자세히" palette={p}>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>{current.detail}</Text>
-        </Expandable>
-        {/* 패턴을 매수신호로 읽지 않게 — 성공률 표기와 같은 자리에 둔다 */}
-        <Text style={{ fontSize: 11, color: p.amber, lineHeight: 17 }}>
-          패턴은 &apos;지금 이런 모양&apos;이라는 관찰일 뿐이에요. 모양이 나왔다고 그대로
-          간다는 보장은 없고, 매수 신호가 아닙니다.
-        </Text>
-      </Card>
-
-      {/* 시장 선택 */}
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        <Chip label="🇰🇷 국내" active={market === 'kr'} palette={p} onPress={() => setMarket('kr')} />
-        <Chip label="🇺🇸 미국" active={market === 'us'} palette={p} onPress={() => setMarket('us')} />
-      </View>
-
-      {phase === 'boot' ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
-          <ActivityIndicator color={p.indigo} />
-          <Text style={{ fontSize: 13, color: p.sub }}>패턴 스캔 확인 중…</Text>
-        </View>
-      ) : null}
-
-      {phase === 'running' && body ? (
-        <Card palette={p} style={{ gap: 8 }}>
-          <Text style={{ fontSize: 13, color: p.sub }}>
-            {market === 'kr' ? '국내' : '미국'} 종목 패턴 스캔 중…{' '}
-            {body.total ? `${body.done ?? 0}/${body.total} 종목` : '대상 선정 중'}
-          </Text>
-          <View style={{ height: 8, borderRadius: 4, backgroundColor: p.border, overflow: 'hidden' }}>
-            <View
-              style={{
-                height: 8,
-                width: `${body.total ? Math.round(((body.done ?? 0) / body.total) * 100) : 0}%`,
-                backgroundColor: p.indigo,
-              }}
-            />
-          </View>
-          <Text style={{ fontSize: 11, color: p.faint }}>
-            서버가 종목마다 패턴 모양을 맞춰보는 중이에요 — 보통 1~2분이면 끝나요.
-          </Text>
-        </Card>
-      ) : null}
-
-      {phase === 'error' ? (
-        <Card palette={p} style={{ gap: 10 }}>
-          <Text style={{ fontSize: 13, color: p.down }}>스캔 실패: {errorMsg}</Text>
-          <PrimaryButton
-            label="다시 시도"
-            palette={p}
-            onPress={() => void load(pattern, market, false)}
-          />
-        </Card>
-      ) : null}
-
-      {phase === 'done' && body ? (
-        <>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 11, color: p.faint, flexShrink: 1 }}>{statusText(body)}</Text>
-            {!body.partial && !body.refreshing ? (
-              <TouchableOpacity
-                onPress={() => void load(pattern, market, false)}
-                accessibilityRole="button"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={{ fontSize: 12, color: p.indigo, fontWeight: '600' }}>새로고침</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          {(body.matches ?? []).length === 0 ? (
-            <Card palette={p}>
-              <Text style={{ fontSize: 13, color: p.sub, lineHeight: 19 }}>
-                {body.partial
-                  ? '남은 종목을 확인하는 중입니다…\n이 모양을 만드는 종목이 나오면 여기 채워집니다.'
-                  : `지금 ${current.label} 모양을 만들고 있는 종목이 없습니다.\n패턴은 매일 달라집니다 — 다른 패턴이나 다른 시장을 살펴보세요.`}
-              </Text>
-            </Card>
-          ) : null}
-          {(body.matches ?? []).map((m) => (
-            <PatternCard
-              key={`${m.symbol}-${pattern}`}
-              match={m}
+        {/* 패턴 선택 */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {PATTERNS.map((x) => (
+            <Chip
+              key={x.key}
+              label={x.label}
+              active={pattern === x.key}
               palette={p}
-              watched={isWatched(watched, m.symbol)}
-              onToggleWatch={toggleWatch}
-              onOpenRadar={openRadar}
+              onPress={() => setPattern(x.key)}
             />
           ))}
-        </>
-      ) : null}
+        </View>
 
-      <Footer palette={p} />
-    </ScrollView>
-    <TabBar current="/patterns" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+        {/* 고른 패턴이 뭔지 한 줄로 — 초보가 이름만 보고 멈추지 않게 */}
+        <Card palette={p} style={{ gap: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <IconChip glyph={current.emoji} accent="violet" size={36} />
+            <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{current.label}</Text>
+          </View>
+          <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 23 }}>{current.plain}</Text>
+          <Expandable title="좀 더 자세히" palette={p} surface={p.sunken}>
+            <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>{current.detail}</Text>
+          </Expandable>
+          {/* 패턴을 매수신호로 읽지 않게 — 설명과 같은 카드 안에 둔다 */}
+          <Notice palette={p}>
+            패턴은 &apos;지금 이런 모양&apos;이라는 관찰일 뿐이에요. 모양이 나왔다고 그대로
+            간다는 보장은 없고, 매수 신호가 아닙니다.
+          </Notice>
+        </Card>
+
+        {/* 시장 선택 */}
+        <Segmented
+          options={MARKET_OPTIONS}
+          value={market}
+          palette={p}
+          onChange={(v) => setMarket(v)}
+        />
+
+        {phase === 'boot' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
+            <ActivityIndicator color={p.primary} />
+            <Text style={{ fontSize: 14, color: p.sub }}>패턴 스캔 확인 중…</Text>
+          </View>
+        ) : null}
+
+        {phase === 'running' && body ? (
+          <Card palette={p} style={{ gap: 12 }}>
+            <Text style={{ fontSize: 14, color: p.text, fontWeight: '600' }}>
+              {market === 'kr' ? '국내' : '미국'} 종목 패턴 스캔 중…{' '}
+              {body.total ? `${body.done ?? 0}/${body.total} 종목` : '대상 선정 중'}
+            </Text>
+            <View
+              style={{ height: 8, borderRadius: 4, backgroundColor: p.sunken, overflow: 'hidden' }}
+            >
+              <View
+                style={{
+                  height: 8,
+                  width: `${body.total ? Math.round(((body.done ?? 0) / body.total) * 100) : 0}%`,
+                  backgroundColor: p.primary,
+                }}
+              />
+            </View>
+            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+              서버가 종목마다 패턴 모양을 맞춰보는 중이에요 — 보통 1~2분이면 끝나요.
+            </Text>
+          </Card>
+        ) : null}
+
+        {phase === 'error' ? (
+          <Card palette={p} style={{ gap: 14 }}>
+            <Text style={{ fontSize: 14, color: p.danger }}>스캔 실패: {errorMsg}</Text>
+            <PrimaryButton
+              label="다시 시도"
+              palette={p}
+              onPress={() => void load(pattern, market, false)}
+            />
+          </Card>
+        ) : null}
+
+        {phase === 'done' && body ? (
+          <>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, lineHeight: 18 }}>
+                {statusText(body)}
+              </Text>
+              {!body.partial && !body.refreshing ? (
+                <TextButton
+                  label="새로고침"
+                  size={13}
+                  palette={p}
+                  onPress={() => void load(pattern, market, false)}
+                />
+              ) : null}
+            </View>
+            {(body.matches ?? []).length === 0 ? (
+              <Card palette={p}>
+                <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                  {body.partial
+                    ? '남은 종목을 확인하는 중입니다…\n이 모양을 만드는 종목이 나오면 여기 채워집니다.'
+                    : `지금 ${current.label} 모양을 만들고 있는 종목이 없습니다.\n패턴은 매일 달라집니다 — 다른 패턴이나 다른 시장을 살펴보세요.`}
+                </Text>
+              </Card>
+            ) : null}
+            {(body.matches ?? []).map((m) => (
+              <PatternCard
+                key={`${m.symbol}-${pattern}`}
+                match={m}
+                palette={p}
+                watched={isWatched(watched, m.symbol)}
+                onToggleWatch={toggleWatch}
+                onOpenRadar={openRadar}
+              />
+            ))}
+          </>
+        ) : null}
+
+        <Footer palette={p} />
+      </ScrollView>
+      <TabBar current="/patterns" palette={p} onNavigate={(to) => navigation.navigate(to)} />
     </View>
   );
 }

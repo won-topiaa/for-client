@@ -15,7 +15,9 @@ export default defineConfig({
     appsInToss({
       brand: {
         displayName: '이평선 레이더', // 토스 앱 목록/상단바에 보이는 이름
-        primaryColor: '#059669', // 사이트 공통 에메랄드
+        // 토스 블루. 앱 안의 버튼·링크 색(src/theme.ts primary)과 같은 값이어야
+        // 토스 앱 chrome 에서 미니앱으로 넘어올 때 색이 튀지 않는다.
+        primaryColor: '#3182F6',
         // 아이콘은 파일 경로가 아니라 '이미지 주소(URL)' — 프레임워크가 그대로
         // <Image source={{ uri }} /> 에 넘긴다. 사이트가 서빙하는 아이콘을 쓴다.
         icon: 'https://ma-radar.onrender.com/static/icon.png',

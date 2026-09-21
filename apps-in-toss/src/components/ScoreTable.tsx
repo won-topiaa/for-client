@@ -71,7 +71,7 @@ export function ScoreTable({ stats, recommended, palette: p }: Props) {
                 flexDirection: 'row',
                 borderBottomWidth: 1,
                 borderBottomColor: p.border,
-                backgroundColor: isReco ? p.emeraldBg : undefined,
+                backgroundColor: isReco ? p.primaryBg : undefined,
                 opacity: dim ? 0.55 : 1,
               }}
             >

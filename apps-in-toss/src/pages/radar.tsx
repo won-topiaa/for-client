@@ -20,13 +20,17 @@ import {
   Expandable,
   Footer,
   InlineToggle,
+  Notice,
+  PageHeader,
   PrimaryButton,
+  Segmented,
   StarButton,
 } from '../components/ui';
+import { LOG } from '../analytics';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
 import { lastAnalysis, pendingAnalyze } from '../store';
-import { usePalette } from '../theme';
+import { GUTTER, RADIUS, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
 
 export const Route = createRoute('/radar', {
@@ -59,12 +63,13 @@ function MarkerLegend({
   shape,
   color,
   label,
+  palette: p,
 }: {
   shape: 'up' | 'down' | 'dot';
   color: string;
   label: string;
+  palette: Palette;
 }) {
-  const p = usePalette();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       {shape === 'dot' ? (
@@ -84,7 +89,7 @@ function MarkerLegend({
           }}
         />
       )}
-      <Text style={{ fontSize: 11, color: p.sub }}>{label}</Text>
+      <Text style={{ fontSize: 12, color: p.sub }}>{label}</Text>
     </View>
   );
 }
@@ -261,7 +266,7 @@ function RadarPage() {
   const chartLines: ChartLine[] = useMemo(
     () =>
       recommended
-        .map((rec, i) => ({ rec, color: p.ma[i % p.ma.length] ?? p.indigo }))
+        .map((rec, i) => ({ rec, color: p.ma[i % p.ma.length] ?? p.primary }))
         .filter(({ rec }) => focusPeriod === null || rec.period === focusPeriod)
         .map(({ rec, color }) => ({
           color,
@@ -312,359 +317,403 @@ function RadarPage() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
-    <ScrollView
-      style={{ flex: 1, backgroundColor: p.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: TAB_BAR_SPACER }}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
-      <View style={{ flexShrink: 1, paddingRight: 8 }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: p.text }}>내 종목 이평선</Text>
-        <Text style={{ fontSize: 12, color: p.sub, marginTop: 2 }}>
-          자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요
-        </Text>
-      </View>
-
-      <Card palette={p} style={{ gap: 10 }}>
-        <TextInput
-          value={query}
-          onChangeText={onChangeQuery}
-          placeholder="종목 이름 · 코드 · 미국 티커 (예: 삼성전자, AAPL)"
-          placeholderTextColor={p.faint}
-          autoCorrect={false}
-          autoCapitalize="characters"
-          style={{
-            borderWidth: 1,
-            borderColor: p.border,
-            borderRadius: 10,
-            paddingVertical: 11,
-            paddingHorizontal: 12,
-            fontSize: 15,
-            color: p.text,
-          }}
+      <ScrollView
+        style={{ flex: 1, backgroundColor: p.bg }}
+        contentContainerStyle={{
+          paddingHorizontal: GUTTER,
+          paddingBottom: TAB_BAR_SPACER,
+          gap: 12,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
+        <PageHeader
+          title="내 종목 이평선"
+          subtitle="자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요"
+          palette={p}
         />
-        {suggests.length > 0 ? (
-          <View style={{ borderWidth: 1, borderColor: p.border, borderRadius: 10, overflow: 'hidden' }}>
-            {suggests.map((item, i) => (
-              <TouchableOpacity
-                key={`${item.symbol}-${i}`}
-                onPress={() => pick(item)}
-                accessibilityRole="button"
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  paddingVertical: 11,
-                  paddingHorizontal: 12,
-                  borderTopWidth: i === 0 ? 0 : 1,
-                  borderTopColor: p.border,
-                  backgroundColor: p.card,
-                }}
-              >
-                <Text style={{ fontSize: 14, color: p.text, flexShrink: 1, marginRight: 8 }} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={{ fontSize: 12, color: p.faint, flexShrink: 0 }} numberOfLines={1}>
-                  {item.symbol}
-                  {item.market ? ` · ${item.market}` : ''}
-                </Text>
-              </TouchableOpacity>
+
+        <Card palette={p} style={{ gap: 12 }}>
+          {/* 토스의 입력창처럼 테두리 없이 '눌러 들어간' 회색 면으로 그린다 */}
+          <TextInput
+            value={query}
+            onChangeText={onChangeQuery}
+            placeholder="종목 이름 · 코드 · 티커 (예: 삼성전자, AAPL)"
+            placeholderTextColor={p.disabled}
+            autoCorrect={false}
+            autoCapitalize="characters"
+            style={{
+              backgroundColor: p.sunken,
+              borderRadius: RADIUS.input,
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              fontSize: 16,
+              color: p.text,
+            }}
+          />
+          {suggests.length > 0 ? (
+            <View style={{ backgroundColor: p.card, borderRadius: 12, overflow: 'hidden' }}>
+              {suggests.map((item, i) => (
+                <TouchableOpacity
+                  key={`${item.symbol}-${i}`}
+                  onPress={() => pick(item)}
+                  accessibilityRole="button"
+                  activeOpacity={0.6}
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    paddingVertical: 13,
+                    borderTopWidth: i === 0 ? 0 : 1,
+                    borderTopColor: p.border,
+                  }}
+                >
+                  <Text
+                    style={{ fontSize: 15, color: p.text, flexShrink: 1, marginRight: 8 }}
+                    numberOfLines={1}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: p.faint, flexShrink: 0 }} numberOfLines={1}>
+                    {item.symbol}
+                    {item.market ? ` · ${item.market}` : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {QUICK_PICKS.map((q) => (
+              <Chip
+                key={q.symbol}
+                label={q.name}
+                active={selected?.symbol === q.symbol}
+                palette={p}
+                onPress={() => pick(q, true)}
+              />
             ))}
+          </View>
+          <PrimaryButton
+            label="분석하기"
+            disabled={!selected || loading}
+            palette={p}
+            logName={LOG.analyze}
+            onPress={() => {
+              if (selected) {
+                void runAnalysis(selected);
+              }
+            }}
+          />
+          <Text style={{ fontSize: 12, color: p.faint }}>분석 기간: {LOOKBACK_LABEL}</Text>
+        </Card>
+
+        {loading ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
+            <ActivityIndicator color={p.primary} />
+            <Text style={{ fontSize: 14, color: p.sub }}>일봉·주봉·월봉 백테스트 중…</Text>
           </View>
         ) : null}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {QUICK_PICKS.map((q) => (
-            <Chip
-              key={q.symbol}
-              label={q.name}
-              active={selected?.symbol === q.symbol}
-              palette={p}
-              onPress={() => pick(q, true)}
-            />
-          ))}
-        </View>
-        <PrimaryButton
-          label="분석"
-          disabled={!selected || loading}
-          palette={p}
-          onPress={() => {
-            if (selected) {
-              void runAnalysis(selected);
-            }
-          }}
-        />
-        <Text style={{ fontSize: 11, color: p.faint }}>분석 기간: {LOOKBACK_LABEL}</Text>
-      </Card>
+        {errorMsg ? (
+          <Text style={{ fontSize: 14, color: p.danger }}>분석 실패: {errorMsg}</Text>
+        ) : null}
 
-      {loading ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
-          <ActivityIndicator color={p.up} />
-          <Text style={{ fontSize: 13, color: p.sub }}>일봉·주봉·월봉 백테스트 중…</Text>
-        </View>
-      ) : null}
-      {errorMsg ? <Text style={{ fontSize: 13, color: p.down }}>분석 실패: {errorMsg}</Text> : null}
-
-      {analysis && !loading ? (
-        <>
-          {/* 분석한 종목 — 오른쪽 위 별로 관심종목에 담는다 */}
-          <Card palette={p} style={{ paddingVertical: 11 }}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <View style={{ flexShrink: 1, paddingRight: 8 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: p.text }} numberOfLines={1}>
-                  {analyzed?.name ?? analysis.symbol}
-                </Text>
-                <Text style={{ fontSize: 11, color: p.faint, marginTop: 2 }}>
-                  {analysis.symbol}
-                  {analyzed?.market ? ` · ${analyzed.market}` : ''}
-                </Text>
+        {analysis && !loading ? (
+          <>
+            {/* 분석한 종목 — 오른쪽 위 별로 관심종목에 담는다 */}
+            <Card palette={p} style={{ paddingVertical: 16 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flexShrink: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: p.text }} numberOfLines={1}>
+                    {analyzed?.name ?? analysis.symbol}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: p.faint, marginTop: 3 }}>
+                    {analysis.symbol}
+                    {analyzed?.market ? ` · ${analyzed.market}` : ''}
+                  </Text>
+                </View>
+                <StarButton
+                  watched={isWatched(watched, analysis.symbol)}
+                  palette={p}
+                  label={analyzed?.name ?? analysis.symbol}
+                  logName={LOG.watchlistAdd}
+                  onPress={() => {
+                    void toggleWatch({
+                      symbol: analysis.symbol,
+                      name: analyzed?.name ?? analysis.symbol,
+                      market: analyzed?.market,
+                    });
+                  }}
+                />
               </View>
-              <StarButton
-                watched={isWatched(watched, analysis.symbol)}
-                palette={p}
-                label={analyzed?.name ?? analysis.symbol}
-                onPress={() => {
-                  void toggleWatch({
-                    symbol: analysis.symbol,
-                    name: analyzed?.name ?? analysis.symbol,
-                    market: analyzed?.market,
-                  });
-                }}
-              />
-            </View>
-          </Card>
-
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            {TIMEFRAMES.map((t) => (
-              <Chip
-                key={t}
-                label={TF_LABEL[t]}
-                active={tf === t}
-                palette={p}
-                onPress={() => {
-                  setTf(t);
-                  setFocusPeriod(null);
-                }}
-              />
-            ))}
-          </View>
-
-          {!data || data.error ? (
-            <Card palette={p}>
-              <Text style={{ fontSize: 13, color: p.down }}>
-                {TF_LABEL[tf]} 분석 실패: {data?.error ?? '데이터 없음'}
-              </Text>
             </Card>
-          ) : (
-            <>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {recommended.length > 1 ? (
-                  <TouchableOpacity
-                    onPress={() => setFocusPeriod(null)}
-                    accessibilityRole="button"
-                    style={{ flexBasis: '48%', flexGrow: 1, minWidth: 130 }}
-                  >
-                    <Card
-                      palette={p}
-                      style={{
-                        width: '100%',
-                        padding: 10,
-                        gap: 3,
-                        borderColor: focusPeriod === null ? p.up : p.border,
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                        {recommended.map((_, i) => (
-                          <View
-                            key={i}
-                            style={{
-                              width: 7,
-                              height: 7,
-                              borderRadius: 3.5,
-                              backgroundColor: p.ma[i % p.ma.length],
-                            }}
-                          />
-                        ))}
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: p.text }}>동시 보기</Text>
-                      </View>
-                      <Text style={{ fontSize: 10, color: p.sub }}>추천 이평선 전체 표시</Text>
-                      <Text style={{ fontSize: 9, color: p.faint }}>
-                        {focusPeriod === null ? '지금 보는 중' : '누르면 전체 표시'}
-                      </Text>
-                    </Card>
-                  </TouchableOpacity>
-                ) : null}
-                {recommended.map((rec, i) => {
-                  const color = p.ma[i % p.ma.length] ?? p.indigo;
-                  const { breakDown, breakUp } = eventCounts(rec.events);
-                  const focused = focusPeriod === rec.period;
-                  return (
+
+            <Segmented
+              options={TIMEFRAMES.map((t) => ({ value: t, label: TF_LABEL[t] }))}
+              value={tf}
+              palette={p}
+              onChange={(t) => {
+                setTf(t);
+                setFocusPeriod(null);
+              }}
+            />
+
+            {!data || data.error ? (
+              <Card palette={p}>
+                <Text style={{ fontSize: 14, color: p.danger }}>
+                  {TF_LABEL[tf]} 분석 실패: {data?.error ?? '데이터 없음'}
+                </Text>
+              </Card>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {recommended.length > 1 ? (
                     <TouchableOpacity
-                      key={rec.period}
-                      onPress={() => setFocusPeriod(focused ? null : rec.period)}
+                      onPress={() => setFocusPeriod(null)}
                       accessibilityRole="button"
-                      style={{ flexBasis: '48%', flexGrow: 1, minWidth: 130 }}
+                      accessibilityState={{ selected: focusPeriod === null }}
+                      activeOpacity={0.7}
+                      style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
                     >
+                      {/* 선택 상태는 테두리가 아니라 옅은 파란 면으로 나타낸다 —
+                          토스는 선택을 색면으로 보여 주고 테두리를 거의 쓰지 않는다 */}
                       <Card
                         palette={p}
                         style={{
                           width: '100%',
-                          padding: 10,
-                          gap: 3,
-                          borderColor: focused ? p.up : p.border,
-                          opacity: focusPeriod !== null && !focused ? 0.55 : 1,
+                          padding: 14,
+                          gap: 4,
+                          backgroundColor: focusPeriod === null ? p.primaryBg : p.card,
                         }}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color }} />
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>MA {rec.period}</Text>
-                        </View>
-                        <Text style={{ fontSize: 10, color: p.sub }}>
-                          {/* 기본 표기는 '몇 번 중 몇 번' — 비율만 있으면 표본이
-                              2회인지 200회인지 모른 채 숫자를 믿게 된다.
-                              분모는 supportTests (touches 는 저항 포함이라 안 맞다). */}
-                          지지 시험 {rec.supportTests}회 중 {rec.supportBounces}회 성공 (
-                          {fmtRate(rec.supportRate)})
-                        </Text>
-                        {showStats ? (
-                          <Text style={{ fontSize: 10, color: p.sub }}>
-                            <Text style={{ color: p.events.support }}>지지 {rec.supportBounces}</Text>
-                            {' · '}
-                            <Text style={{ color: p.events.resistance }}>저항 {rec.resistanceBounces}</Text>
-                            {' · '}
-                            <Text style={{ color: p.events.breakDown }}>이탈 {breakDown}</Text>
-                            {' · '}
-                            <Text style={{ color: p.events.breakUp }}>돌파 {breakUp}</Text>
+                          {recommended.map((_, i) => (
+                            <View
+                              key={i}
+                              style={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: 3.5,
+                                backgroundColor: p.ma[i % p.ma.length],
+                              }}
+                            />
+                          ))}
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>
+                            동시 보기
                           </Text>
-                        ) : null}
-                        {rec.qualified ? null : (
-                          <Text style={{ fontSize: 9, color: p.amber }}>⚠ 표본 부족 — 참고용</Text>
-                        )}
-                        <Text style={{ fontSize: 9, color: p.faint }}>
-                          {focused ? '누르면 전체 보기' : '누르면 이 선만 보기'}
+                        </View>
+                        <Text style={{ fontSize: 12, color: p.sub }}>추천 이평선 전체 표시</Text>
+                        <Text style={{ fontSize: 11.5, color: p.faint }}>
+                          {focusPeriod === null ? '지금 보는 중' : '누르면 전체 표시'}
                         </Text>
                       </Card>
                     </TouchableOpacity>
-                  );
-                })}
-                {recommended.length === 0 ? (
-                  <Card palette={p} style={{ flexBasis: '100%' }}>
-                    <Text style={{ fontSize: 12, color: p.amber }}>
-                      추천할 만한 이평선을 찾지 못했습니다 (데이터/터치 부족)
+                  ) : null}
+                  {recommended.map((rec, i) => {
+                    const color = p.ma[i % p.ma.length] ?? p.primary;
+                    const { breakDown, breakUp } = eventCounts(rec.events);
+                    const focused = focusPeriod === rec.period;
+                    return (
+                      <TouchableOpacity
+                        key={rec.period}
+                        onPress={() => setFocusPeriod(focused ? null : rec.period)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: focused }}
+                        activeOpacity={0.7}
+                        style={{ flexBasis: '48%', flexGrow: 1, minWidth: 140 }}
+                      >
+                        <Card
+                          palette={p}
+                          style={{
+                            width: '100%',
+                            padding: 14,
+                            gap: 4,
+                            backgroundColor: focused ? p.primaryBg : p.card,
+                            opacity: focusPeriod !== null && !focused ? 0.55 : 1,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <View
+                              style={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: 3.5,
+                                backgroundColor: color,
+                              }}
+                            />
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>
+                              MA {rec.period}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+                            {/* 기본 표기는 '몇 번 중 몇 번' — 비율만 있으면 표본이
+                                2회인지 200회인지 모른 채 숫자를 믿게 된다.
+                                분모는 supportTests (touches 는 저항 포함이라 안 맞다). */}
+                            지지 시험 {rec.supportTests}회 중 {rec.supportBounces}회 성공 (
+                            {fmtRate(rec.supportRate)})
+                          </Text>
+                          {showStats ? (
+                            <Text style={{ fontSize: 12, color: p.sub }}>
+                              <Text style={{ color: p.events.support }}>
+                                지지 {rec.supportBounces}
+                              </Text>
+                              {' · '}
+                              <Text style={{ color: p.events.resistance }}>
+                                저항 {rec.resistanceBounces}
+                              </Text>
+                              {' · '}
+                              <Text style={{ color: p.events.breakDown }}>이탈 {breakDown}</Text>
+                              {' · '}
+                              <Text style={{ color: p.events.breakUp }}>돌파 {breakUp}</Text>
+                            </Text>
+                          ) : null}
+                          {rec.qualified ? null : (
+                            <Text style={{ fontSize: 11.5, color: p.warn }}>
+                              ⚠ 표본 부족 — 참고용
+                            </Text>
+                          )}
+                          <Text style={{ fontSize: 11.5, color: p.faint }}>
+                            {focused ? '누르면 전체 보기' : '누르면 이 선만 보기'}
+                          </Text>
+                        </Card>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {recommended.length === 0 ? (
+                    <Card palette={p} style={{ flexBasis: '100%' }}>
+                      <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                        추천할 만한 이평선을 찾지 못했습니다 (데이터·터치 부족)
+                      </Text>
+                    </Card>
+                  ) : null}
+                </View>
+
+                {/* 성공률을 '오를 확률'로 읽지 않게 — 카드 바로 아래 한 번만 */}
+                <Notice palette={p}>
+                  성공률은 과거에 이 선에서 몇 번 버텼는지를 센 통계예요. 앞으로도 그렇다는
+                  보장이나 매수 신호가 아닙니다.
+                </Notice>
+
+                {/* 숫자 자세히 — 기본은 접어 둔다 (반감기·이벤트 내역·성적표) */}
+                <InlineToggle
+                  open={showStats}
+                  label="숫자 자세히"
+                  palette={p}
+                  onPress={() => setShowStats((v) => !v)}
+                />
+                {showStats ? (
+                  <Text style={{ fontSize: 12, color: p.faint, lineHeight: 18 }}>
+                    분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
+                    {data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ', 전체 기간'}) · 최근
+                    가중 반감기 {data.halfLifeBars}봉
+                  </Text>
+                ) : null}
+
+                <Card palette={p} style={{ gap: 14 }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Segmented
+                        options={BAR_OPTIONS.map((n) => ({ value: n, label: `${n}봉` }))}
+                        value={maxBars}
+                        palette={p}
+                        onChange={setMaxBars}
+                      />
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 13, color: p.sub }}>마커</Text>
+                      <Switch
+                        value={showMarkers}
+                        onValueChange={setShowMarkers}
+                        trackColor={{ true: p.primary, false: p.border }}
+                      />
+                    </View>
+                  </View>
+                  <CandleChart
+                    candles={data.candles ?? []}
+                    lines={chartLines}
+                    markers={chartMarkers}
+                    height={300}
+                    maxBars={maxBars}
+                    colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
+                  />
+                  {/* 마커 범례 — 차트에 그려지는 모양과 색을 그대로 옆에 세워 둔다.
+                      흑백 글자 한 줄로만 설명하면 색과 뜻을 머릿속에서 맞춰야 한다. */}
+                  {showMarkers ? (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                      <MarkerLegend
+                        shape="up"
+                        color={p.events.support}
+                        label="지지 성공"
+                        palette={p}
+                      />
+                      <MarkerLegend
+                        shape="down"
+                        color={p.events.resistance}
+                        label="저항 성공"
+                        palette={p}
+                      />
+                      <MarkerLegend
+                        shape="dot"
+                        color={p.events.breakDown}
+                        label="지지 뚫림"
+                        palette={p}
+                      />
+                      <MarkerLegend
+                        shape="dot"
+                        color={p.events.breakUp}
+                        label="저항 뚫림"
+                        palette={p}
+                      />
+                    </View>
+                  ) : null}
+                  <Text style={{ fontSize: 12, color: p.faint }}>최근 {maxBars}봉 표시</Text>
+                </Card>
+
+                {/* 전체 후보 성적표는 열이 빽빽해 초보에겐 벽이다 — '숫자 자세히'
+                    를 켠 사람에게만 보여준다 */}
+                {showStats ? (
+                  <Card palette={p} style={{ gap: 12 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: p.text }}>
+                      전체 후보 성적표 — {TF_LABEL[tf]}
                     </Text>
+                    <ScoreTable
+                      stats={data.stats ?? []}
+                      recommended={recommended.map((r) => r.period)}
+                      palette={p}
+                    />
                   </Card>
                 ) : null}
-              </View>
+              </>
+            )}
+          </>
+        ) : null}
 
-              {/* 성공률을 '오를 확률'로 읽지 않게 — 카드 바로 아래 한 번만 */}
-              <Text style={{ fontSize: 11, color: p.amber, lineHeight: 17 }}>
-                성공률은 과거에 이 선에서 몇 번 버텼는지를 센 통계예요. 앞으로도 그렇다는
-                보장이나 매수 신호가 아닙니다.
-              </Text>
+        {!analysis && !loading && !errorMsg ? (
+          <Expandable title="어떻게 쓰나요?" palette={p}>
+            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+              1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
+              2. 일봉·주봉·월봉별로 가장 자주, 믿을 만하게 지지/저항 역할을 해온 이동평균선
+              2~3개를 백테스트로 찾아 차트에 그려드려요{'\n'}
+              3. 남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요
+            </Text>
+          </Expandable>
+        ) : null}
 
-              {/* 숫자 자세히 — 기본은 접어 둔다 (반감기·이벤트 내역·성적표) */}
-              <InlineToggle
-                open={showStats}
-                label="숫자 자세히"
-                palette={p}
-                onPress={() => setShowStats((v) => !v)}
-              />
-              {showStats ? (
-                <Text style={{ fontSize: 11, color: p.faint }}>
-                  분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
-                  {data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ', 전체 기간'}) · 최근 가중
-                  반감기 {data.halfLifeBars}봉
-                </Text>
-              ) : null}
-
-              <Card palette={p} style={{ gap: 10 }}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 8,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {BAR_OPTIONS.map((n) => (
-                      <Chip
-                        key={n}
-                        label={`${n}봉`}
-                        active={maxBars === n}
-                        palette={p}
-                        onPress={() => setMaxBars(n)}
-                      />
-                    ))}
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 12, color: p.sub }}>지지/저항 마커</Text>
-                    <Switch
-                      value={showMarkers}
-                      onValueChange={setShowMarkers}
-                      trackColor={{ true: p.up, false: p.border }}
-                    />
-                  </View>
-                </View>
-                <CandleChart
-                  candles={data.candles ?? []}
-                  lines={chartLines}
-                  markers={chartMarkers}
-                  height={300}
-                  maxBars={maxBars}
-                  colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
-                />
-                {/* 마커 범례.
-                    예전에는 "▲=지지 성공 · ▼=저항 성공 · ●=뚫림 (초록=상승성 ·
-                    빨강=하락성)"을 10px 흐린 글씨 한 줄로 몰아넣었다. 정작 화면의
-                    마커는 색으로 뜻이 갈리는데 범례는 흑백이라, 색과 뜻을 머릿속에서
-                    맞춰야 했다(토론에서 초보·전문가가 함께 지적). 이제 실제로 그려지는
-                    모양과 색을 그대로 옆에 세워 둔다. */}
-                {showMarkers ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 2 }}>
-                    <MarkerLegend shape="up" color={p.events.support} label="지지 성공" />
-                    <MarkerLegend shape="down" color={p.events.resistance} label="저항 성공" />
-                    <MarkerLegend shape="dot" color={p.events.breakDown} label="지지 뚫림" />
-                    <MarkerLegend shape="dot" color={p.events.breakUp} label="저항 뚫림" />
-                  </View>
-                ) : null}
-                <Text style={{ fontSize: 11, color: p.faint }}>최근 {maxBars}봉 표시</Text>
-              </Card>
-
-              {/* 전체 후보 성적표는 열이 빽빽해 초보에겐 벽이다 — '숫자 자세히'
-                  를 켠 사람에게만 보여준다 */}
-              {showStats ? (
-                <Card palette={p} style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>
-                    전체 후보 성적표 — {TF_LABEL[tf]}
-                  </Text>
-                  <ScoreTable
-                    stats={data.stats ?? []}
-                    recommended={recommended.map((r) => r.period)}
-                    palette={p}
-                  />
-                </Card>
-              ) : null}
-            </>
-          )}
-        </>
-      ) : null}
-
-      {!analysis && !loading && !errorMsg ? (
-        <Expandable title="어떻게 쓰나요?" palette={p}>
-          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
-            1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
-            2. 일봉·주봉·월봉별로 가장 자주, 믿을 만하게 지지/저항 역할을 해온 이동평균선 2~3개를
-            백테스트로 찾아 차트에 그려드려요{'\n'}
-            3. 남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요
-          </Text>
-        </Expandable>
-      ) : null}
-
-      <Footer palette={p} />
-    </ScrollView>
-    <TabBar current="/radar" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+        <Footer palette={p} />
+      </ScrollView>
+      <TabBar current="/radar" palette={p} onNavigate={(to) => navigation.navigate(to)} />
     </View>
   );
 }
