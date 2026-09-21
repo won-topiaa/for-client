@@ -139,7 +139,9 @@ export function TabBar({
     >
       {TABS.map(({ key, label, Icon }) => {
         const active = key === current;
-        const color = active ? p.text : p.disabled;
+        // 비선택도 '읽을 수 있는' 회색이어야 한다 — 장식용 회색(disabled)을 쓰면
+        // 다섯 중 넷이 사실상 안 보인다
+        const color = active ? p.text : p.faint;
         return (
           <TouchableOpacity
             key={key}

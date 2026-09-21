@@ -12,6 +12,7 @@ import {
 import { TabBar, TAB_BAR_HEIGHT, TAB_BAR_SPACER } from '../components/TabBar';
 import {
   Card,
+  Chevron,
   Expandable,
   Footer,
   InlineToggle,
@@ -162,13 +163,9 @@ function ScrollHint({
         }}
       >
         <Text style={{ fontSize: 14, color: p.primary, fontWeight: '700' }}>시작하기</Text>
-        <Text
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-          style={{ fontSize: 12, color: p.primary }}
-        >
-          ⌄
-        </Text>
+        <View accessibilityElementsHidden importantForAccessibility="no">
+          <Chevron dir="down" color={p.primary} size={8} />
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );

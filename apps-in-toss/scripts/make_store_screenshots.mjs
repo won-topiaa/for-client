@@ -13,7 +13,7 @@
  *   - 문구: src/env.ts (LOOKBACK_LABEL·SCREENER_RULE_LABEL·DISCLAIMER·브랜드)
  *   - 숫자 포맷: src/format.ts 의 fmtPrice/fmtRate/fmtDistPct (같은 함수 실행)
  *   - 수치·차트: scripts/store/data.json (백테스트 엔진의 실제 출력)
- *   - 대표 종목 칩: src/pages/index.tsx 의 QUICK_PICKS 배열을 파싱
+ *   - 대표 종목 칩: src/pages/radar.tsx 의 QUICK_PICKS 배열을 파싱
  *
  * Chromium 경로: 환경변수 CHROMIUM_PATH > /opt/pw-browsers/chromium > 설치된 Chrome.
  */

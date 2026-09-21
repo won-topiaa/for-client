@@ -66,6 +66,72 @@ export function SectionTitle({
   );
 }
 
+/**
+ * 꺾쇠 — 짧은 막대 두 개를 기울여 그린다.
+ *
+ * 글리프를 쓰지 않는 이유: ⌃/⌄(U+2303/U+2304)는 로보토 같은 기본 안드로이드
+ * 폰트에 없어서 두부(□)로 나올 수 있다. 접힘/펼침을 알려 주는 표시가 이것
+ * 하나뿐인 자리가 있어서, 안 보이면 여는 방법 자체가 사라진다.
+ * (회전시킨 View 로 선을 긋는 방식은 CandleChart 의 이평선과 같다 — 이미
+ *  운영에서 돌고 있는 방법이다.)
+ */
+export function Chevron({
+  dir,
+  color,
+  /** 막대 하나의 길이. 꺾쇠 전체 크기는 이 값에 비례한다. */
+  size = 8,
+}: {
+  dir: 'up' | 'down' | 'right';
+  color: string;
+  size?: number;
+}) {
+  const t = Math.max(1.4, size * 0.22);
+  const bar = {
+    position: 'absolute' as const,
+    width: size,
+    height: t,
+    borderRadius: t / 2,
+    backgroundColor: color,
+  };
+
+  if (dir === 'right') {
+    // 두 막대를 세로로 포개고 ±45° 로 꺾어 오른쪽 끝에서 만나게 한다
+    const w = size * 0.85;
+    const h = size * 1.5;
+    return (
+      <View style={{ width: w, height: h }}>
+        <View
+          style={[bar, { left: -size * 0.07, top: h * 0.29 - t / 2, transform: [{ rotate: '45deg' }] }]}
+        />
+        <View
+          style={[bar, { left: -size * 0.07, top: h * 0.71 - t / 2, transform: [{ rotate: '-45deg' }] }]}
+        />
+      </View>
+    );
+  }
+
+  // 위/아래: 두 막대를 가로로 나란히 두고 서로 반대로 기울인다
+  const w = size * 1.75;
+  const h = size * 0.85;
+  const up = dir === 'up';
+  return (
+    <View style={{ width: w, height: h }}>
+      <View
+        style={[
+          bar,
+          { left: 0, top: h / 2 - t / 2, transform: [{ rotate: up ? '-35deg' : '35deg' }] },
+        ]}
+      />
+      <View
+        style={[
+          bar,
+          { right: 0, top: h / 2 - t / 2, transform: [{ rotate: up ? '35deg' : '-35deg' }] },
+        ]}
+      />
+    </View>
+  );
+}
+
 /* ── 면 ─────────────────────────────────────────────────────── */
 
 export function Card({
@@ -201,14 +267,10 @@ export function MenuRow({
           <Text style={{ fontSize: 13.5, color: p.sub, marginTop: 3, lineHeight: 20 }}>{desc}</Text>
         ) : null}
       </View>
-      {/* 꺾쇠는 장식 — 스크린리더가 "오른쪽 꺾쇠 괄호"를 읽지 않게 숨긴다 */}
-      <Text
-        accessibilityElementsHidden
-        importantForAccessibility="no"
-        style={{ fontSize: 18, color: p.disabled, marginLeft: 2 }}
-      >
-        ›
-      </Text>
+      {/* 꺾쇠는 장식 — 행 전체가 이미 하나의 버튼이고 읽을 이름도 달려 있다 */}
+      <View accessibilityElementsHidden importantForAccessibility="no" style={{ marginLeft: 2 }}>
+        <Chevron dir="right" color={p.disabled} size={9} />
+      </View>
     </TouchableOpacity>,
   );
 }
@@ -230,7 +292,7 @@ export function Badge({
   tone?: 'primary' | 'up' | 'warn' | 'plain';
 }) {
   const fg =
-    tone === 'up' ? p.up : tone === 'warn' ? p.warn : tone === 'plain' ? p.sub : p.primary;
+    tone === 'up' ? p.up : tone === 'warn' ? p.warnText : tone === 'plain' ? p.sub : p.primary;
   const bg =
     tone === 'up' ? p.upBg : tone === 'warn' ? p.warnBg : tone === 'plain' ? p.sunken : p.primaryBg;
   return (
@@ -349,7 +411,9 @@ export function Segmented<T extends string | number>({
               style={{
                 fontSize: 14,
                 fontWeight: active ? '700' : '500',
-                color: active ? p.text : p.faint,
+                // 고르지 않은 쪽도 '읽고 나서' 고르는 글자다 — 흰 손잡이가 이미
+                // 선택을 말해 주므로, 색으로 더 흐리게 만들 이유가 없다
+                color: active ? p.text : p.sub,
               }}
               numberOfLines={1}
             >
@@ -385,8 +449,10 @@ export function PrimaryButton({
   logName?: string;
 }) {
   const secondary = tone === 'secondary';
-  const bg = disabled ? p.sunken : secondary ? p.sunken : p.primary;
-  const fg = disabled ? p.disabled : secondary ? p.sub : p.onPrimary;
+  // 비활성과 보조 버튼의 면색을 다르게 둔다 — 둘 다 sunken 이면 '못 누르는 것'과
+  // '덜 중요한 것'이 같아 보인다. 글자색도 disabled(1.8:1) 가 아니라 faint 로.
+  const bg = disabled ? p.border : secondary ? p.sunken : p.primary;
+  const fg = disabled ? p.faint : secondary ? p.sub : p.onPrimary;
   return maybeTrack(
     logName,
     label,
@@ -474,13 +540,11 @@ export function Expandable({
         <Text style={{ fontSize: 15, fontWeight: '600', color: p.text, flexShrink: 1 }}>
           {title}
         </Text>
-        <Text
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-          style={{ fontSize: 13, color: p.disabled, marginLeft: 8 }}
-        >
-          {open ? '⌃' : '⌄'}
-        </Text>
+        {/* 이 카드에서 접힘/펼침을 알려 주는 표시는 이것 하나뿐이라, 장식용
+            회색이 아니라 읽히는 회색으로 칠한다 */}
+        <View accessibilityElementsHidden importantForAccessibility="no" style={{ marginLeft: 8 }}>
+          <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={9} />
+        </View>
       </TouchableOpacity>
       {open ? <View style={{ paddingHorizontal: 20, paddingBottom: 18 }}>{children}</View> : null}
     </View>
@@ -528,14 +592,10 @@ export function InlineToggle({
       <Text style={{ fontSize: 14, color: p.primary, fontWeight: '600' }}>
         {open ? `${label} 접기` : `${label} 보기`}
       </Text>
-      {/* 꺾쇠는 장식 — 스크린리더가 읽지 않게 숨긴다 */}
-      <Text
-        accessibilityElementsHidden
-        importantForAccessibility="no"
-        style={{ fontSize: 11, color: p.primary }}
-      >
-        {open ? '⌃' : '⌄'}
-      </Text>
+      {/* 꺾쇠는 장식 — 옆 글자가 이미 '보기 / 접기'를 말해 준다 */}
+      <View accessibilityElementsHidden importantForAccessibility="no">
+        <Chevron dir={open ? 'up' : 'down'} color={p.primary} size={8} />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -570,7 +630,7 @@ export function StarButton({
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       style={{ paddingHorizontal: 2 }}
     >
-      <Text style={{ fontSize: 20, color: watched ? p.warn : p.disabled }}>
+      <Text style={{ fontSize: 20, color: watched ? p.warn : p.faint }}>
         {watched ? '★' : '☆'}
       </Text>
     </TouchableOpacity>,
@@ -580,8 +640,10 @@ export function StarButton({
 export function Footer({ palette: p }: { palette: Palette }) {
   return (
     <View style={{ paddingVertical: 24, paddingHorizontal: 2, gap: 8 }}>
-      <Text style={{ fontSize: 12, color: p.disabled, lineHeight: 18 }}>⚠ {DISCLAIMER}</Text>
-      <Text style={{ fontSize: 12, color: p.disabled }}>
+      {/* 면책 문구는 고지 의무가 있는 글이다 — 장식용 회색(disabled)으로 칠하면
+          화면에 있어도 읽히지 않아 고지한 것이 되지 않는다 */}
+      <Text style={{ fontSize: 12, color: p.faint, lineHeight: 18 }}>⚠ {DISCLAIMER}</Text>
+      <Text style={{ fontSize: 12, color: p.faint }}>
         {BRAND_NAME} · 문의 {CONTACT_EMAIL}
       </Text>
     </View>

@@ -45,8 +45,10 @@ export interface Palette {
   border: string;
   text: string;
   sub: string;
+  /** 3차 글자(캡션·보조 수치). 흰 바탕에서 4.5:1 을 넘는 선까지만 옅게 간다. */
   faint: string;
-  /** 비활성 글자 */
+  /** 비활성 컨트롤과 장식(꺾쇠 등) 전용. **글자에 쓰지 않는다** — 옅은 바탕에서
+   *  2:1 도 안 나와 읽히지 않는다. */
   disabled: string;
   grid: string;
 
@@ -85,7 +87,7 @@ export const LIGHT: Palette = {
   border: GRAY[200],
   text: GRAY[900],
   sub: GRAY[700],
-  faint: GRAY[500],
+  faint: GRAY[600],
   disabled: GRAY[400],
   grid: 'rgba(229,232,235,.9)',
 

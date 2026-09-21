@@ -339,7 +339,7 @@ function RadarPage() {
             value={query}
             onChangeText={onChangeQuery}
             placeholder="종목 이름 · 코드 · 티커 (예: 삼성전자, AAPL)"
-            placeholderTextColor={p.disabled}
+            placeholderTextColor={p.faint}
             autoCorrect={false}
             autoCapitalize="characters"
             style={{
@@ -573,7 +573,7 @@ function RadarPage() {
                             </Text>
                           ) : null}
                           {rec.qualified ? null : (
-                            <Text style={{ fontSize: 11.5, color: p.warn }}>
+                            <Text style={{ fontSize: 11.5, color: p.warnText }}>
                               ⚠ 표본 부족 — 참고용
                             </Text>
                           )}
