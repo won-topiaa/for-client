@@ -87,7 +87,10 @@ function NotifyPage() {
                 {brief.pushDropped.join('·')}까지 보고 싶으면 알림을 눌러 앱에서 확인하세요.
               </Text>
             ) : null}
-            {brief.missing.length > 0 ? (
+            {/* 옆의 pushDropped 처럼 존재 여부부터 본다. 타입에는 필수로 적혀
+                있지만 응답은 무검증 캐스팅이라, 서버가 이 필드를 빼는 순간
+                여기서 TypeError 가 나고 에러 바운더리가 앱 전체를 덮는다. */}
+            {brief.missing && brief.missing.length > 0 ? (
               <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
                 오늘은 {brief.missing.join('·')} 값을 받지 못했어요. 못 받은 항목은 빈칸을 남기지
                 않고 문구에서 빠집니다.

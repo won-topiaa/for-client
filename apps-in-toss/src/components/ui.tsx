@@ -630,7 +630,9 @@ export function StarButton({
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       style={{ paddingHorizontal: 2 }}
     >
-      <Text style={{ fontSize: 20, color: watched ? p.warn : p.faint }}>
+      {/* 안 담은 별을 본문 글자만큼 진하게 칠하면(faint) 채운 별보다 도리어
+          세 보인다 — 별은 글자가 아니라 표시라, 3:1 짜리 muted 로 둔다 */}
+      <Text style={{ fontSize: 20, color: watched ? p.warn : p.muted }}>
         {watched ? '★' : '☆'}
       </Text>
     </TouchableOpacity>,

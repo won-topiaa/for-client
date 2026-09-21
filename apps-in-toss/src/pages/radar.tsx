@@ -351,8 +351,10 @@ function RadarPage() {
               color: p.text,
             }}
           />
+          {/* 자동완성 목록. 흰 카드 안이라 배경까지 흰색이면 목록의 경계가
+              사라진다 — 눌러 들어간 회색 면에 얹어 '고를 것들'로 보이게 한다 */}
           {suggests.length > 0 ? (
-            <View style={{ backgroundColor: p.card, borderRadius: 12, overflow: 'hidden' }}>
+            <View style={{ backgroundColor: p.sunken, borderRadius: 12, overflow: 'hidden' }}>
               {suggests.map((item, i) => (
                 <TouchableOpacity
                   key={`${item.symbol}-${i}`}
@@ -364,6 +366,7 @@ function RadarPage() {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     paddingVertical: 13,
+                    paddingHorizontal: 14,
                     borderTopWidth: i === 0 ? 0 : 1,
                     borderTopColor: p.border,
                   }}

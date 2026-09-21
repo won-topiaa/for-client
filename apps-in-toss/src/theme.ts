@@ -50,6 +50,9 @@ export interface Palette {
   /** 비활성 컨트롤과 장식(꺾쇠 등) 전용. **글자에 쓰지 않는다** — 옅은 바탕에서
    *  2:1 도 안 나와 읽히지 않는다. */
   disabled: string;
+  /** 글자가 아닌 UI 표시(안 담은 별 같은 비선택 아이콘). 흰 바탕 3:1 —
+   *  '누를 수 있다'는 건 보이되 내용보다 앞서 나오지 않는 선. */
+  muted: string;
   grid: string;
 
   /** 주요 동작색 (토스 블루) */
@@ -89,6 +92,7 @@ export const LIGHT: Palette = {
   sub: GRAY[700],
   faint: GRAY[600],
   disabled: GRAY[400],
+  muted: GRAY[500],
   grid: 'rgba(229,232,235,.9)',
 
   primary: BLUE,
