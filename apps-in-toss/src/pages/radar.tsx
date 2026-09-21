@@ -25,7 +25,7 @@ import {
 } from '../components/ui';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
-import { pendingAnalyze } from '../store';
+import { lastAnalysis, pendingAnalyze } from '../store';
 import { usePalette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
 
@@ -50,6 +50,44 @@ const QUICK_PICKS: SymbolInfo[] = [
   { symbol: 'TSLA', name: '테슬라', market: 'NASDAQ' },
   { symbol: 'GOOGL', name: '알파벳(구글)', market: 'NASDAQ' },
 ];
+
+/**
+ * 차트 마커 범례 한 칸 — 차트에 실제로 그려지는 모양·색을 그대로 재현한다.
+ * (CandleChart 의 마커와 같은 방식: 삼각형은 테두리 트릭, 뚫림은 원)
+ */
+function MarkerLegend({
+  shape,
+  color,
+  label,
+}: {
+  shape: 'up' | 'down' | 'dot';
+  color: string;
+  label: string;
+}) {
+  const p = usePalette();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      {shape === 'dot' ? (
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+      ) : (
+        <View
+          style={{
+            width: 0,
+            height: 0,
+            borderLeftWidth: 5,
+            borderRightWidth: 5,
+            borderLeftColor: 'transparent',
+            borderRightColor: 'transparent',
+            ...(shape === 'up'
+              ? { borderBottomWidth: 8, borderBottomColor: color }
+              : { borderTopWidth: 8, borderTopColor: color }),
+          }}
+        />
+      )}
+      <Text style={{ fontSize: 11, color: p.sub }}>{label}</Text>
+    </View>
+  );
+}
 
 function RadarPage() {
   const p = usePalette();
@@ -133,6 +171,8 @@ function RadarPage() {
       setAnalysis(body);
       setAnalyzed(item);
       setFocusPeriod(null);
+      // 떠났다 돌아왔을 때 즉시 되살릴 수 있게 남겨 둔다 (아래 복원 참고)
+      lastAnalysis.value = { symbol: item.symbol, info: item, body };
     } catch (err) {
       if (seq === analyzeSeq.current) {
         setErrorMsg(err instanceof Error ? err.message : '분석에 실패했어요.');
@@ -155,6 +195,23 @@ function RadarPage() {
     },
     [hideSuggest, runAnalysis]
   );
+
+  // 방금 보던 분석을 되살린다 — 탭바로 잠깐 나갔다 온 사람이 빈 화면을 보지
+  // 않게. 다른 화면에서 종목을 지정해 들어온 경우(pendingAnalyze)는 그쪽이
+  // 우선이므로 건드리지 않는다.
+  useEffect(() => {
+    if (pendingAnalyze.symbol) {
+      return;
+    }
+    const saved = lastAnalysis.value;
+    if (!saved) {
+      return;
+    }
+    setAnalysis(saved.body as AnalyzeResponse);
+    setAnalyzed(saved.info);
+    setSelected(saved.info);
+    setQuery(`${saved.info.name} (${saved.info.symbol})`);
+  }, []);
 
   // 스크리너 카드에서 "이평선 분석 →" 로 넘어온 경우: 포커스 때 심볼을 읽어 자동 분석
   useEffect(() => {
@@ -558,9 +615,21 @@ function RadarPage() {
                   maxBars={maxBars}
                   colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
                 />
-                <Text style={{ fontSize: 10, color: p.faint }}>
-                  ▲=지지 성공 · ▼=저항 성공 · ●=뚫림 (초록=상승성 · 빨강=하락성) · 최근 {maxBars}봉 표시
-                </Text>
+                {/* 마커 범례.
+                    예전에는 "▲=지지 성공 · ▼=저항 성공 · ●=뚫림 (초록=상승성 ·
+                    빨강=하락성)"을 10px 흐린 글씨 한 줄로 몰아넣었다. 정작 화면의
+                    마커는 색으로 뜻이 갈리는데 범례는 흑백이라, 색과 뜻을 머릿속에서
+                    맞춰야 했다(토론에서 초보·전문가가 함께 지적). 이제 실제로 그려지는
+                    모양과 색을 그대로 옆에 세워 둔다. */}
+                {showMarkers ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 2 }}>
+                    <MarkerLegend shape="up" color={p.events.support} label="지지 성공" />
+                    <MarkerLegend shape="down" color={p.events.resistance} label="저항 성공" />
+                    <MarkerLegend shape="dot" color={p.events.breakDown} label="지지 뚫림" />
+                    <MarkerLegend shape="dot" color={p.events.breakUp} label="저항 뚫림" />
+                  </View>
+                ) : null}
+                <Text style={{ fontSize: 11, color: p.faint }}>최근 {maxBars}봉 표시</Text>
               </Card>
 
               {/* 전체 후보 성적표는 열이 빽빽해 초보에겐 벽이다 — '숫자 자세히'

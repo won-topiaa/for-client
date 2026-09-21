@@ -91,17 +91,38 @@ const MatchCard = React.memo(function MatchCard({
       <View style={{ height: 6, borderRadius: 3, backgroundColor: p.border, overflow: 'hidden' }}>
         <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.up }} />
       </View>
+      {/* 가격 한 줄 — 숫자를 이름표와 함께 세워 둔다.
+          예전에는 '선 대비 +1.2%' 만 있고 지금 얼마인지가 없어서, 보는 사람이
+          비율만으로 감을 잡아야 했다(토론에서 중급자가 지적한 부분). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+        <View>
+          <Text style={{ fontSize: 10, color: p.faint }}>현재가</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
+            {fmtPrice(m.close)}
+          </Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: 10, color: p.faint }}>MA {m.period} 선</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
+            {fmtPrice(m.maValue)}
+          </Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: 10, color: p.faint }}>선 대비</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: p.text }}>
+            {fmtDistPct(m.distPct)}
+          </Text>
+        </View>
+      </View>
       <Text style={{ fontSize: 12, color: p.sub, lineHeight: 19 }}>
         {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
-            함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%). 웹과 같은
-            표기: "지지 시험 N회 중 M회 성공 · 최근 가중 성공률 X%". */}
+            함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%).
+            이름은 '지지 성공률' 하나로 통일한다 — 예전엔 같은 수치를 여기서만
+            '최근 가중 성공률'이라 불러서 다른 지표처럼 보였다. */}
         3년 지지 시험 {m.supportTests}회 중{' '}
         <Text style={{ fontWeight: '700', color: p.text }}>{m.supportBounces}회 성공</Text>
-        {' · '}최근 가중 성공률{' '}
+        {' · '}지지 성공률{' '}
         <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.supportRate)}</Text>
-        {' · '}오늘 종가는 선 대비{' '}
-        <Text style={{ fontWeight: '700', color: p.text }}>{fmtDistPct(m.distPct)}</Text> (선{' '}
-        {fmtPrice(m.maValue)})
       </Text>
       <CandleChart
         candles={m.candles}
@@ -262,9 +283,14 @@ function ScreenerPage() {
         통계일 뿐, 매수 신호가 아닙니다.
       </Text>
 
-      <Expandable title="스캔 기준" palette={p}>
+      <Expandable title="스캔 기준 · 지지 성공률이란?" palette={p}>
         <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16 }}>
           {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
+        </Text>
+        {/* 같은 수치를 화면마다 다른 이름으로 부르지 않는다. 뜻은 여기 한 번만 적는다. */}
+        <Text style={{ fontSize: 11, color: p.faint, lineHeight: 16, marginTop: 6 }}>
+          지지 성공률 = 그 선까지 눌렸을 때 실제로 버틴 비율입니다. 오래된 일보다
+          최근 일에 더 큰 가중치를 줘서, 요즘 잘 지켜지는 선이 높게 나옵니다.
         </Text>
       </Expandable>
 

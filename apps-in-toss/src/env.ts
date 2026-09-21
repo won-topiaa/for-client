@@ -25,3 +25,10 @@ export const PUSH_TEMPLATE_CODE = 'wontopia-ma-radar-morning-brief';
 // '30 23 * * 1-5' UTC)과 **같은 값**이어야 한다 — 화면이 '아침'이라고만 말하면
 // '켜 뒀는데 아직 안 온 아침'을 사용자가 고장으로 오해한다.
 export const PUSH_TIME_LABEL = '평일 아침 8시 30분';
+
+// 스크리너(오늘의 지지선·차트 패턴) 결과가 새로 계산되는 시각 (KST, 24시간).
+// 서버의 DAILY_REFRESH_KST 기본값과 **같아야 한다** — 앱은 이 시각을 기준으로
+// '오늘 결과'와 '어제 결과'를 가른다. 어긋나면 화면마다 다른 날짜의 결과를
+// 보여주게 된다.
+export const SCREENER_REFRESH_HOUR_KST = 6;
+export const SCREENER_REFRESH_MIN_KST = 30;
