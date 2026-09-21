@@ -254,12 +254,18 @@ export function useMorningPush(): MorningPush {
         }
         if (enabled) {
           const key = await anonKey();
-          await pushUnsubscribe(key);
+          const res = await pushUnsubscribe(key);
           if (!alive.current) {
             return;
           }
-          setEnabled(false);
-          await rememberFlag(false);
+          // 서버 목록이 진실이다 — 응답을 무시하고 꺼진 것으로 그리면,
+          // 실제로는 목록에 남아 있는데 사용자는 껐다고 믿게 된다.
+          const off = res.subscribed !== true;
+          setEnabled(!off);
+          await rememberFlag(!off);
+          if (!off) {
+            setProblem('알림을 끄지 못했어요. 잠시 후 다시 시도해 주세요.');
+          }
           return;
         }
         // 동의를 먼저 받는다. 거부한 사람의 식별키를 서버에 남기지 않기 위해서다.

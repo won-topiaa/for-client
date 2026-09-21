@@ -622,7 +622,10 @@ export function StarButton({
   const what = label ? `${label} ` : '';
   return maybeTrack(
     logName,
-    label,
+    // 여기에 label(종목 이름)을 넘기면 '누가 어떤 종목을 담았는지'가 그대로
+    // 분석 로그로 나간다. 전환 지표는 '담았다'는 사실만 세면 되고, 앱은
+    // 사용자에게 보유 종목을 저장하지 않는다고 안내하고 있다. 고정 문구로 둔다.
+    '관심종목 담기',
     !watched,
     <TouchableOpacity
       onPress={onPress}

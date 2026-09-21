@@ -228,6 +228,9 @@ let themeMode: ThemeMode = 'auto';
 let userChose = false;
 /** 진행 중이거나 끝난 읽기. 성공하면 그대로 남아 두 번 읽지 않는다. */
 let modeLoad: Promise<void> | null = null;
+/** 마지막 읽기가 실패했는가. modeLoad 를 비우는 방식으로는 못 고친다 —
+ *  아래 loadThemeMode 의 주석 참고. */
+let modeLoadFailed = false;
 const modeListeners = new Set<(m: ThemeMode) => void>();
 
 function isMode(v: unknown): v is ThemeMode {
@@ -244,23 +247,29 @@ function emitMode(m: ThemeMode): void {
  * 저장된 설정을 읽는다. 실패하면 '자동'으로 둔다 — 테마는 못 읽었다고 화면을
  * 막을 이유가 없는 값이다.
  *
- * 실패를 '읽었다'로 캐시하지 않는다(modeLoad 를 비운다). 한 번의 일시적
- * 실패로 그 실행 내내 저장해 둔 설정을 못 읽게 되면, 다크를 골라 둔 사람이
- * 앱을 켤 때마다 라이트를 보게 된다. (watchlist.ts 가 같은 이유로 실패를
- * 캐시하지 않는다.)
+ * 실패를 '읽었다'로 캐시하지 않는다. 한 번의 일시적 실패로 그 실행 내내
+ * 저장해 둔 설정을 못 읽게 되면, 다크를 골라 둔 사람이 앱을 켤 때마다
+ * 라이트를 보게 된다. (watchlist.ts 가 같은 이유로 실패를 캐시하지 않는다.)
+ *
+ * 실패 표시를 **바깥 변수(modeLoadFailed)**에 남기는 이유: Storage 는 브리지
+ * 호출이라 동기로 던질 수 있는데, 그러면 catch 가 `modeLoad = (async …)()`
+ * 대입보다 **먼저** 돈다. 그 안에서 modeLoad 를 비워 봐야 곧바로 이어지는
+ * 대입이 되살려 놓아, 실패가 그대로 캐시된다. 되살아날 수 없는 자리에
+ * 표시를 남기고, 다음 호출이 그 표시를 보고 다시 시도하게 한다.
  *
  * Storage 가 비동기라, '다크'를 골라 둔 사람은 앱을 열 때 아주 잠깐 라이트를
  * 본 뒤 바뀐다. 동기로 읽을 방법이 없어 남겨 두는 한계다 — 읽기는 앱이 뜨는
  * 즉시(_app.tsx 의 usePalette) 시작하므로 한 프레임 수준이다.
  */
 function loadThemeMode(): Promise<void> {
-  if (!modeLoad) {
+  if (!modeLoad || modeLoadFailed) {
+    modeLoadFailed = false;
     modeLoad = (async () => {
       let raw: string | null = null;
       try {
         raw = await Storage.getItem(MODE_KEY);
       } catch {
-        modeLoad = null; // 다음 화면이 다시 시도할 수 있게
+        modeLoadFailed = true; // 다음 화면이 다시 시도할 수 있게
         return;
       }
       // 읽는 사이에 사용자가 직접 골랐다면 그쪽이 이긴다. 안 그러면 방금 누른
@@ -281,13 +290,16 @@ let modeWriteQueue: Promise<unknown> = Promise.resolve();
 
 /** 테마를 바꾸고 저장한다. 저장 실패는 조용히 넘긴다(이번 실행에는 적용된다). */
 export function setThemeMode(mode: ThemeMode): void {
+  const changed = themeMode !== mode;
+  // 값이 그대로여도 '사용자가 직접 골랐다'는 사실은 남긴다. 여기서 일찍
+  // 빠져나가면 읽기는 막아 놓고 저장은 안 한 상태가 돼, 화면과 저장값이
+  // 어긋난 채 다음 실행에 되돌아간다.
   userChose = true;
-  if (themeMode === mode) {
-    return;
-  }
   themeMode = mode;
-  // 화면을 먼저 바꾸고 저장은 뒤따르게 — 저장이 늦거나 실패해도 누른 즉시 바뀐다
-  emitMode(mode);
+  if (changed) {
+    // 화면을 먼저 바꾸고 저장은 뒤따르게 — 저장이 늦거나 실패해도 누른 즉시 바뀐다
+    emitMode(mode);
+  }
   modeWriteQueue = modeWriteQueue
     .then(() => Storage.setItem(MODE_KEY, mode))
     .catch(() => undefined); // 실패해도 큐가 막히지 않게
