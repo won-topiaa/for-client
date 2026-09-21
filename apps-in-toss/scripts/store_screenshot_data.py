@@ -1,5 +1,12 @@
 """스토어 스크린샷용 데이터 추출 — 앱이 쓰는 것과 '같은 엔진'의 실제 출력을 뽑는다.
 
+⚠️ 이 스크립트는 **이 저장소에서는 돌지 않는다.** 아래 ROOT 가 백테스트
+엔진(`app/`)이 저장소 루트에 있다고 보는데, 여기(`for-client`)의 `app/` 은
+2026-08-30 에서 멈춘 오래된 사본이다. 운영 저장소(`won-topiaa/ma-radar`)를
+클론해 거기의 `apps-in-toss/scripts/` 에서 돌리고, 나온 data.json 만 이쪽
+`scripts/store/data.json` 으로 가져온다. 그림 그리는 쪽
+(make_store_screenshots.mjs)은 이 저장소에서 돌린다. → docs/REPOS.md
+
 손으로 적은 숫자는 반드시 앱과 어긋난다. 스크린샷에 들어가는 모든 수치는
 이 스크립트가 뽑은 JSON(data.json)에서 나와야 한다.
 
