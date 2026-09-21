@@ -50,10 +50,12 @@ const env = loadTS('src/env.ts');
 const fmt = loadTS('src/format.ts');
 const P = theme.LIGHT; // 앱인토스 TDS 는 라이트 모드만 지원한다
 
-// index.tsx 의 QUICK_PICKS 배열 리터럴을 그대로 파싱 (출처 단일화)
-const indexSrc = fs.readFileSync(path.join(APP, 'src', 'pages', 'index.tsx'), 'utf8');
-const qpMatch = indexSrc.match(/const QUICK_PICKS[^=]*=\s*(\[[\s\S]*?\]);/);
-if (!qpMatch) throw new Error('index.tsx 에서 QUICK_PICKS 를 찾지 못함');
+// radar.tsx 의 QUICK_PICKS 배열 리터럴을 그대로 파싱 (출처 단일화).
+// 예전엔 index.tsx 를 읽었는데, 분석 화면이 radar.tsx 로 갈라져 나가면서
+// 배열도 함께 옮겨 갔다 — 그 뒤로 이 스크립트는 첫 줄에서 죽고 있었다.
+const radarSrc = fs.readFileSync(path.join(APP, 'src', 'pages', 'radar.tsx'), 'utf8');
+const qpMatch = radarSrc.match(/const QUICK_PICKS[^=]*=\s*(\[[\s\S]*?\]);/);
+if (!qpMatch) throw new Error('radar.tsx 에서 QUICK_PICKS 를 찾지 못함');
 const QUICK_PICKS = new Function(`return ${qpMatch[1]}`)();
 
 /* ---------- 한글 폰트: 구글 폰트를 내려받아 로컬 파일로 embed ---------- */
@@ -103,18 +105,19 @@ function baseCss(fontCss) {
   .eyebrow { font-size: 20px; font-weight: 700; color: ${P.primary}; letter-spacing: .06em; margin-bottom: 10px; }
   .headline { font-size: 43px; font-weight: 900; line-height: 1.24; letter-spacing: -0.02em; }
   .subline { font-size: 21px; color: ${P.sub}; margin-top: 12px; line-height: 1.45; }
-  .panel { margin: 8px 28px 0; background: ${P.card}; border: 2px solid ${P.border};
+  .panel { margin: 8px 28px 0; background: ${P.card};
            border-radius: 28px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
-  .chip { display: inline-flex; align-items: center; font-size: 19px; padding: 9px 18px;
-          border-radius: 999px; border: 2px solid ${P.border}; background: ${P.card}; color: ${P.text}; }
-  .chip.on { border-color: ${P.primary}; background: ${P.primaryBg}; color: ${P.primary}; font-weight: 700; }
+  .chip { display: inline-flex; align-items: center; font-size: 19px; padding: 11px 20px;
+          border-radius: 999px; background: ${P.sunken}; color: ${P.sub}; font-weight: 500; }
+  .chip.on { background: ${P.primaryBg}; color: ${P.primary}; font-weight: 700; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .card { background: ${P.card}; border: 2px solid ${P.border}; border-radius: 18px; padding: 16px; }
+  .panel .card { background: ${P.bg}; }
+  .card { background: ${P.card}; border-radius: 20px; padding: 18px; }
   .small { font-size: 16px; color: ${P.faint}; line-height: 1.5; }
   .foot { position: absolute; left: 40px; right: 40px; bottom: 26px; font-size: 15px;
           color: ${P.faint}; line-height: 1.5; }
   .dot { display: inline-block; width: 13px; height: 13px; border-radius: 7px; margin-right: 8px; }
-  .meter { height: 10px; border-radius: 5px; background: ${P.border}; overflow: hidden; }
+  .meter { height: 10px; border-radius: 5px; background: ${P.sunken}; overflow: hidden; }
   .meter > i { display: block; height: 10px; background: ${P.primary}; }
   `;
 }
@@ -241,7 +244,7 @@ const recCard = (rec, i, wide) => {
   const { breakDown, breakUp } = eventCounts(rec.events);
   return `<div class="card" style="min-width:${wide ? 260 : 246}px;padding:14px">
     <div style="font-size:23px;font-weight:800"><span class="dot" style="background:${color}"></span>MA ${rec.period}</div>
-    <div class="small" style="margin-top:5px;white-space:nowrap">터치 ${rec.touches}회 · 성공률 ${fmt.fmtRate(rec.successRate)}</div>
+    <div class="small" style="margin-top:5px;white-space:nowrap">지지 성공 ${rec.supportBounces}회 · 지지 성공률 ${fmt.fmtRate(rec.successRate)}</div>
     <div class="small" style="margin-top:2px;font-size:15px;white-space:nowrap"><span style="color:${P.events.support}">지지 ${rec.supportBounces}</span> · <span style="color:${P.events.resistance}">저항 ${rec.resistanceBounces}</span> · <span style="color:${P.events.breakDown}">이탈 ${breakDown}</span> · <span style="color:${P.events.breakUp}">돌파 ${breakUp}</span></div>
   </div>`;
 };
@@ -255,9 +258,9 @@ const matchCard = (m, chartId) => `
         border-radius:10px;padding:4px 12px">MA ${m.period}</span>
     </div>
     <div class="meter"><i style="width:${Math.max(0, Math.min(100, Math.round(m.successRate * 100)))}%"></i></div>
-    <div class="small" style="font-size:16px;color:${P.sub}">3년 지지 성공률 <b style="color:${P.text}">${fmt.fmtRate(m.successRate)}</b>
-      · 지지 성공 ${m.supportBounces}회 (터치 ${m.touches}회) ·
-      오늘 종가는 선 대비 <b style="color:${P.text}">${fmt.fmtDistPct(m.distPct)}</b> (선 ${fmt.fmtPrice(m.maValue)})</div>
+    <div class="small" style="font-size:16px;color:${P.sub}">3년 지지 성공 ${m.supportBounces}회 ·
+      지지 성공률 <b style="color:${P.text}">${fmt.fmtRate(m.successRate)}</b> ·
+      오늘 종가는 선 대비 <b style="color:${theme.signColor(m.distPct, P)}">${fmt.fmtDistPct(m.distPct)}</b> (선 ${fmt.fmtPrice(m.maValue)})</div>
     <canvas id="${chartId}" width="512" height="132"></canvas>
   </div>`;
 
@@ -314,7 +317,7 @@ function screenScore(fontCss) {
     <div class="panel">
       <div style="font-size:24px;font-weight:800">${esc(DATA.radar.name)} · 일봉</div>
       <table>
-        <tr><th>이평선</th><th>터치</th><th>지지</th><th>저항</th><th>이탈+돌파</th><th>성공률</th><th>점수</th></tr>
+        <tr><th>이평선</th><th>터치</th><th>지지</th><th>저항</th><th>이탈+돌파</th><th>지지성공률</th><th>점수</th></tr>
         ${rows.map(tr).join('')}
       </table>
       <div class="small">★ = 추천 이평선 · 점수 = 가중 성공률의 Wilson 신뢰하한 × log(1+가중 성공 횟수)</div>
@@ -362,7 +365,7 @@ function screenStart(fontCss) {
       <div class="row">${QUICK_PICKS.map((q, i) =>
         `<span class="chip${i === 0 ? ' on' : ''}">${esc(q.name)}</span>`).join('')}</div>
       <div style="background:${P.primary};color:#fff;border-radius:14px;text-align:center;
-        font-size:23px;font-weight:800;padding:16px">분석</div>
+        font-size:23px;font-weight:800;padding:16px">분석하기</div>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
         <div style="font-size:21px;font-weight:800">어떻게 쓰나요?</div>
         <div class="small" style="font-size:18px;line-height:1.65">
@@ -380,7 +383,7 @@ function screenWide(fontCss) {
   const lines = recs.slice(0, 2).map((rec, i) => ({ color: P.ma[i % P.ma.length], points: rec.ma.slice(-100), width: 3 }));
   const m = DATA.screener.matches[0];
   return page(fontCss, `
-    body { background: linear-gradient(135deg, #10b981, #047857); }
+    body { background: linear-gradient(135deg, #4593F7, #1B64DA); }
     .wrap { display: flex; align-items: center; gap: 48px; padding: 56px 64px; height: 741px; }
   `, `
     <div class="wrap">
@@ -405,8 +408,8 @@ function screenWide(fontCss) {
             <span style="background:${P.primaryBg};color:${P.primary};font-weight:800;font-size:17px;border-radius:9px;padding:3px 11px">MA ${m.period}</span>
           </div>
           <div class="meter" style="margin-bottom:8px"><i style="width:${Math.round(m.successRate * 100)}%"></i></div>
-          <div class="small" style="font-size:16px">3년 지지 성공률 <b style="color:${P.text}">${fmt.fmtRate(m.successRate)}</b>
-            · 지지 성공 ${m.supportBounces}회 (터치 ${m.touches}회)</div>
+          <div class="small" style="font-size:16px">3년 지지 성공 ${m.supportBounces}회 ·
+            지지 성공률 <b style="color:${P.text}">${fmt.fmtRate(m.successRate)}</b></div>
         </div>` : ''}
       </div>
     </div>
