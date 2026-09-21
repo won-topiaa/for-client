@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND_NAME, CONTACT_EMAIL } from '../env';
+import { LIGHT, type Palette } from '../theme';
 
 // 렌더 중 예외 하나가 앱 전체를 흰 화면으로 만드는 것을 막는다.
 // RN 에는 브라우저의 '깨진 화면이라도 남는' 안전망이 없어서, 잡지 않으면
@@ -11,6 +12,9 @@ import { BRAND_NAME, CONTACT_EMAIL } from '../env';
 
 interface Props {
   children: React.ReactNode;
+  /** 지금 쓰는 팔레트. 훅을 못 쓰는 클래스 컴포넌트라 위에서 받아 온다.
+   *  (라우터보다 바깥이라 화면들이 쓰는 usePalette 를 직접 부를 수 없다) */
+  palette?: Palette;
 }
 
 interface State {
@@ -48,29 +52,25 @@ export class ErrorBoundary extends React.Component<Props, State> {
     // 마운트하고, 사용자가 보던 화면이 아니라 시작 화면으로 돌아간다.
     // 같은 오류가 또 나면 재시도로는 못 벗어나므로 안내를 바꾼다.
     const stuck = retries >= 2;
-    // 팔레트 훅을 못 쓰는 자리(클래스 컴포넌트, 라우터 바깥)라 토스 색을
-    // 고정값으로 적는다 — src/theme.ts 의 LIGHT 와 같은 값이어야 한다.
-    const bg = '#F9FAFB';
-    const card = '#FFFFFF';
-    const text = '#191F28';
-    const sub = '#4E5968';
-    const accent = '#3182F6';
+    // 팔레트를 못 받았다면(아주 이른 실패) 라이트로 떨어뜨린다 — 색을 손으로
+    // 베껴 적으면 테마가 바뀔 때마다 이 화면만 옛 색으로 남는다.
+    const p = this.props.palette ?? LIGHT;
 
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: bg }} contentContainerStyle={{ padding: 20 }}>
+      <ScrollView style={{ flex: 1, backgroundColor: p.bg }} contentContainerStyle={{ padding: 20 }}>
         <View
           style={{
-            backgroundColor: card,
+            backgroundColor: p.card,
             borderRadius: 16,
             padding: 20,
             gap: 12,
             marginTop: 24,
           }}
         >
-          <Text style={{ fontSize: 20, fontWeight: '700', color: text }}>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: p.text }}>
             화면을 그리지 못했어요
           </Text>
-          <Text style={{ fontSize: 14.5, color: sub, lineHeight: 23 }}>
+          <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 23 }}>
             {stuck
               ? '같은 문제가 반복되고 있어요. 앱을 완전히 닫았다가 다시 열어 주세요. ' +
                 '그래도 같으면 아래 이메일로 알려주시면 빠르게 고치겠습니다.'
@@ -80,19 +80,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
             onPress={() => this.setState((s) => ({ error: null, retries: s.retries + 1 }))}
             accessibilityRole="button"
             style={{
-              backgroundColor: accent,
+              backgroundColor: p.primaryFill,
               borderRadius: 14,
               paddingVertical: 15,
               alignItems: 'center',
               marginTop: 2,
             }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>다시 시도</Text>
+            <Text style={{ color: p.onPrimary, fontSize: 16, fontWeight: '700' }}>다시 시도</Text>
           </TouchableOpacity>
-          <Text style={{ fontSize: 12, color: sub, marginTop: 6 }}>
+          <Text style={{ fontSize: 12, color: p.sub, marginTop: 6 }}>
             {BRAND_NAME} · 문의 {CONTACT_EMAIL}
           </Text>
-          <Text style={{ fontSize: 11, color: '#8B95A1', marginTop: 2 }} numberOfLines={3}>
+          <Text style={{ fontSize: 11, color: p.faint, marginTop: 2 }} numberOfLines={3}>
             {String(error?.message ?? error)}
           </Text>
         </View>

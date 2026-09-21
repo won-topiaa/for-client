@@ -2,7 +2,7 @@ import React, { useState, type PropsWithChildren } from 'react';
 import { Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { maybeTrack } from '../analytics';
 import { BRAND_NAME, CONTACT_EMAIL, DISCLAIMER } from '../env';
-import { ACCENT, GUTTER, RADIUS, type AccentKey, type Palette } from '../theme';
+import { accentBg, GUTTER, RADIUS, type AccentKey, type Palette } from '../theme';
 
 // 페이지 공용 소형 UI — 토스 앱의 시각 언어(TDS)를 따른다.
 //
@@ -188,20 +188,21 @@ export function Notice({
 export function IconChip({
   glyph,
   accent,
+  palette: p,
   size = 40,
 }: {
   glyph: string;
   accent: AccentKey;
+  palette: Palette;
   size?: number;
 }) {
-  const a = ACCENT[accent];
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: a.bg,
+        backgroundColor: accentBg(p, accent),
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -255,7 +256,7 @@ export function MenuRow({
         paddingHorizontal: 20,
       }}
     >
-      <IconChip glyph={glyph} accent={accent} />
+      <IconChip glyph={glyph} accent={accent} palette={p} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: p.text, letterSpacing: -0.2 }}>
@@ -394,9 +395,11 @@ export function Segmented<T extends string | number>({
               justifyContent: 'center',
               paddingVertical: 9,
               borderRadius: 9,
-              backgroundColor: active ? p.card : 'transparent',
-              // 흰 손잡이가 바닥에서 살짝 떠 보이게 — 토스와 같은 아주 옅은 그림자
-              ...(active
+              backgroundColor: active ? p.raised : 'transparent',
+              // 손잡이가 바닥에서 살짝 떠 보이게 — 토스와 같은 아주 옅은 그림자.
+              // 다크에서는 검은 그림자가 검은 바탕에 묻히므로, 그때는 밝은
+              // 면색(raised)만으로 띄운다.
+              ...(active && !p.dark
                 ? {
                     shadowColor: '#000000',
                     shadowOpacity: 0.06,
@@ -451,7 +454,7 @@ export function PrimaryButton({
   const secondary = tone === 'secondary';
   // 비활성과 보조 버튼의 면색을 다르게 둔다 — 둘 다 sunken 이면 '못 누르는 것'과
   // '덜 중요한 것'이 같아 보인다. 글자색도 disabled(1.8:1) 가 아니라 faint 로.
-  const bg = disabled ? p.border : secondary ? p.sunken : p.primary;
+  const bg = disabled ? p.border : secondary ? p.sunken : p.primaryFill;
   const fg = disabled ? p.faint : secondary ? p.sub : p.onPrimary;
   return maybeTrack(
     logName,

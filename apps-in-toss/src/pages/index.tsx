@@ -19,11 +19,21 @@ import {
   MenuRow,
   PageHeader,
   RowDivider,
+  Segmented,
 } from '../components/ui';
 import { CONTACT_EMAIL, PUSH_TIME_LABEL } from '../env';
 import { LOG } from '../analytics';
 import { isPushAvailable } from '../notify';
-import { ACCENT, GUTTER, RADIUS, usePalette, type AccentKey, type Palette } from '../theme';
+import {
+  accentBg,
+  GUTTER,
+  RADIUS,
+  usePalette,
+  useThemeMode,
+  type AccentKey,
+  type Palette,
+  type ThemeMode,
+} from '../theme';
 
 export const Route = createRoute('/', {
   component: HomePage,
@@ -37,6 +47,12 @@ export const Route = createRoute('/', {
 // (작은 기기에서 제목·부제가 눌리지 않게 최소 높이를 함께 둔다)
 const INTRO_RATIO = 0.55;
 const INTRO_MIN_H = 300;
+
+const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
+  { value: 'auto', label: '자동' },
+  { value: 'light', label: '라이트' },
+  { value: 'dark', label: '다크' },
+];
 
 function IntroSection({
   scrollY,
@@ -150,7 +166,9 @@ function ScrollHint({
           flexDirection: 'row',
           alignItems: 'center',
           gap: 6,
-          backgroundColor: p.card,
+          // 인트로 배경 위에 '떠 있는' 조각이라 raised 를 쓴다 — 다크에서
+          // 카드색을 쓰면 배경과 1.16:1 이라 버튼이 있는 줄도 모른다
+          backgroundColor: p.raised,
           borderRadius: 999,
           paddingVertical: 11,
           paddingHorizontal: 20,
@@ -192,7 +210,7 @@ function Bullet({
           width: 30,
           height: 30,
           borderRadius: 15,
-          backgroundColor: ACCENT[accent].bg,
+          backgroundColor: accentBg(p, accent),
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -259,6 +277,7 @@ function FeatureCard({
 
 function HomePage() {
   const p = usePalette();
+  const { mode, setMode } = useThemeMode();
   const navigation = Route.useNavigation();
   const { height: screenH } = useWindowDimensions();
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -500,6 +519,27 @@ function HomePage() {
             </Text>
           </Expandable>
 
+          {/* ── 화면 테마 ──
+              앱인토스 TDS 는 라이트만 안내하지만, 밤에 시세를 보는 사람에게는
+              흰 화면이 더 불편하다. 기기 설정을 따르는 '자동'을 기본으로 두고,
+              호스트가 기기 설정을 안 넘겨주는 경우까지 생각해 직접 고를 수도
+              있게 한다. */}
+          <Card palette={p} style={{ gap: 12 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>화면 테마</Text>
+            <Segmented
+              options={THEME_OPTIONS}
+              value={mode}
+              palette={p}
+              onChange={(v) => setMode(v)}
+            />
+            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+              {mode === 'auto'
+                ? '휴대폰의 화면 설정을 따라가요.'
+                : mode === 'dark'
+                  ? '휴대폰 설정과 상관없이 어두운 화면으로 봐요.'
+                  : '휴대폰 설정과 상관없이 밝은 화면으로 봐요.'}
+            </Text>
+          </Card>
           {/* ── 문의·협업 ── */}
           <Card palette={p} style={{ gap: 10 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>문의 · 협업</Text>

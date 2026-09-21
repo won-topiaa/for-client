@@ -311,7 +311,7 @@ function PatternsPage() {
         {/* 고른 패턴이 뭔지 한 줄로 — 초보가 이름만 보고 멈추지 않게 */}
         <Card palette={p} style={{ gap: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <IconChip glyph={current.emoji} accent="violet" size={36} />
+            <IconChip glyph={current.emoji} accent="violet" palette={p} size={36} />
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{current.label}</Text>
           </View>
           <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 23 }}>{current.plain}</Text>

@@ -45,7 +45,13 @@ function loadTS(rel, shims = {}) {
   return mod.exports;
 }
 
-const theme = loadTS('src/theme.ts');
+// theme.ts 가 이제 저장소·훅을 import 한다(화면 테마 설정). 스크린샷은 라이트
+// 팔레트 상수만 쓰므로, 이 모듈들은 '이름만 있으면 되는' 빈 껍데기로 넘긴다.
+const theme = loadTS('src/theme.ts', {
+  react: {},
+  'react-native': { useColorScheme: () => 'light' },
+  '@apps-in-toss/framework': { Storage: {} },
+});
 const env = loadTS('src/env.ts');
 const fmt = loadTS('src/format.ts');
 const P = theme.LIGHT; // 앱인토스 TDS 는 라이트 모드만 지원한다

@@ -342,6 +342,8 @@ function RadarPage() {
             placeholderTextColor={p.faint}
             autoCorrect={false}
             autoCapitalize="characters"
+            // 다크 화면에 흰 키보드가 올라오면 그 순간만 눈이 부신다 (iOS)
+            keyboardAppearance={p.dark ? 'dark' : 'light'}
             style={{
               backgroundColor: p.sunken,
               borderRadius: RADIUS.input,
