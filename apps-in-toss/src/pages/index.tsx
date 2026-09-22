@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { TabBar, TAB_BAR_HEIGHT, TAB_BAR_SPACER } from '../components/TabBar';
+import { TodayBrief } from '../components/TodayBrief';
 import {
   Card,
   Chevron,
@@ -376,6 +377,11 @@ function HomePage() {
             subtitle="종목마다 실제로 지켜진 이동평균선을 백테스트로 찾아드려요"
             palette={p}
           />
+
+          {/* 아침 알림이 약속한 내용은 여기 있어야 한다 — 스마트 발송은
+              미니앱을 기본 진입점으로 열기 때문에, 알림을 누른 사람이
+              처음 닿는 곳이 이 화면이다 (components/TodayBrief 주석 참고) */}
+          <TodayBrief palette={p} onOpenScreener={() => navigation.navigate('/screener')} />
 
           {/* ── 기능 1: 내 종목 이평선 ── */}
           <FeatureCard

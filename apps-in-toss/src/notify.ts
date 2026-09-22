@@ -42,8 +42,9 @@ export class NotifyError extends Error {
   }
 }
 
-/** 이 기기의 사용자 식별키. 못 받으면 NotifyError. */
-async function anonKey(): Promise<string> {
+/** 이 기기의 사용자 식별키. 못 받으면 NotifyError.
+ *  export 이유: 관심종목 알림(watchAlert.ts)도 같은 키로 서버와 이야기한다. */
+export async function anonKey(): Promise<string> {
   if (cachedKey) {
     return cachedKey;
   }
@@ -181,6 +182,12 @@ export interface MorningPush {
   unsupported: boolean;
   /** 서버가 아직 이 기능을 켜지 않음. */
   serverNotReady: boolean;
+  /** 관심종목 알림용으로 서버가 보관 중인 종목 수. 아직 모르면 undefined.
+   *
+   *  이 모듈이 watchAlert 를 직접 부르지 않고 숫자만 내보내는 이유: watchAlert
+   *  가 여기서 anonKey 를 가져다 쓴다. 반대로도 부르면 두 모듈이 서로를
+   *  import 하는 순환이 된다. 맞추는 일은 화면(pages/notify)이 한다. */
+  watchCount?: number;
   toggle: () => void;
 }
 
@@ -192,6 +199,7 @@ export function useMorningPush(): MorningPush {
   const [problem, setProblem] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [serverNotReady, setServerNotReady] = useState(false);
+  const [watchCount, setWatchCount] = useState<number | undefined>(undefined);
   // 화면을 떠난 뒤 setState 하면 경고가 나고, 두 번 누르면 요청이 겹친다
   const alive = useRef(true);
   const working = useRef(false);
@@ -219,6 +227,7 @@ export function useMorningPush(): MorningPush {
         // 서버 목록이 진실이다 — 기억해 둔 값과 다르면 서버를 따른다
         setEnabled(!!res.subscribed);
         setServerNotReady(res.ready === false);
+        setWatchCount(res.watchCount);
         void rememberFlag(!!res.subscribed);
       } catch (err) {
         if (!alive.current) {
@@ -262,6 +271,10 @@ export function useMorningPush(): MorningPush {
           // 실제로는 목록에 남아 있는데 사용자는 껐다고 믿게 된다.
           const off = res.subscribed !== true;
           setEnabled(!off);
+          if (off) {
+            // 구독을 지우면 서버가 종목코드도 함께 지운다
+            setWatchCount(0);
+          }
           await rememberFlag(!off);
           if (!off) {
             setProblem('알림을 끄지 못했어요. 잠시 후 다시 시도해 주세요.');
@@ -301,5 +314,5 @@ export function useMorningPush(): MorningPush {
     })();
   }, [enabled]);
 
-  return { enabled, loading, busy, problem, unsupported, serverNotReady, toggle };
+  return { enabled, loading, busy, problem, unsupported, serverNotReady, watchCount, toggle };
 }

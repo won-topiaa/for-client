@@ -125,6 +125,33 @@ export interface TouchesResponse {
   totalMatches?: number;
 }
 
+/* ---------- 아침 브리핑 한 장 ---------- */
+
+/** 한 시장의 오늘 스캔 요약. total 이 null 이면 아직 계산 중이라는 뜻 —
+ *  0 과 구별해야 한다 (0 은 '오늘 한 건도 없음'). */
+export interface TodaySupport {
+  status: 'running' | 'done' | 'error';
+  total: number | null;
+  partial: boolean;
+}
+
+export interface TodayResponse {
+  /** 기준일 (MM/DD). */
+  asOf?: string | null;
+  /** 지수 기준일이 서로 다른 날(미국 종가와 국내 종가가 갈린 날). */
+  asOfMixed?: boolean;
+  /** 지수·공포탐욕을 이어 붙인 한 줄. */
+  line?: string;
+  /** 한글 라벨 → 표시용 값 ("26,333 ▲0.96%"). */
+  vars?: Record<string, string>;
+  /** 오늘 값을 받지 못해 빠진 항목. */
+  missing?: string[];
+  support?: Record<string, TodaySupport>;
+  /** 스캔 결과가 새로 계산되는 시각 "HH:MM" (KST). 서버가 알려준다 —
+   *  앱이 적어 두면 서버 설정이 바뀔 때 조용히 어긋난다. */
+  refreshAtKst?: string;
+}
+
 /* ---------- 맞춤 이평선 (내가 고른 N일선) ---------- */
 
 /** 지지를 받는 중인가, 저항에 막혀 있는가. */

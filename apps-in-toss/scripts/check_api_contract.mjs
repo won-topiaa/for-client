@@ -127,6 +127,24 @@ if (!touchesChecked) {
   ok = false;
 }
 
+// ---- /api/today (아침 브리핑) ----
+// 홈 최상단 카드가 쓰는 응답. 알림을 누른 사람이 처음 보는 자리라, 여기서
+// 키가 어긋나면 '오늘의 시장'이 통째로 빈칸이 된다.
+{
+  const today = await get('/api/today');
+  ok = compare('TodayResponse (/api/today)', declaredFields('TodayResponse'), today, {
+    // 지수를 못 받은 날에는 서버가 asOf 를 null 로 주지만 키는 존재한다
+    optional: [],
+  }) && ok;
+  const side = (today.support ?? {}).kr;
+  if (side) {
+    ok = compare('TodaySupport (/api/today support.kr)', declaredFields('TodaySupport'), side) && ok;
+  } else {
+    console.error('  ✗ TodaySupport: support.kr 이 없습니다.');
+    ok = false;
+  }
+}
+
 // ---- /api/lines (맞춤 이평선) ----
 // TouchMatch 와 같은 이유로 '확인 못 함'을 통과로 두지 않는다. 다만 이쪽은
 // (시장, 기간) 조합마다 스캐너가 따로라, 그날 처음 묻는 조합이면 1~2분 걸린다.

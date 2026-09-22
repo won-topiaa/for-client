@@ -2,10 +2,12 @@ import { createRoute } from '@granite-js/react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { fetchBrief, type BriefResponse } from '../api/client';
-import { Card, Footer, PageHeader, PrimaryButton, TextButton } from '../components/ui';
+import { Card, Footer, Notice, PageHeader, PrimaryButton, TextButton } from '../components/ui';
 import { LOG } from '../analytics';
 import { PUSH_TIME_LABEL } from '../env';
 import { isPushAvailable, useMorningPush } from '../notify';
+import { forgetWatchAlert, reconcileWatchAlert, useWatchAlert } from '../watchAlert';
+import { useWatchlist } from '../watchlist';
 import { GUTTER, usePalette } from '../theme';
 
 export const Route = createRoute('/notify', {
@@ -16,8 +18,28 @@ function NotifyPage() {
   const p = usePalette();
   const navigation = Route.useNavigation();
   const push = useMorningPush();
+  const watchAlert = useWatchAlert();
+  // ready 를 함께 본다 — 저장소를 읽기 전 items 는 빈 배열이라,
+  // 종목을 담아 둔 사람에게도 '먼저 관심종목을 담아 주세요'가 잠깐 스친다.
+  const { items: watched, ready: watchedReady } = useWatchlist();
+  const [watchBusy, setWatchBusy] = useState(false);
+  const [watchProblem, setWatchProblem] = useState<string | null>(null);
   const [brief, setBrief] = useState<BriefResponse | null>(null);
   const [briefFailed, setBriefFailed] = useState(false);
+
+  // 기기 저장소가 비었어도(앱 재설치 등) 서버에 종목이 남아 있으면 알림은
+  // 계속 간다 — 그때 화면이 '꺼짐'이면 끌 방법이 없다. 서버를 따른다.
+  useEffect(() => {
+    reconcileWatchAlert(push.watchCount);
+  }, [push.watchCount]);
+
+  // 아침 알림을 끄면 관심종목 알림도 설 자리가 없다 (서버도 함께 지운다).
+  // loading 중에는 판단하지 않는다 — 상태를 받기 전 enabled 는 그냥 false 다.
+  useEffect(() => {
+    if (!push.loading && !push.enabled) {
+      forgetWatchAlert();
+    }
+  }, [push.loading, push.enabled]);
 
   // 미리보기는 실제 발송 문구를 그대로 만들어 보여 준다 — '무엇이 오는지' 를
   // 말로 설명하는 것보다 한 줄 보여 주는 편이 정확하다.
@@ -154,12 +176,72 @@ function NotifyPage() {
         ) : null}
       </Card>
 
+      {/* 관심종목 알림 — 아침 알림과 따로 켠다 */}
+      {push.enabled ? (
+        <Card palette={p} style={{ gap: 12 }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>관심종목 알림</Text>
+          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+            담아 두신 종목이 오늘 검증된 지지선에 닿으면, 아침 알림을 그 소식으로
+            바꿔 보내 드려요. 닿은 종목이 없는 날은 평소처럼 지수를 보내요.
+          </Text>
+          <Notice palette={p}>
+            켜시면 담아 두신 종목의 <Text style={{ fontWeight: '700' }}>종목코드만</Text> 서버에
+            저장돼요 (최대 30개). 종목 이름·수량·매수가는 저장하지 않고, 끄시면 즉시
+            지워집니다. 알림에는 개수만 적혀요 — 잠금화면에 종목 이름이 뜨지 않게요.
+          </Notice>
+          <PrimaryButton
+            label={
+              watchBusy
+                ? '처리 중…'
+                : watchAlert.on
+                  ? '관심종목 알림 끄기'
+                  : watchedReady
+                    ? `관심종목 알림 받기 (${watched.length}개)`
+                    : '관심종목 확인 중…'
+            }
+            disabled={watchBusy || !watchedReady || (!watchAlert.on && watched.length === 0)}
+            palette={p}
+            tone={watchAlert.on ? 'secondary' : 'primary'}
+            onPress={() => {
+              setWatchBusy(true);
+              setWatchProblem(null);
+              void watchAlert
+                .setOn(!watchAlert.on)
+                .catch((err) =>
+                  setWatchProblem(
+                    err instanceof Error ? err.message : '설정을 저장하지 못했어요.',
+                  ),
+                )
+                .finally(() => setWatchBusy(false));
+            }}
+          />
+          {watchedReady && !watchAlert.on && watched.length === 0 ? (
+            <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+              먼저 관심종목을 담아 주세요. 종목 오른쪽 위의 ☆ 를 누르면 담깁니다.
+            </Text>
+          ) : null}
+          {watchAlert.on ? (
+            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+              지금 {watched.length}개를 보고 있어요. 관심종목을 더하거나 빼면 자동으로
+              맞춰집니다.
+            </Text>
+          ) : null}
+          {watchProblem ? (
+            <Text style={{ fontSize: 13.5, color: p.danger, lineHeight: 21 }}>{watchProblem}</Text>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* 무엇을 저장하는지 — 켜기 전에 알 수 있어야 한다 */}
       <Card palette={p} style={{ gap: 8 }}>
         <Text style={{ fontSize: 13, color: p.faint, fontWeight: '600' }}>알아두실 점</Text>
         <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
           · 알림을 켜면 보내 드릴 대상을 구분하기 위해 토스가 발급한 기기 식별값 하나를 저장해요.
-          이름·연락처·보유 종목은 저장하지 않아요.
+          이름·연락처는 저장하지 않아요.
+        </Text>
+        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+          · 관심종목은 기본적으로 이 기기에만 있어요. 위의 '관심종목 알림'을 따로 켜신
+          경우에만 종목코드가 서버에 저장되고, 끄시면 즉시 지워집니다.
         </Text>
         <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
           · &apos;알림 끄기&apos;를 누르면 저장한 식별값을 지우고 발송 목록에서 빠져요. 토스에

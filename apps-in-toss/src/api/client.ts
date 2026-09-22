@@ -2,6 +2,7 @@ import { API_BASE_URL } from '../env';
 import type {
   AnalyzeResponse,
   LinesResponse,
+  TodayResponse,
   Market,
   PatternKey,
   PatternsResponse,
@@ -161,6 +162,14 @@ export function fetchTouches(market: Market): Promise<TouchesResponse> {
   return api<TouchesResponse>(`/api/touches?market=${market}`);
 }
 
+/* ---------- 아침 브리핑 ---------- */
+
+// 지수·공포탐욕 + 오늘 지지선 '개수'만 담긴 작은 응답. 매치 목록은 들어 있지
+// 않다 — 아침 8시 반에 모두가 동시에 여는 화면이라 가볍게 유지한다.
+export function fetchToday(): Promise<TodayResponse> {
+  return api<TodayResponse>('/api/today');
+}
+
 /* ---------- 맞춤 이평선 ---------- */
 
 // 사용자가 고른 기간의 이평선으로 유니버스를 훑어, 그 선의 지지를 받는 종목과
@@ -191,6 +200,8 @@ export function fetchPatterns(
 export interface PushStatus {
   subscribed: boolean;
   ready?: boolean;
+  /** 관심종목 알림용으로 서버에 맡겨 둔 종목 수. 0 이면 꺼져 있다. */
+  watchCount?: number;
 }
 
 export function pushSubscribe(anonKey: string): Promise<PushStatus> {
@@ -203,6 +214,19 @@ export function pushUnsubscribe(anonKey: string): Promise<PushStatus> {
 
 export function pushStatus(anonKey: string): Promise<PushStatus> {
   return api<PushStatus>('/api/push/status', { json: { anonKey } });
+}
+
+/**
+ * 관심종목 알림 대상을 통째로 맞춘다. 빈 배열이면 서버에서 전부 지운다.
+ *
+ * '더하기'가 아니라 '맞추기'인 이유: 관심종목의 원본은 이 기기다. 더하기로
+ * 두면 앱에서 뺀 종목이 서버에 남아 알림이 계속 온다.
+ */
+export function pushSetWatchlist(
+  anonKey: string,
+  symbols: string[],
+): Promise<{ watchCount: number }> {
+  return api<{ watchCount: number }>('/api/push/watchlist', { json: { anonKey, symbols } });
 }
 
 /* ---------- 아침 브리핑 한 줄 (알림 미리보기) ---------- */

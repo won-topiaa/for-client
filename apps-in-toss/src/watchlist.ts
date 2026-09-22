@@ -124,6 +124,19 @@ export async function loadWatchlist(): Promise<WatchItem[] | null> {
   return cache;
 }
 
+/**
+ * 목록이 바뀔 때마다 부를 함수를 등록한다. 해제 함수를 돌려준다.
+ *
+ * useWatchlist 와 달리 화면 밖(모듈)에서도 쓸 수 있다 — 관심종목 알림
+ * (watchAlert.ts)이 바뀐 목록을 서버와 맞추는 데 쓴다.
+ */
+export function subscribeWatchlist(fn: (items: WatchItem[]) => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
 export function isWatched(items: WatchItem[], symbol: string): boolean {
   return items.some((x) => x.symbol === symbol);
 }
