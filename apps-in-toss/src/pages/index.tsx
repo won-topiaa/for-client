@@ -1,3 +1,4 @@
+import { Storage } from '@apps-in-toss/framework';
 import { createRoute } from '@granite-js/react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -48,6 +49,25 @@ export const Route = createRoute('/', {
 // (작은 기기에서 제목·부제가 눌리지 않게 최소 높이를 함께 둔다)
 const INTRO_RATIO = 0.55;
 const INTRO_MIN_H = 300;
+
+// 인트로를 '오늘 이미 봤는가'로 기억하는 자리.
+//
+// 매번 보여 주던 것을 하루 한 번으로 줄인다. 아침 알림을 누르고 들어오는
+// 사람에게는 인트로가 매일 통과해야 하는 관문이 되는데, 정작 그 사람이
+// 보러 온 것(오늘의 시장)은 인트로 뒤에 있다.
+//
+// 경계는 KST 자정이다. 스캔 갱신 시각(06:30)을 쓰면 06:00 과 07:00 에 연 사람이
+// 같은 아침에 두 번 보게 된다 — '오늘 이미 봤다'는 사람이 쓰는 말이라
+// 달력 날짜로 세는 편이 뜻과 맞다.
+const INTRO_SEEN_KEY = 'wontopia.introSeen';
+
+/** KST 기준 오늘 날짜 'YYYY-MM-DD'. */
+function kstToday(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** 'unknown' 동안에는 화면을 그리지 않는다 — 아래 주석 참고. */
+type IntroState = 'unknown' | 'show' | 'skip';
 
 const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'auto', label: '자동' },
@@ -286,6 +306,53 @@ function HomePage() {
   // 인트로 한 장의 높이. 화면을 꽉 채우는 대신 절반 남짓만 쓴다 — 연출은
   // 그대로 두고 기능 카드까지 내려오는 거리를 줄이기 위해서다.
   const sectionH = Math.max(INTRO_MIN_H, screenH * INTRO_RATIO);
+  const [intro, setIntro] = useState<IntroState>('unknown');
+
+  // 오늘 이미 봤는지 확인하고, 보여 주기로 했으면 그 자리에서 '봤다'로 적는다.
+  //
+  // 결론이 날 때까지 화면을 그리지 않는 이유: 이것은 스크롤 맨 위의 내용이라,
+  // 먼저 그려 놓고 나중에 붙이거나 떼면 사용자가 보던 자리가 통째로 밀린다.
+  // 저장소 읽기 한 번이라 홈이 비어 있는 시간은 한 프레임 수준이고, 어차피
+  // 브리핑은 네트워크를 기다린다.
+  //
+  // 읽기에 실패하면 보여 주는 쪽으로 넘어간다 — 처음 온 사람이 소개를 못 보는
+  // 것이, 본 사람이 한 번 더 보는 것보다 나쁘다.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      let seen: string | null = null;
+      try {
+        seen = await Storage.getItem(INTRO_SEEN_KEY);
+      } catch {
+        seen = null;
+      }
+      if (!alive) {
+        return;
+      }
+      const today = kstToday();
+      if (seen === today) {
+        setIntro('skip');
+        return;
+      }
+      setIntro('show');
+      // 저장 실패는 넘긴다 — 다음에 한 번 더 보게 될 뿐이다
+      void Storage.setItem(INTRO_SEEN_KEY, today).catch(() => undefined);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (intro === 'unknown') {
+    // 본문은 아직 그리지 않되 탭바는 그린다 — 절대배치라 나중에 본문이 붙어도
+    // 밀리지 않고, 그 사이 앱이 멈춘 것처럼 보이지 않는다.
+    return (
+      <View style={{ flex: 1, backgroundColor: p.bg }}>
+        <TabBar current="/" palette={p} onNavigate={(to) => navigation.navigate(to)} />
+      </View>
+    );
+  }
+  const showIntro = intro === 'show';
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
@@ -300,75 +367,79 @@ function HomePage() {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Intro 1: 나에게 맞는 이평선 ── */}
-        <IntroSection scrollY={scrollY} sectionH={sectionH} index={0}>
-          <Text
-            style={{
-              fontSize: 32,
-              fontWeight: '700',
-              color: p.text,
-              textAlign: 'center',
-              lineHeight: 44,
-              letterSpacing: -1,
-            }}
-          >
-            나에게 맞는{'\n'}이평선
-          </Text>
-          <Text
-            style={{
-              fontSize: 15,
-              color: p.sub,
-              textAlign: 'center',
-              marginTop: 14,
-              lineHeight: 23,
-            }}
-          >
-            종목마다 진짜 지켜온 선은 다릅니다
-          </Text>
-        </IntroSection>
+        {showIntro ? (
+          <>
+          {/* ── Intro 1: 나에게 맞는 이평선 ── */}
+          <IntroSection scrollY={scrollY} sectionH={sectionH} index={0}>
+            <Text
+              style={{
+                fontSize: 32,
+                fontWeight: '700',
+                color: p.text,
+                textAlign: 'center',
+                lineHeight: 44,
+                letterSpacing: -1,
+              }}
+            >
+              나에게 맞는{'\n'}이평선
+            </Text>
+            <Text
+              style={{
+                fontSize: 15,
+                color: p.sub,
+                textAlign: 'center',
+                marginTop: 14,
+                lineHeight: 23,
+              }}
+            >
+              종목마다 진짜 지켜온 선은 다릅니다
+            </Text>
+          </IntroSection>
 
-        {/* ── Intro 2: 이평선 레이더 ── */}
-        <IntroSection scrollY={scrollY} sectionH={sectionH} index={1}>
-          <View
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 20,
-              backgroundColor: p.primaryBg,
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginBottom: 20,
-            }}
-          >
-            <Text style={{ fontSize: 28 }}>📊</Text>
-          </View>
-          <Text
-            style={{
-              fontSize: 32,
-              fontWeight: '700',
-              color: p.text,
-              textAlign: 'center',
-              lineHeight: 44,
-              letterSpacing: -1,
-            }}
-          >
-            이평선 레이더
-          </Text>
-          <Text
-            style={{
-              fontSize: 15,
-              color: p.sub,
-              textAlign: 'center',
-              marginTop: 14,
-              lineHeight: 23,
-            }}
-          >
-            {/* 두 줄 안에 들어가야 한다 — 시스템 글자 크기를 키우면 세 번째
-                줄로 넘어가 가운데 정렬이 어색해진다. '이평선' 은 바로 위 제목이
-                말해 주므로 뺀다. */}
-            일봉 3년 · 주봉 7년 · 월봉 전체{'\n'}백테스트로 검증된 선만 찾아드려요
-          </Text>
-        </IntroSection>
+          {/* ── Intro 2: 이평선 레이더 ── */}
+          <IntroSection scrollY={scrollY} sectionH={sectionH} index={1}>
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 20,
+                backgroundColor: p.primaryBg,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 20,
+              }}
+            >
+              <Text style={{ fontSize: 28 }}>📊</Text>
+            </View>
+            <Text
+              style={{
+                fontSize: 32,
+                fontWeight: '700',
+                color: p.text,
+                textAlign: 'center',
+                lineHeight: 44,
+                letterSpacing: -1,
+              }}
+            >
+              이평선 레이더
+            </Text>
+            <Text
+              style={{
+                fontSize: 15,
+                color: p.sub,
+                textAlign: 'center',
+                marginTop: 14,
+                lineHeight: 23,
+              }}
+            >
+              {/* 두 줄 안에 들어가야 한다 — 시스템 글자 크기를 키우면 세 번째
+                  줄로 넘어가 가운데 정렬이 어색해진다. '이평선' 은 바로 위 제목이
+                  말해 주므로 뺀다. */}
+              일봉 3년 · 주봉 7년 · 월봉 전체{'\n'}백테스트로 검증된 선만 찾아드려요
+            </Text>
+          </IntroSection>
+          </>
+        ) : null}
 
         {/* ── Main content ── */}
         <View style={{ paddingHorizontal: GUTTER, gap: 12 }}>
@@ -588,13 +659,15 @@ function HomePage() {
       </Animated.ScrollView>
 
       {/* ── 첫 화면의 '시작하기' (스크롤하면 사라짐) ── */}
-      <ScrollHint
-        scrollY={scrollY}
-        sectionH={sectionH}
-        palette={p}
-        // 인트로 두 장을 건너뛰고 제목·기능 목록이 화면 위에 오게 한다
-        onPress={() => scrollRef.current?.scrollTo({ y: sectionH * 2, animated: true })}
-      />
+      {showIntro ? (
+        <ScrollHint
+          scrollY={scrollY}
+          sectionH={sectionH}
+          palette={p}
+          // 인트로 두 장을 건너뛰고 제목·기능 목록이 화면 위에 오게 한다
+          onPress={() => scrollRef.current?.scrollTo({ y: sectionH * 2, animated: true })}
+        />
+      ) : null}
 
       <TabBar current="/" palette={p} onNavigate={(to) => navigation.navigate(to)} />
     </View>
