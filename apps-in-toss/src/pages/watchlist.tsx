@@ -13,7 +13,7 @@ import {
   RowDivider,
   StarButton,
 } from '../components/ui';
-import { SCREENER_REFRESH_HOUR_KST, SCREENER_REFRESH_MIN_KST } from '../env';
+import { useRefreshDayKey } from '../refreshDay';
 import { pendingAnalyze } from '../store';
 import { GUTTER, usePalette } from '../theme';
 import { useWatchlist } from '../watchlist';
@@ -30,41 +30,38 @@ const MARKETS: Market[] = ['kr', 'us'];
 // 필요한 건 종목코드뿐인데, 탭바로 관심종목을 드나들 때마다 그 큰 응답을 두 번
 // (국내·미국) 새로 받으면 휴대폰 데이터만 축낸다.
 //
-// 유효기간을 '몇 분'이 아니라 **갱신 시각 기준 날짜**로 잡는다. 원본은 06:30 KST
-// 에 하루 한 번 새로 계산되고 종일 고정이므로, 그 경계만 넘지 않으면 아무리
-// 재사용해도 낡지 않는다. 반대로 분 단위 TTL 을 쓰면 06:20 에 채운 캐시가
-// 06:50 까지 살아남아, 같은 앱에서 '오늘의 지지선' 화면은 오늘 것을 보여주는데
-// 관심종목 배지만 어제 것을 보여주는 불일치가 생긴다.
+// 유효기간을 '몇 분'이 아니라 **갱신 시각 기준 날짜**로 잡는다. 원본은 하루 한 번
+// 새로 계산되고 종일 고정이므로, 그 경계만 넘지 않으면 아무리 재사용해도 낡지
+// 않는다. 반대로 분 단위 TTL 을 쓰면 갱신 10분 전에 채운 캐시가 갱신 20분 뒤까지
+// 살아남아, 같은 앱에서 '오늘의 지지선' 화면은 오늘 것을 보여주는데 관심종목
+// 배지만 어제 것을 보여주는 불일치가 생긴다.
+//
+// 그 경계 시각은 서버가 정한다(refreshDay.ts). 여기에 숫자를 적어 두면 서버
+// 설정이 바뀔 때 똑같은 불일치가 다시 생긴다 — 이번엔 고칠 곳이 안 보이는 채로.
 let touchedCache: { day: string; map: Map<string, number> } | null = null;
-
-/** 스크리너 갱신(06:30 KST) 기준의 '오늘' 키. 그 시각을 넘기면 값이 바뀐다. */
-function refreshDayKey(): string {
-  const kstNow = Date.now() + 9 * 60 * 60 * 1000;   // UTC → KST
-  const shifted =
-    kstNow - (SCREENER_REFRESH_HOUR_KST * 60 + SCREENER_REFRESH_MIN_KST) * 60 * 1000;
-  return new Date(shifted).toISOString().slice(0, 10);
-}
 
 /**
  * 오늘 검증된 지지선에 닿은 종목 → 그 선의 기간(MA 60 등).
  *
  * 담아 두기만 하고 끝나던 화면에 '오늘 이 종목이 지지선에 닿았나'를 들여온다.
- * 읽는 곳은 '오늘의 지지선'과 같은 결과(06:30 KST 에 하루 한 번 스캔해 고정)
- * 라서, 여기서 본다고 스캔이 다시 돌거나 DB 를 건드리는 일은 없다.
+ * 읽는 곳은 '오늘의 지지선'과 같은 결과(하루 한 번 스캔해 종일 고정)라서,
+ * 여기서 본다고 스캔이 다시 돌거나 DB 를 건드리는 일은 없다.
  *
  * 실패는 조용히 넘긴다 — 배지는 덤이라, 못 받았다고 관심종목 목록 자체를
  * 못 쓰게 만들 이유가 없다.
  */
 function useTouchedToday(): Map<string, number> {
-  const [touched, setTouched] = useState<Map<string, number>>(() => {
-    const today = refreshDayKey();
-    return touchedCache?.day === today ? touchedCache.map : new Map();
-  });
+  // 경계를 서버에서 새로 배우면 키가 바뀌고, 그러면 아래 effect 가 다시 돌아
+  // 캐시를 그 키로 다시 따진다. 옛 경계로 담아 둔 결과가 남지 않는다.
+  const today = useRefreshDayKey();
+  const [touched, setTouched] = useState<Map<string, number>>(() =>
+    touchedCache?.day === today ? touchedCache.map : new Map()
+  );
 
   useEffect(() => {
-    const today = refreshDayKey();
     if (touchedCache?.day === today) {
-      return;                      // 오늘 것을 이미 받아 뒀다 — 원본이 고정이라 그대로 쓴다
+      setTouched(touchedCache.map); // 오늘 것을 이미 받아 뒀다 — 원본이 고정이라 그대로 쓴다
+      return;
     }
     let alive = true;
     void (async () => {
@@ -91,7 +88,7 @@ function useTouchedToday(): Map<string, number> {
         }
       }
       // 아직 스캔 중이었다면 캐시하지 않는다. 캐시는 '오늘 하루' 유효하므로,
-      // 빈 결과를 넣어 버리면 06:30 재스캔 직후에 들어온 사람은 그날 내내
+      // 빈 결과를 넣어 버리면 재스캔 직후에 들어온 사람은 그날 내내
       // 배지를 못 본다 — 다음에 들어올 때 다시 받게 둔다.
       if (settled) {
         touchedCache = { day: today, map: found };
@@ -101,7 +98,7 @@ function useTouchedToday(): Map<string, number> {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [today]);
 
   return touched;
 }

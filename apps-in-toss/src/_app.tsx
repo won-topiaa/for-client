@@ -3,6 +3,7 @@ import type { InitialProps } from '@granite-js/react-native';
 import React, { useEffect, type PropsWithChildren } from 'react';
 import { context } from '../require.context';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { initRefreshDay } from './refreshDay';
 import { initWatchAlert } from './watchAlert';
 import { usePalette } from './theme';
 
@@ -15,7 +16,11 @@ function AppContainer({ children }: PropsWithChildren<InitialProps>) {
   const palette = usePalette();
   // 관심종목 알림의 동기화를 앱 전체 수명에 붙인다. 알림 설정 화면에서만
   // 붙이면, 그 화면에 안 들어간 날의 별표 변경이 서버에 닿지 않는다.
+  //
+  // 갱신 시각도 여기서 되살린다. /api/today 응답이 오기 전에 관심종목 화면을
+  // 먼저 열 수 있어서, 화면마다 부르게 두면 그 화면만 부팅값으로 남는다.
   useEffect(() => {
+    initRefreshDay();
     initWatchAlert();
   }, []);
   return <ErrorBoundary palette={palette}>{children}</ErrorBoundary>;

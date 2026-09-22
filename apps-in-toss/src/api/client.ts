@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../env';
+import { learnRefreshAt } from '../refreshDay';
 import type {
   AnalyzeResponse,
   LinesResponse,
@@ -167,7 +168,12 @@ export function fetchTouches(market: Market): Promise<TouchesResponse> {
 // 지수·공포탐욕 + 오늘 지지선 '개수'만 담긴 작은 응답. 매치 목록은 들어 있지
 // 않다 — 아침 8시 반에 모두가 동시에 여는 화면이라 가볍게 유지한다.
 export function fetchToday(): Promise<TodayResponse> {
-  return api<TodayResponse>('/api/today');
+  return api<TodayResponse>('/api/today').then((res) => {
+    // 갱신 시각의 주인은 서버다. 응답이 올 때마다 여기서 한 번 먹여 주면,
+    // 그 값을 쓰는 화면들이 각자 /api/today 를 부를 필요가 없다.
+    learnRefreshAt(res.refreshAtKst);
+    return res;
+  });
 }
 
 /* ---------- 맞춤 이평선 ---------- */

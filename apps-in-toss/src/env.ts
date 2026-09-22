@@ -26,9 +26,9 @@ export const PUSH_TEMPLATE_CODE = 'wontopia-ma-radar-morning-brief';
 // '켜 뒀는데 아직 안 온 아침'을 사용자가 고장으로 오해한다.
 export const PUSH_TIME_LABEL = '평일 아침 8시 30분';
 
-// 스크리너(오늘의 지지선·차트 패턴) 결과가 새로 계산되는 시각 (KST, 24시간).
-// 서버의 DAILY_REFRESH_KST 기본값과 **같아야 한다** — 앱은 이 시각을 기준으로
-// '오늘 결과'와 '어제 결과'를 가른다. 어긋나면 화면마다 다른 날짜의 결과를
-// 보여주게 된다.
-export const SCREENER_REFRESH_HOUR_KST = 6;
-export const SCREENER_REFRESH_MIN_KST = 30;
+// 스크리너 갱신 시각(KST)은 여기에 두지 않는다.
+//
+// 그 값의 주인은 서버(DAILY_REFRESH_KST)이고, /api/today 가 refreshAtKst 로
+// 내려준다. 앱이 숫자를 적어 두면 서버 설정을 바꾸는 순간 조용히 어긋나서,
+// 홈 브리핑 카드와 관심종목 배지가 서로 다른 날짜를 말하게 된다.
+// 쓸 일이 있으면 src/refreshDay.ts 의 refreshDayKey() / useRefreshDayKey() 를 쓴다.
