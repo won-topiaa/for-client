@@ -132,10 +132,10 @@ if (!touchesChecked) {
 // 키가 어긋나면 '오늘의 시장'이 통째로 빈칸이 된다.
 {
   const today = await get('/api/today');
-  ok = compare('TodayResponse (/api/today)', declaredFields('TodayResponse'), today, {
-    // 지수를 못 받은 날에는 서버가 asOf 를 null 로 주지만 키는 존재한다
-    optional: [],
-  }) && ok;
+  // 일곱 키를 모두 요구한다. 서버는 값이 없는 날에도 키는 넣어 주므로(asOf 는
+  // null) 이것이 정확한 기대치이고, 키가 사라지면 카드에서 그 줄이 조용히
+  // 빠지는 것을 여기서 잡는다.
+  ok = compare('TodayResponse (/api/today)', declaredFields('TodayResponse'), today) && ok;
   const side = (today.support ?? {}).kr;
   if (side) {
     ok = compare('TodaySupport (/api/today support.kr)', declaredFields('TodaySupport'), side) && ok;

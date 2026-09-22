@@ -82,7 +82,9 @@ export function TodayBrief({
     kr?.total != null ? `국내 ${kr.total}개` : null,
     us?.total != null ? `미국 ${us.total}개` : null,
   ].filter(Boolean);
-  const scanning = (kr && kr.status !== 'done') || (us && us.status !== 'done');
+  // 'error' 를 'running' 과 뭉뚱그리면 실패한 스캔을 '계산하는 중'이라고
+  // 말하고, 이 카드는 한 번만 받아 오므로 그 문구가 끝까지 남는다.
+  const scanning = kr?.status === 'running' || us?.status === 'running';
 
   return (
     <Card palette={p} style={{ gap: 4 }}>
@@ -139,7 +141,7 @@ export function TodayBrief({
               ? `오늘 검증된 지지선에 닿은 종목 · ${counted.join(' · ')}`
               : scanning
                 ? '오늘 지지선을 계산하는 중이에요 — 잠시 후 다시 열어 주세요.'
-                : '오늘 지지선 결과를 불러오지 못했어요.'}
+                : '오늘 지지선 결과를 불러오지 못했어요. 잠시 후 다시 열어 주세요.'}
           </Text>
           {counted.length > 0 ? (
             <TextButton label="오늘의 지지선 보기 →" palette={p} onPress={onOpenScreener} />

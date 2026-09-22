@@ -6,7 +6,13 @@ import { Card, Footer, Notice, PageHeader, PrimaryButton, TextButton } from '../
 import { LOG } from '../analytics';
 import { PUSH_TIME_LABEL } from '../env';
 import { isPushAvailable, useMorningPush } from '../notify';
-import { forgetWatchAlert, reconcileWatchAlert, useWatchAlert } from '../watchAlert';
+import {
+  forgetWatchAlert,
+  reconcileWatchAlert,
+  useWatchAlert,
+  watchedForAlert,
+  WATCH_ALERT_MAX,
+} from '../watchAlert';
 import { useWatchlist } from '../watchlist';
 import { GUTTER, usePalette } from '../theme';
 
@@ -186,7 +192,7 @@ function NotifyPage() {
           </Text>
           <Notice palette={p}>
             켜시면 담아 두신 종목의 <Text style={{ fontWeight: '700' }}>종목코드만</Text> 서버에
-            저장돼요 (최대 30개). 종목 이름·수량·매수가는 저장하지 않고, 끄시면 즉시
+            저장돼요 (최근 {WATCH_ALERT_MAX}개까지). 종목 이름·수량·매수가는 저장하지 않고, 끄시면 즉시
             지워집니다. 알림에는 개수만 적혀요 — 잠금화면에 종목 이름이 뜨지 않게요.
           </Notice>
           <PrimaryButton
@@ -196,7 +202,7 @@ function NotifyPage() {
                 : watchAlert.on
                   ? '관심종목 알림 끄기'
                   : watchedReady
-                    ? `관심종목 알림 받기 (${watched.length}개)`
+                    ? `관심종목 알림 받기 (${watchedForAlert(watched.length)}개)`
                     : '관심종목 확인 중…'
             }
             disabled={watchBusy || !watchedReady || (!watchAlert.on && watched.length === 0)}
@@ -222,8 +228,11 @@ function NotifyPage() {
           ) : null}
           {watchAlert.on ? (
             <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
-              지금 {watched.length}개를 보고 있어요. 관심종목을 더하거나 빼면 자동으로
-              맞춰집니다.
+              지금 {watchedForAlert(watched.length)}개를 보고 있어요. 관심종목을 더하거나
+              빼면 자동으로 맞춰집니다.
+              {watched.length > WATCH_ALERT_MAX
+                ? ` 담아 두신 ${watched.length}개 중 최근 ${WATCH_ALERT_MAX}개만 봅니다.`
+                : ''}
             </Text>
           ) : null}
           {watchProblem ? (

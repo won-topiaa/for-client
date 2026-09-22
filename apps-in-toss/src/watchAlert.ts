@@ -18,6 +18,21 @@ import { loadWatchlist, subscribeWatchlist } from './watchlist';
 
 const FLAG_KEY = 'wontopia.watchAlert';
 
+/** 서버가 보관하는 상한(app/push.py MAX_WATCH_SYMBOLS)과 같은 값.
+ *
+ *  앱에서도 잘라 보내는 이유: 서버는 초과분을 조용히 버리는데, 화면이 담아 둔
+ *  개수를 그대로 말하면 50개를 담은 사람에게 "50개를 보고 있어요"라고 하면서
+ *  실제로는 30개만 본다. 같은 수를 양쪽이 알아야 한다.
+ *
+ *  관심종목은 최근에 담은 것이 앞에 오도록 정렬돼 있으므로(watchlist.ts),
+ *  앞에서 자르면 '최근 30개'가 남는다. */
+export const WATCH_ALERT_MAX = 30;
+
+/** 알림이 실제로 보고 있는 종목 수 — 화면이 이 값을 말해야 한다. */
+export function watchedForAlert(total: number): number {
+  return Math.min(total, WATCH_ALERT_MAX);
+}
+
 /** 여러 종목을 연달아 담을 때 매번 올리지 않게 잠깐 모은다. */
 const SYNC_DEBOUNCE_MS = 2000;
 
@@ -44,7 +59,7 @@ async function syncNow(): Promise<void> {
     return; // 저장소를 못 읽었다 — 빈 목록으로 덮어쓰면 알림이 조용히 끊긴다
   }
   const key = await anonKey();
-  await pushSetWatchlist(key, items.map((x) => x.symbol));
+  await pushSetWatchlist(key, items.slice(0, WATCH_ALERT_MAX).map((x) => x.symbol));
 }
 
 function scheduleSync(): void {
@@ -116,7 +131,10 @@ export async function setWatchAlert(on: boolean): Promise<void> {
     const key = await anonKey();
     if (on) {
       const items = await loadWatchlist();
-      await pushSetWatchlist(key, (items ?? []).map((x) => x.symbol));
+      await pushSetWatchlist(
+        key,
+        (items ?? []).slice(0, WATCH_ALERT_MAX).map((x) => x.symbol),
+      );
       attachListener();
     } else {
       detachListener();
@@ -166,6 +184,17 @@ export function forgetWatchAlert(): void {
   emit(false);
   detachListener();
   void Storage.setItem(FLAG_KEY, '0').catch(() => undefined);
+}
+
+/**
+ * 앱이 켜질 때 한 번 부른다 (_app.tsx).
+ *
+ * 이게 없으면 관심종목 변경을 듣는 자리가 알림 설정 화면에만 붙는다 — 그
+ * 화면에 안 들어간 날에는 별을 담거나 빼도 서버에 닿지 않아서, 뺀 종목의
+ * 알림이 계속 오는 바로 그 상황이 된다. (이 모듈이 막겠다고 적어 둔 것이다)
+ */
+export function initWatchAlert(): void {
+  void loadFlag();
 }
 
 export function useWatchAlert(): { on: boolean; setOn: (v: boolean) => Promise<void> } {

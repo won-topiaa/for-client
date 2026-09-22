@@ -224,6 +224,13 @@ function LinesPage() {
         timerRef.current = setTimeout(() => void load(mk, pd, true), RETRY_ERROR_MS);
         return;
       }
+      if (res.unchanged) {
+        // 서버가 '직전과 같다'고만 답한 경우 — 목록이 실려 있지 않다.
+        // 그대로 setBody 하면 보고 있던 카드가 사라지고 '종목이 없습니다'가 된다.
+        // (지금은 since 를 보내지 않아 올 일이 없지만, 보내게 되는 순간 터진다)
+        setPhase('done');
+        return;
+      }
       setBody(res);
       setPhase('done');
       if (res.partial || res.refreshing) {
