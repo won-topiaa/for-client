@@ -13,6 +13,18 @@
 >
 > 자세한 내용: **[docs/REPOS.md](docs/REPOS.md)**
 
+**지금 상태가 궁금하면 [docs/STATUS.md](docs/STATUS.md) 부터 읽는다** —
+어느 버전이 심사 중이고 무엇이 브랜치에만 있는지, 남은 할 일이 정리돼 있다.
+
+| 문서 | 내용 |
+|---|---|
+| [docs/STATUS.md](docs/STATUS.md) | 현재 진행 상황 · 남은 할 일 · Neon 비용 |
+| [docs/REPOS.md](docs/REPOS.md) | 저장소가 둘인 이유, 어디를 고쳐야 배포되나 |
+| [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) | 콘솔에 넣는 출시 노트 |
+| [docs/ADS.md](docs/ADS.md) | 인앱 광고 — 무엇을 왜 고르나 |
+| [docs/APPINTOSS.md](docs/APPINTOSS.md) | 미니앱 빌드·배포 |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | 서버 배포 |
+
 종목을 검색하고 **분석** 버튼을 누르면, **일봉·주봉·월봉**별로 그동안 **가장 자주,
 믿을 만하게 지지/저항 역할을 해온 이동평균선을 2~3개씩** 백테스트로 찾아
 차트에 그려주는 웹 프로그램입니다.
