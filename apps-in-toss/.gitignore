@@ -19,3 +19,7 @@ yarn-error.log
 
 # 스크린샷용 폰트 캐시 (스크립트가 자동 다운로드)
 scripts/store/fonts/
+
+# 홍보 영상 검수용 프레임·미리보기 (make_promo_video.mjs --frames)
+store/promo_frames/
+scripts/store/promo_preview.html
