@@ -385,7 +385,10 @@ function screenStart(fontCss) {
 }
 
 function screenWide(fontCss) {
-  const iconB64 = fs.readFileSync(path.resolve(APP, '..', 'static', 'icon.png')).toString('base64');
+  // 앱 아이콘 — 이 저장소의 static/icon.png 는 2026-08-30 에 멈춘 서버 사본이라 옛 초록
+  // 아이콘이 남아 있다(docs/REPOS.md). 앱이 실제로 쓰는 건 granite.config.ts 의 brand.icon
+  // (운영 서버가 서빙하는 흰 바탕 · 남색 캔들 · 주황 이평선)이고, 그 원본을 여기 둔다.
+  const iconB64 = fs.readFileSync(path.join(HERE, 'store', 'app_icon.png')).toString('base64');
   const lines = recs.slice(0, 2).map((rec, i) => ({ color: P.ma[i % P.ma.length], points: rec.ma.slice(-100), width: 3 }));
   const m = DATA.screener.matches[0];
   return page(fontCss, `
