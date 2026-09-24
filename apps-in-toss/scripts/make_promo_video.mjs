@@ -1,8 +1,9 @@
 /**
  * 홍보 영상 — v1.3.0 (차트 패턴 · 다크 모드 · 토스 디자인)
  *
- * 1080×1920 세로 · 30fps · 약 27초 · H.264 MP4 (무음 오디오 트랙 포함 — 일부 플랫폼이
- * 오디오 트랙 없는 파일을 거부한다). 소리 없이 봐도 이해되게 자막으로만 말한다.
+ * 1080×1920 세로 · 30fps · 약 27초 · H.264 MP4 + 배경음악(AAC 192k).
+ * 음악은 make_promo_music.py 가 합성한 오리지널 곡이다(외부 음원 없음 — 저작권 걱정 없음).
+ * 소리를 끄고 봐도 이해되게 말은 자막으로만 한다 — 피드 영상 대부분은 무음으로 재생된다.
  *
  * 사용 (저장소 루트에서):
  *   node apps-in-toss/scripts/make_promo_video.mjs --fetch        # 운영 서버에서 오늘 데이터 → promo_data.json
@@ -11,6 +12,8 @@
  *   node apps-in-toss/scripts/make_promo_video.mjs --frames 100,400   # 그 프레임만 PNG 로 (검수용)
  *
  * ffmpeg: 환경변수 FFMPEG_PATH > PATH 의 ffmpeg.
+ * 음악: scripts/store/promo_music.wav 가 없으면 make_promo_music.py 를 먼저 돌린다 (numpy·scipy 필요).
+ *   영상 타임라인(T · TAPS)을 바꾸면 음악 쪽 효과음 시각도 같이 옮겨야 박자가 맞는다.
  *   (컨테이너에 없으면 `pip download imageio-ffmpeg` 휠 안의 정적 바이너리를 쓰면 된다)
  *
  * 무엇이 어디서 오나 — make_store_screenshots.mjs 와 같은 원칙(출처 단일화):
@@ -909,15 +912,20 @@ async function render(opts) {
   }
 
   const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
+  const music = path.join(HERE, 'store', 'promo_music.wav');
+  if (!fs.existsSync(music)) {
+    console.log('배경음악이 없어 먼저 만든다 (make_promo_music.py)…');
+    execFileSync('python3', [path.join(HERE, 'make_promo_music.py')], { stdio: 'inherit' });
+  }
   const total = Math.round(DURATION * FPS);
   const ff = spawn(ffmpeg, [
     '-y', '-loglevel', 'error',
     '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'png', '-i', '-',
-    '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+    '-i', music,
     '-map', '0:v', '-map', '1:a', '-shortest',
     '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p',
     '-profile:v', 'high', '-level', '4.2', '-r', String(FPS),
-    '-c:a', 'aac', '-b:a', '128k',
+    '-c:a', 'aac', '-b:a', '192k',
     '-movflags', '+faststart',
     OUT_FILE,
   ], { stdio: ['pipe', 'inherit', 'inherit'] });
