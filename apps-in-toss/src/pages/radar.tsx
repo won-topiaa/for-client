@@ -25,6 +25,7 @@ import {
   PrimaryButton,
   Segmented,
   StarButton,
+  TextButton,
 } from '../components/ui';
 import { LOG } from '../analytics';
 import { LOOKBACK_LABEL } from '../env';
@@ -411,6 +412,16 @@ function RadarPage() {
           />
           <Text style={{ fontSize: 12, color: p.faint }}>분석 기간: {LOOKBACK_LABEL}</Text>
         </Card>
+
+        {/* 1.3.5 차트 사진 분석 — 방금 본 종목이 미리 골라져 있다 */}
+        <View style={{ alignItems: 'flex-end' }}>
+          <TextButton
+            label="차트 사진으로 설명 듣기 →"
+            palette={p}
+            logName={LOG.openFeature}
+            onPress={() => navigation.navigate('/photo')}
+          />
+        </View>
 
         {loading ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>

@@ -3,6 +3,7 @@
 import { Route as _IndexRoute } from '../pages/';
 import { Route as _NotifyRoute } from '../pages/notify';
 import { Route as _PatternsRoute } from '../pages/patterns';
+import { Route as _PhotoRoute } from '../pages/photo';
 import { Route as _RadarRoute } from '../pages/radar';
 import { Route as _ScreenerRoute } from '../pages/screener';
 import { Route as _WatchlistRoute } from '../pages/watchlist';
@@ -12,6 +13,7 @@ declare module '@granite-js/react-native' {
     '/': (typeof _IndexRoute)['_inputType'];
     '/notify': (typeof _NotifyRoute)['_inputType'];
     '/patterns': (typeof _PatternsRoute)['_inputType'];
+    '/photo': (typeof _PhotoRoute)['_inputType'];
     '/radar': (typeof _RadarRoute)['_inputType'];
     '/screener': (typeof _ScreenerRoute)['_inputType'];
     '/watchlist': (typeof _WatchlistRoute)['_inputType'];
@@ -21,6 +23,7 @@ declare module '@granite-js/react-native' {
     '/': (typeof _IndexRoute)['_outputType'];
     '/notify': (typeof _NotifyRoute)['_outputType'];
     '/patterns': (typeof _PatternsRoute)['_outputType'];
+    '/photo': (typeof _PhotoRoute)['_outputType'];
     '/radar': (typeof _RadarRoute)['_outputType'];
     '/screener': (typeof _ScreenerRoute)['_outputType'];
     '/watchlist': (typeof _WatchlistRoute)['_outputType'];
