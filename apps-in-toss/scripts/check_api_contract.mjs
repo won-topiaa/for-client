@@ -100,6 +100,31 @@ if (!rec || !stat) {
   ok = compare('RecommendedMA (/api/analyze recommended)', recFields, rec) && ok;
 }
 
+// ---- /api/analyze diagnosis (차트 사진 분석과 같은 진단 블록) ----
+// /api/photo-analysis 는 사진을 보내야 해서(하루 횟수·AI 호출이 든다) 여기서
+// 부르지 않는다. 대신 그 응답의 diagnosis 와 똑같은 블록이 /api/analyze 에도
+// 실려 오므로, 화면이 읽는 진단 키는 여기서 대조한다.
+const diag = analyze.diagnosis;
+if (!diag) {
+  console.error('  ✗ Diagnosis: /api/analyze 응답에 diagnosis 가 없습니다 (서버가 1.3.5 이전 버전?).');
+  ok = false;
+} else {
+  ok = compare('Diagnosis (/api/analyze diagnosis)', declaredFields('Diagnosis'), diag) && ok;
+  const sent = (diag.timeframes?.day?.sentences ?? [])[0];
+  if (!sent) {
+    console.error('  ✗ DiagnosisSentence: 일봉 문장이 비어 대조할 수 없습니다.');
+    ok = false;
+  } else {
+    ok = compare('DiagnosisSentence', declaredFields('DiagnosisSentence'), sent) && ok;
+  }
+  const pat = (diag.patterns ?? [])[0];
+  if (pat) {
+    ok = compare('DiagnosisPattern', declaredFields('DiagnosisPattern'), pat) && ok;
+  } else {
+    console.log('  … DiagnosisPattern: 005930 에 지금 감지된 차트 모양이 없어 건너뜀');
+  }
+}
+
 // ---- /api/touches ----
 // TouchMatch 는 이름이 바뀌어 사고가 났던 바로 그 인터페이스다. 대조를 못 했으면
 // '통과'로 넘기지 않는다 — 스캔이 도는 중이거나 매치가 0건이면 잠시 뒤 다시

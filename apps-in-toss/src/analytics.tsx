@@ -20,6 +20,8 @@ export const LOG = {
   pushEnable: 'push_enable',
   /** 홈에서 기능으로 이동 */
   openFeature: 'open_feature',
+  /** 차트 사진으로 분석을 요청함 (1.3.5) */
+  photoAnalyze: 'photo_analyze',
 } as const;
 
 /**

@@ -22,7 +22,12 @@ export default defineConfig({
         // <Image source={{ uri }} /> 에 넘긴다. 사이트가 서빙하는 아이콘을 쓴다.
         icon: 'https://ma-radar.onrender.com/static/icon.png',
       },
-      permissions: [],
+      // 차트 사진 분석(1.3.5): 앨범에서 한 장 고르기 · 카메라로 찍기.
+      // 사진은 서버에서 설명을 만드는 데만 쓰고 저장하지 않는다.
+      permissions: [
+        { name: 'photos', access: 'read' },
+        { name: 'camera', access: 'access' },
+      ],
     }),
   ],
 });

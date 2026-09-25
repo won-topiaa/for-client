@@ -252,3 +252,64 @@ export interface PatternsResponse {
   matches?: PatternMatch[];
   totalMatches?: number;
 }
+
+/* ---------- 차트 사진 분석 (종합 진단) ---------- */
+
+// 서버 app/diagnosis.py · app/photo.py 의 응답. 숫자·판정은 전부 서버 엔진이
+// 그 종목의 최신 데이터로 계산한 것이고, 사진에서 읽은 숫자는 없다.
+
+/** 사실 한 줄 — area 는 '지지선'·'추세'·'모멘텀'·'변동성'·'거래량'·'차트 모양'. */
+export interface DiagnosisSentence {
+  area: string;
+  label: string;
+  text: string;
+}
+
+/** 감지된 차트 모양 하나 (감지된 것만 온다). */
+export interface DiagnosisPattern {
+  key: string;
+  name: string;
+  facts: string[];
+  summary: string;
+  overlays: PatternOverlay[];
+}
+
+export interface DiagnosisTimeframe {
+  sentences: DiagnosisSentence[];
+}
+
+export interface Diagnosis {
+  asOf: string;
+  patterns: DiagnosisPattern[];
+  timeframes: Partial<Record<Timeframe, DiagnosisTimeframe>>;
+  notice: string;
+}
+
+export interface PhotoExplanationPoint {
+  area: string;
+  text: string;
+}
+
+/**
+ * 설명 — AI(저가 비전 모델)가 쓴 것이거나, AI 를 못 쓸 때 서버가 사실 문장으로
+ * 만든 템플릿. by 가 'template' 이면 reason 에 이유가 온다.
+ */
+export interface PhotoExplanation {
+  by: string;
+  reason: 'no_key' | 'budget' | 'error' | 'filtered' | null;
+  isChart: boolean | null;
+  sameStock: 'yes' | 'no' | 'unclear';
+  timeframe: 'day' | 'week' | 'month' | 'intraday' | 'unclear';
+  photoNote: string;
+  summary: string;
+  points: PhotoExplanationPoint[];
+}
+
+export interface PhotoAnalysisResponse {
+  symbol: string;
+  name: string;
+  asOf: string;
+  explanation: PhotoExplanation;
+  diagnosis: Diagnosis;
+  notice: string;
+}

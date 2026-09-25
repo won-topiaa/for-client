@@ -486,6 +486,38 @@ function HomePage() {
             />
           </FeatureCard>
 
+          {/* ── 기능 1-2: 차트 사진 분석 (1.3.5) ── */}
+          <FeatureCard
+            title="차트 사진 분석"
+            desc="차트 사진과 종목을 올리면 지표를 모두 모아 쉽게 설명해 드려요"
+            glyph="📷"
+            accent="blue"
+            palette={p}
+            onPress={() => navigation.navigate('/photo')}
+          >
+            <Bullet
+              glyph="📷"
+              accent="blue"
+              title="사진과 종목을 올리세요"
+              body="증권 앱 차트 화면을 캡처하거나 찍어서 올리고, 어떤 종목인지 골라 주세요. 사진은 저장하지 않아요."
+              palette={p}
+            />
+            <Bullet
+              glyph="🧮"
+              accent="blue"
+              title="그 종목의 지표를 전부 계산해요"
+              body="지지선 · 이평선 배열 · 150일선 흐름 · 1년 범위 · RSI · MACD · 볼린저 밴드 · 변동성 · 거래량을 그 종목의 최신 데이터로 계산하고, 쌍바닥 · 쌍봉 같은 차트 모양은 보일 때만 알려 드려요."
+              palette={p}
+            />
+            <Bullet
+              glyph="💬"
+              accent="orange"
+              title="쉬운 말로 풀어 드려요"
+              body="사진에서 보이는 모양과 계산한 사실을 한 번에 읽을 수 있게 정리해요. 앞으로의 가격을 말하거나 사고팔기를 권하지 않아요."
+              palette={p}
+            />
+          </FeatureCard>
+
           {/* ── 기능 2: 오늘의 지지선 ── */}
           <FeatureCard
             title="오늘의 지지선"

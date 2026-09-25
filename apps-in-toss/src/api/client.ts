@@ -7,6 +7,7 @@ import type {
   Market,
   PatternKey,
   PatternsResponse,
+  PhotoAnalysisResponse,
   SearchResponse,
   TouchesResponse,
 } from './types';
@@ -49,11 +50,13 @@ function detailMessage(detail: unknown, status: number): string {
 }
 
 /** 요청별 제한 시간(ms). 서버가 잠들어 있으면 깨우는 데만 1분 가까이 걸린다. */
-const TIMEOUT_MS = { search: 15000, analyze: 60000, touches: 30000, default: 30000 };
+// 사진 분석은 종목 분석(잠든 서버면 최대 1분) 뒤에 AI 설명(최대 30초)이 이어진다.
+const TIMEOUT_MS = { search: 15000, analyze: 60000, photo: 95000, touches: 30000, default: 30000 };
 
 function timeoutFor(path: string): number {
   if (path.startsWith('/api/search')) return TIMEOUT_MS.search;
   if (path.startsWith('/api/analyze')) return TIMEOUT_MS.analyze;
+  if (path.startsWith('/api/photo-analysis')) return TIMEOUT_MS.photo;
   if (path.startsWith('/api/touches')) return TIMEOUT_MS.touches;
   return TIMEOUT_MS.default;
 }
@@ -111,6 +114,8 @@ async function api<T>(path: string, send?: Send): Promise<T> {
   if (a.kind === 'offline') {
     // POST 도 재시도해도 안전하다 — 알림 구독 등록·해지는 모두 멱등이라
     // 두 번 도착해도 결과가 같다 (서버: app/push.py subscribe/unsubscribe).
+    // 사진 분석은 멱등이 아니지만(하루 횟수 1회 차감), 연결 자체가 실패한
+    // 요청은 서버에 닿지 않았으므로 다시 보내도 두 번 세지 않는다.
     a = await fetchOnce(path, ms, send);
   }
 
@@ -128,6 +133,19 @@ async function api<T>(path: string, send?: Send): Promise<T> {
   if (res.status === 429) {
     // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
     // 그대로 두면 'HTTP 429' 라는 날 코드가 화면에 뜬다.
+    // 사진 분석의 '하루 10번' 한도는 JSON detail 로 온다 — 그 문장을 그대로 보여 준다.
+    // (분당 제한과 달리 30초 뒤 다시 해도 소용없다)
+    if ((res.headers.get('content-type') ?? '').includes('application/json')) {
+      let daily: unknown = null;
+      try {
+        daily = ((await res.json()) as { detail?: unknown }).detail;
+      } catch {
+        daily = null;
+      }
+      if (typeof daily === 'string' && daily) {
+        throw new ApiError(daily, 429);
+      }
+    }
     const raw = Number(res.headers.get('retry-after'));
     // 문구가 '자동으로 다시 시도한다'고 약속하면 안 된다 — 자동 재폴링을 거는
     // 화면은 스크리너뿐이고, 그 화면은 이 메시지를 아예 띄우지 않는다(백오프 후
@@ -254,4 +272,20 @@ export interface BriefResponse {
 
 export function fetchBrief(): Promise<BriefResponse> {
   return api<BriefResponse>('/api/brief');
+}
+
+/* ---------- 차트 사진 분석 ---------- */
+
+export interface PhotoAnalysisRequest {
+  /** 종목은 필수 — 사진에서 종목을 알아내게 하면 잘린 캡처에서 엉뚱한 종목을 분석한다. */
+  symbol: string;
+  name: string;
+  /** base64 (data URI 접두어 없이). 서버가 파일 머리 바이트로 형식을 확인한다. */
+  image: string;
+  /** 하루 이용 횟수를 사람 단위로 세기 위한 익명 식별값. 없으면 서버가 IP 로 센다. */
+  clientKey?: string;
+}
+
+export function analyzePhoto(req: PhotoAnalysisRequest): Promise<PhotoAnalysisResponse> {
+  return api<PhotoAnalysisResponse>('/api/photo-analysis', { json: req });
 }
