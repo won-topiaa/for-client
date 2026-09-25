@@ -317,7 +317,8 @@ function PhotoPage() {
       setTf(shown === 'week' || shown === 'month' ? shown : 'day');
       setResult(body);
       // 결과가 버튼 아래에 붙는다 — 사용자가 스크롤을 찾지 않게 내려 준다
-      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, resultY.current - 12), animated: true }), 50);
+      // 결과 묶음의 onLayout 이 먼저 돌아야 위치를 안다 — 한 프레임으로는 모자란 기기가 있다
+      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, resultY.current - 12), animated: true }), 250);
     } catch (e) {
       if (seq === runSeq.current) {
         setErrorMsg(e instanceof Error ? e.message : '분석하지 못했어요.');
