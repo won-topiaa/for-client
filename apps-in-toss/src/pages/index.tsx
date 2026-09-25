@@ -403,7 +403,7 @@ function HomePage() {
             <Bullet
               glyph="💡"
               accent="orange"
-              title="투자에 이렇게 써보세요"
+              title="이렇게 살펴보세요"
               body="남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요. 차트 마커로 과거 반응도 한눈에 볼 수 있어요."
               palette={p}
             />
@@ -467,8 +467,8 @@ function HomePage() {
             <Bullet
               glyph="💡"
               accent="orange"
-              title="투자에 이렇게 써보세요"
-              body="장 마감 후 확인하면 오늘 검증된 지지선에 닿은 종목이 한눈에 보여요. 성공률과 차트로 매수 타이밍을 판단해 보세요."
+              title="이렇게 살펴보세요"
+              body="장 마감 후 확인하면 오늘 검증된 지지선에 닿은 종목이 한눈에 보여요. 그 선에서 과거에 몇 번 버텼는지와 차트를 함께 살펴보세요. 사고팔 때를 알려 주는 신호는 아니에요."
               palette={p}
             />
           </FeatureCard>
@@ -499,7 +499,7 @@ function HomePage() {
             <Bullet
               glyph="💡"
               accent="orange"
-              title="투자에 이렇게 써보세요"
+              title="이렇게 살펴보세요"
               body="차트에 패턴의 보조선(넥라인·추세선)을 같이 그려드려요. 모양이 맞는지 눈으로 확인하고 관심종목에 담아 두세요."
               palette={p}
             />
