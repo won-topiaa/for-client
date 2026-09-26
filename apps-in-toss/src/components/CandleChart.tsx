@@ -165,11 +165,13 @@ export function CandleChart({
         if (len < 0.5) {
           continue;
         }
+        // 선분을 선 굵기만큼 늘려 이웃 선분과 겹치게 한다 — 딱 맞추면 회전한 상자 사이가
+        // 벌어져 평균선이 점선처럼 보인다(봉이 많아 선분이 짧을수록 심하다)
         lineBoxes.push({
           key: `l${li}-${i}`,
-          left: (a.px + b.px) / 2 - len / 2,
+          left: (a.px + b.px) / 2 - (len + lw) / 2,
           top: (a.py + b.py) / 2 - lw / 2,
-          width: len,
+          width: len + lw,
           height: lw,
           color: line.color,
           radius: lw / 2,
