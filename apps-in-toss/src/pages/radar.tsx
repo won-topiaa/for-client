@@ -221,6 +221,8 @@ function RadarPage() {
 
   // 스크리너 카드에서 "이평선 분석 →" 로 넘어온 경우: 포커스 때 심볼을 읽어 자동 분석
   useEffect(() => {
+    // 화면을 떠난 뒤 늦게 끝난 검색이 분석(서버에서 가장 무거운 요청)을 시작하지 않게
+    let alive = true;
     const consumePending = () => {
       const sym = pendingAnalyze.symbol;
       if (!sym) {
@@ -244,15 +246,18 @@ function RadarPage() {
         } catch {
           // 검색 실패 → 심볼 그대로 진행
         }
-        if (mySeq !== searchSeq.current) {
-          return; // 사용자가 그 사이에 다른 종목을 골랐다
+        if (!alive || mySeq !== searchSeq.current) {
+          return; // 화면을 떠났거나, 사용자가 그 사이에 다른 종목을 골랐다
         }
         pick(hit, true);
       })();
     };
     consumePending();
     const unsubscribe = navigation.addListener('focus', consumePending);
-    return unsubscribe;
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
   }, [navigation, pick]);
 
   /* ---------- 현재 타임프레임 데이터 ---------- */

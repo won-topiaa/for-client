@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Text, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, Animated, Text, TouchableOpacity, View } from 'react-native';
 import { TIPS, type Tip, type TipCategory } from '../tips';
 import type { Palette } from '../theme';
 import { SlingshotGame } from './SlingshotGame';
@@ -77,6 +77,13 @@ export function WaitingShow({
     });
   }, [fade]);
 
+  // 스크린리더에는 시작할 때 한 번만 알린다 — 제목에 진행 숫자(57/300 종목)가 들어가는
+  // 화면이 있어, 제목을 라이브 영역으로 두면 2초마다 제목 전체를 다시 읽어 준다.
+  const firstTitle = useRef(title);
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility?.(firstTitle.current);
+  }, []);
+
   // 글 넘기기 — 사용자가 직접 넘기면 그때부터 다시 센다
   useEffect(() => {
     const t = setTimeout(next, TIP_MS);
@@ -91,12 +98,7 @@ export function WaitingShow({
   return (
     <View style={{ backgroundColor: p.card, borderRadius: 16, padding: 20, gap: 14 }}>
       <View style={{ alignItems: 'center', gap: 4 }}>
-        <Text
-          accessibilityLiveRegion="polite"
-          style={{ fontSize: 16, fontWeight: '700', color: p.text, textAlign: 'center' }}
-        >
-          {title}
-        </Text>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: p.text, textAlign: 'center' }}>{title}</Text>
         <Elapsed prefix={subtitle ? `${subtitle} · ` : ''} color={p.faint} />
       </View>
 

@@ -486,7 +486,7 @@ function HomePage() {
               glyph="📈"
               accent="violet"
               title="초기 상승추세"
-              body="바닥에서 오래 눌려 있다가 이제 막 위로 방향을 튼 종목을 찾아요. 이미 많이 오른 종목이 아니라 '막 출발한' 구간이에요."
+              body="긴 횡보 뒤에 주가가 장기 이동평균선 위로 올라선 모양을 찾아요."
               palette={p}
             />
             <Bullet

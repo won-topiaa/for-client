@@ -21,10 +21,10 @@ export const DISCLAIMER =
 // 없는 스위치를 내보내면 사용자에게도, 심사자에게도 고장으로 보인다.
 export const PUSH_TEMPLATE_CODE = 'wontopia-ma-radar-morning-brief';
 
-// 알림이 가는 시각. 서버의 크론(ma-radar/.github/workflows/morning-push.yml,
-// '30 23 * * 1-5' UTC)과 **같은 값**이어야 한다 — 화면이 '아침'이라고만 말하면
-// '켜 뒀는데 아직 안 온 아침'을 사용자가 고장으로 오해한다.
-export const PUSH_TIME_LABEL = '평일 아침 8시 30분';
+// 알림이 가는 시각. 서버 스케줄러(ma-radar app/server.py _MORNING_PUSH_KST_WEEKDAYS,
+// 미국 장이 열린 다음 날 = 한국 시간 화~토 08:30)와 **같은 값**이어야 한다 — 화면이
+// '평일'이라고 하면 월요일에 안 오고 토요일에 오는 알림을 사용자가 고장으로 오해한다.
+export const PUSH_TIME_LABEL = '화~토 아침 8시 30분';
 
 // 스크리너(오늘의 지지선·차트 패턴) 결과가 새로 계산되는 시각 (KST, 24시간).
 // 서버의 DAILY_REFRESH_KST 기본값과 **같아야 한다** — 앱은 이 시각을 기준으로

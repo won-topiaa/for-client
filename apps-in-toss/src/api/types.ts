@@ -123,6 +123,8 @@ export interface TouchesResponse {
   generatedAt?: string | number;
   matches?: TouchMatch[];
   totalMatches?: number;
+  /** 닿은 종목 코드 전부 (matches 는 상위 몇 개뿐). 예전 서버는 보내지 않는다. */
+  touchedSymbols?: string[];
 }
 
 /* ---------- 차트 패턴 스크리너 ---------- */

@@ -64,8 +64,9 @@ type Attempt =
   | { kind: 'timeout' }
   | { kind: 'offline' };
 
-/** 본문을 보내는 요청(POST)의 재료. 없으면 GET. */
-type Send = { json: unknown };
+/** 본문을 보내는 요청(POST)의 재료. 없으면 GET.
+ *  once: 연결이 끊겨도 다시 보내지 않는다 — 두 번 도착하면 안 되는 요청(사진 분석). */
+type Send = { json: unknown; once?: boolean };
 
 /** 제한 시간을 건 fetch 한 번. */
 async function fetchOnce(path: string, ms: number, send?: Send): Promise<Attempt> {
@@ -108,16 +109,21 @@ async function api<T>(path: string, send?: Send): Promise<T> {
   // 재시도는 '연결 실패'에만. 제한 시간을 다 쓴 뒤 또 기다리면 사용자가 보는
   // 대기 시간이 두 배가 된다(분석 60초 → 120초). 끊긴 연결은 대개 즉시 돌아오니
   // 재시도해도 체감이 늘지 않는다.
-  if (a.kind === 'offline') {
-    // POST 도 재시도해도 안전하다 — 알림 구독 등록·해지는 모두 멱등이라
-    // 두 번 도착해도 결과가 같다 (서버: app/push.py subscribe/unsubscribe).
-    // 사진 분석은 멱등이 아니지만(하루 횟수 1회 차감), 연결 자체가 실패한
-    // 요청은 서버에 닿지 않았으므로 다시 보내도 두 번 세지 않는다.
+  if (a.kind === 'offline' && !send?.once) {
+    // 알림 구독 등록·해지 POST 는 멱등이라 두 번 도착해도 결과가 같다
+    // (서버: app/push.py subscribe/unsubscribe). 사진 분석은 다르다 — fetch 가
+    // 실패했다고 서버에 안 닿았다는 보장이 없다(본문을 다 올린 뒤 끊긴 연결도
+    // 같은 예외로 온다). 다시 보내면 하루 횟수가 두 번 깎인다 — once 로 막는다.
     a = await fetchOnce(path, ms, send);
   }
 
   if (a.kind === 'offline') {
-    throw new ApiError('네트워크에 연결할 수 없어요. 연결 상태를 확인해 주세요.', 0);
+    throw new ApiError(
+      send?.once
+        ? '연결이 끊겼어요. 연결 상태를 확인하고 다시 시도해 주세요.'
+        : '네트워크에 연결할 수 없어요. 연결 상태를 확인해 주세요.',
+      0
+    );
   }
   if (a.kind === 'timeout') {
     throw new ApiError(
@@ -128,34 +134,33 @@ async function api<T>(path: string, send?: Send): Promise<T> {
   }
   const res = a.res;
   if (res.status === 429) {
-    // 레이트리밋 응답은 JSON 이 아니라 text/plain 이라 파싱하지 않는다.
-    // 그대로 두면 'HTTP 429' 라는 날 코드가 화면에 뜬다.
-    // 사진 분석의 '하루 10번' 한도는 JSON detail 로 온다 — 그 문장을 그대로 보여 준다.
-    // (분당 제한과 달리 30초 뒤 다시 해도 소용없다)
+    // 분당 제한은 Retry-After 헤더(초)를 함께 보낸다 — 폴링 화면이 그만큼 물러선다.
+    // 사진 분석의 '하루 10번' 한도는 헤더 없이 JSON detail 만 온다(30초 뒤 다시 해도 소용없다).
+    const raw = Number(res.headers.get('retry-after'));
+    const retryAfter = Number.isFinite(raw) && raw > 0 ? raw : undefined;
+    let detail: unknown = null;
     if ((res.headers.get('content-type') ?? '').includes('application/json')) {
-      let daily: unknown = null;
       try {
-        daily = ((await res.json()) as { detail?: unknown }).detail;
+        detail = ((await res.json()) as { detail?: unknown }).detail;
       } catch {
-        daily = null;
-      }
-      if (typeof daily === 'string' && daily) {
-        throw new ApiError(daily, 429);
+        detail = null;
       }
     }
-    const raw = Number(res.headers.get('retry-after'));
     // 문구가 '자동으로 다시 시도한다'고 약속하면 안 된다 — 자동 재폴링을 거는
-    // 화면은 스크리너뿐이고, 그 화면은 이 메시지를 아예 띄우지 않는다(백오프 후
-    // 조용히 재시도). 즉 이 문구가 보이는 곳은 자동 재시도가 없는 화면뿐이다.
+    // 화면은 이 메시지를 아예 띄우지 않는다(백오프 후 조용히 재시도).
     throw new ApiError(
-      '요청이 너무 잦아요 — 30초쯤 뒤에 다시 시도해 주세요.',
+      typeof detail === 'string' && detail ? detail : '요청이 너무 잦아요 — 30초쯤 뒤에 다시 시도해 주세요.',
       429,
-      Number.isFinite(raw) && raw > 0 ? raw : undefined
+      retryAfter
     );
   }
   const body: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = body && typeof body === 'object' ? (body as { detail?: unknown }).detail : undefined;
+    // 배포 재시작·메모리 초과 때 Render 가 HTML 502/503 을 돌려준다 — 'HTTP 502' 날 코드 대신
+    if (res.status >= 500 && typeof detail !== 'string') {
+      throw new ApiError('서버가 잠시 불안정해요. 잠시 후 다시 시도해 주세요.', res.status);
+    }
     throw new ApiError(detailMessage(detail, res.status), res.status);
   }
   return body as T;
@@ -244,5 +249,6 @@ export interface PhotoAnalysisRequest {
 }
 
 export function analyzePhoto(req: PhotoAnalysisRequest): Promise<PhotoAnalysisResponse> {
-  return api<PhotoAnalysisResponse>('/api/photo-analysis', { json: req });
+  // 한 번만 보낸다 — 서버가 받자마자 하루 횟수를 깎는다 (위 api() 의 once 참고)
+  return api<PhotoAnalysisResponse>('/api/photo-analysis', { json: req, once: true });
 }
