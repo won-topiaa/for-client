@@ -118,7 +118,7 @@
 ```
 서버 테스트        625 passed, 1 skipped
 tsc --noEmit       clean (1.3.5 · 1.4.0)
-check_api_contract 1.3.5 계약 일치 / 1.4.0 은 /api/lines 스캔이 끝난 뒤 다시 돌린다
+check_api_contract 계약 일치 (1.3.5 · 1.4.0 둘 다, /api/lines · /api/today 포함)
 ait build (1.3.5)  0 errors / 0 warnings (RN 0.84 · 0.72 양쪽) → wontopia-ma-radar-1.3.5.ait
 운영 사진 분석      gemini-3.1-flash-lite · 7.7초 · 권유/전망 문장 없음 (005930 테스트 사진)
 운영 스캔 범위      국내 300 · 미국 475 (배포 직후 재스캔 중 확인)
