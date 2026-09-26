@@ -3,6 +3,7 @@ import { Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { maybeTrack } from '../analytics';
 import { BRAND_NAME, CONTACT_EMAIL, DISCLAIMER } from '../env';
 import { accentBg, GUTTER, RADIUS, type AccentKey, type Palette } from '../theme';
+import { lh } from '../lineHeight';
 
 // 페이지 공용 소형 UI — 토스 앱의 시각 언어(TDS)를 따른다.
 //
@@ -33,7 +34,7 @@ export function PageHeader({
         {title}
       </Text>
       {subtitle ? (
-        <Text style={{ fontSize: 15, color: p.sub, marginTop: 6, lineHeight: 22 }}>{subtitle}</Text>
+        <Text style={{ fontSize: 15, color: p.sub, marginTop: 6, ...lh(22) }}>{subtitle}</Text>
       ) : null}
     </View>
   );
@@ -177,7 +178,7 @@ export function Notice({
         paddingHorizontal: 14,
       }}
     >
-      <Text style={{ fontSize: 13, color: warn ? p.warnText : p.sub, lineHeight: 20 }}>
+      <Text style={{ fontSize: 13, color: warn ? p.warnText : p.sub, ...lh(20) }}>
         {children}
       </Text>
     </View>
@@ -265,7 +266,7 @@ export function MenuRow({
           {badge ? <Badge label={badge} palette={p} tone="primary" /> : null}
         </View>
         {desc ? (
-          <Text style={{ fontSize: 13.5, color: p.sub, marginTop: 3, lineHeight: 20 }}>{desc}</Text>
+          <Text style={{ fontSize: 13.5, color: p.sub, marginTop: 3, ...lh(20) }}>{desc}</Text>
         ) : null}
       </View>
       {/* 꺾쇠는 장식 — 행 전체가 이미 하나의 버튼이고 읽을 이름도 달려 있다 */}
@@ -657,7 +658,7 @@ export function Footer({ palette: p }: { palette: Palette }) {
     <View style={{ paddingVertical: 24, paddingHorizontal: 2, gap: 8 }}>
       {/* 면책 문구는 고지 의무가 있는 글이다 — 장식용 회색(disabled)으로 칠하면
           화면에 있어도 읽히지 않아 고지한 것이 되지 않는다 */}
-      <Text style={{ fontSize: 12, color: p.faint, lineHeight: 18 }}>⚠ {DISCLAIMER}</Text>
+      <Text style={{ fontSize: 12, color: p.faint, ...lh(18) }}>⚠ {DISCLAIMER}</Text>
       <Text style={{ fontSize: 12, color: p.faint }}>
         {BRAND_NAME} · 문의 {CONTACT_EMAIL}
       </Text>

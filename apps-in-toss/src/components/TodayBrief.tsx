@@ -4,6 +4,7 @@ import { fetchToday } from '../api/client';
 import type { TodayResponse } from '../api/types';
 import type { Palette } from '../theme';
 import { Card, TextButton } from './ui';
+import { lh } from '../lineHeight';
 
 // 아침 브리핑 한 장 — 알림을 누르고 들어온 사람이 처음 보는 자리.
 //
@@ -105,7 +106,8 @@ export function TodayBrief({
           <Text style={{ fontSize: 13.5, color: p.sub }}>오늘 시장을 불러오는 중…</Text>
         </View>
       ) : labels.length === 0 ? (
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, paddingVertical: 6 }}>
+        {/* paddingBottom 이 paddingVertical 보다 앞서므로 lh() 대신 직접 — 6 + 0.1(마지막 줄 잘림 방지, lineHeight.ts) */}
+        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, paddingTop: 6, paddingBottom: 6.1 }}>
           지금은 지수를 불러올 수 없어요. 잠시 후 다시 열어 주세요.
         </Text>
       ) : (
@@ -120,7 +122,7 @@ export function TodayBrief({
       )}
 
       {body?.missing && body.missing.length > 0 ? (
-        <Text style={{ fontSize: 12, color: p.faint, lineHeight: 18 }}>
+        <Text style={{ fontSize: 12, color: p.faint, ...lh(18) }}>
           오늘은 {body.missing.join('·')} 값을 받지 못했어요.
         </Text>
       ) : null}
@@ -136,7 +138,7 @@ export function TodayBrief({
             gap: 8,
           }}
         >
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
             {counted.length > 0
               ? `오늘 검증된 지지선에 닿은 종목 · ${counted.join(' · ')}`
               : scanning

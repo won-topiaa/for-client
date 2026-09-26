@@ -7,12 +7,15 @@ import type {
   DiagnosisSentence,
   PhotoAnalysisResponse,
   PhotoChart,
+  PhotoQuota,
   Timeframe,
 } from '../api/types';
 import type { Palette } from '../theme';
 import { LOG, Track } from '../analytics';
 import { CandleChart } from './CandleChart';
+import { QuotaMeter } from './QuotaMeter';
 import { Badge, Card, Chevron, Expandable, Notice, Segmented } from './ui';
+import { lh } from '../lineHeight';
 
 // 차트 사진 분석 결과 — 초보자가 위에서부터 읽어 내려가게.
 //
@@ -138,12 +141,12 @@ function QaRow({ q, a, palette: p }: { q: string; a: string; palette: Palette })
           >
             <Text style={{ fontSize: 14, fontWeight: '800', color: p.primary }}>?</Text>
           </View>
-          <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: p.text, lineHeight: 21 }}>{q}</Text>
+          <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: p.text, ...lh(21) }}>{q}</Text>
           <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={8} />
         </TouchableOpacity>
       </Track>
       {open ? (
-        <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21, paddingLeft: 36 }}>{a}</Text>
+        <Text style={{ fontSize: 14, color: p.sub, ...lh(21), paddingLeft: 36 }}>{a}</Text>
       ) : null}
     </View>
   );
@@ -162,11 +165,11 @@ function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: 
         {/* 상태 값은 한 가지 색 — 초록/빨강을 칠하면 좋다·나쁘다로 읽힌다 */}
         <Text style={{ fontSize: 15, fontWeight: '700', color: p.primary, flexShrink: 0 }}>{row.value}</Text>
       </View>
-      <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 22 }}>{row.text}</Text>
+      <Text style={{ fontSize: 14.5, color: p.sub, ...lh(22) }}>{row.text}</Text>
       {row.pos != null ? <RangeBar pos={row.pos} span={row.span} palette={p} /> : null}
       {open ? (
         <View style={{ backgroundColor: p.sunken, borderRadius: 10, padding: 12, gap: 4 }}>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 20 }}>{row.help}</Text>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(20) }}>{row.help}</Text>
           {row.term && row.term !== row.name ? (
             <Text style={{ fontSize: 12.5, color: p.faint }}>증권 앱에서는 이렇게 불러요: {row.term}</Text>
           ) : null}
@@ -257,20 +260,27 @@ function Ladder({ ladder, palette: p }: { ladder: DiagnosisLadder; palette: Pale
 function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: string; palette: Palette }) {
   const hasMa = chart.lines.some((l) => l.kind === 'ma');
   const hasPat = chart.lines.some((l) => l.kind === 'pattern');
-  const what =
-    hasMa && hasPat ? '앱이 고른 평균선과 감지된 모양의 선을' : hasMa ? '앱이 고른 평균선을' : hasPat ? '감지된 모양의 선을' : null;
+  const hasLevel = chart.lines.some((l) => l.kind === 'level');
+  const parts = [
+    hasMa ? '앱이 고른 평균선' : null,
+    hasPat ? '감지된 모양의 선' : null,
+    hasLevel ? '주가가 여러 번 방향을 바꾼 가격(가로 점선)' : null,
+  ].filter(Boolean);
   const n = chart.candles.length;
-  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${what ? ` 그 위에 ${what} 겹쳐 그렸어요.` : ''}`;
+  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${parts.length ? ` 그 위에 ${parts.join(', ')}을 겹쳐 그렸어요.` : ''}`;
+  // 평균선·모양 선은 색을 돌려 쓰고, 가로 가격선은 한 가지 무채색 점선 — 추세선과 섞여 보이지 않게
   const colors = [p.primary, p.ma[1] ?? p.warn, p.ma[2] ?? p.sub, p.ma[3] ?? p.faint];
-  const lines = chart.lines.map((ln, i) => ({
-    color: colors[i % colors.length] ?? p.primary,
-    points: ln.points,
-    width: ln.kind === 'ma' ? 2 : 1.5,
-  }));
+  let ci = 0;
+  const styled = chart.lines.map((ln) =>
+    ln.kind === 'level'
+      ? { ...ln, color: p.sub, width: 1.5, dashed: true }
+      : { ...ln, color: colors[ci++ % colors.length] ?? p.primary, width: ln.kind === 'ma' ? 2 : 1.5, dashed: false }
+  );
+  const lines = styled.map((ln) => ({ color: ln.color, points: ln.points, width: ln.width, dashed: ln.dashed }));
   return (
     <Card palette={p} style={{ gap: 12 }}>
       <BarTitle title="선을 그린 차트" palette={p} />
-      <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
+      <Text style={{ fontSize: 14, color: p.sub, ...lh(21) }}>
         {intro}
       </Text>
       <CandleChart
@@ -282,17 +292,33 @@ function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: st
       />
       {chart.lines.length > 0 ? (
         <View style={{ gap: 6 }}>
-          {chart.lines.map((ln, i) => (
+          {styled.map((ln, i) => (
             <View key={`${ln.name}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: colors[i % colors.length] }} />
+              {ln.dashed ? (
+                <View style={{ width: 16, flexDirection: 'row', justifyContent: 'space-between' }}>
+                  {[0, 1, 2].map((k) => (
+                    <View key={k} style={{ width: 4, height: 2, borderRadius: 1, backgroundColor: ln.color }} />
+                  ))}
+                </View>
+              ) : (
+                <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: ln.color }} />
+              )}
               <Text style={{ fontSize: 13, color: p.sub, flexShrink: 1 }}>{ln.name}</Text>
             </View>
           ))}
         </View>
       ) : (
-        <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 앱이 고른 평균선이나 감지된 모양이 없어 캔들만 그렸어요.</Text>
+        <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 겹쳐 그릴 선이 없어 캔들만 그렸어요.</Text>
       )}
-      <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+      {hasLevel ? (
+        // 지난 사실만 — 선마다 '지지선/저항선'이라 이름 붙이지 않는다(지금 가격 아래·위의 이름 붙은 선은
+        // 손절가·목표가로 읽힌다). 흔히 부르는 이름은 용어 풀이로만 알려 준다.
+        <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
+          가로 점선은 최근 1년 동안 주가가 여러 번 오르다 꺾이거나 내리다 돌아선 가격이에요. 증권 앱에서는
+          지지선·저항선이라고 불러요. 다음에도 그 가격에서 멈춘다는 뜻은 아니에요.
+        </Text>
+      ) : null}
+      <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
         사진 위에 직접 그리지 않은 건, 증권 앱마다 가격 눈금이 달라 선 위치가 어긋날 수 있어서예요.
       </Text>
     </Card>
@@ -340,6 +366,7 @@ export function PhotoResult({
   onAgain,
   onOpenRadar,
   onAskPush,
+  quota,
 }: {
   palette: Palette;
   result: PhotoAnalysisResponse;
@@ -349,6 +376,8 @@ export function PhotoResult({
   onOpenRadar: () => void;
   /** 아침 알림을 안 받는 사람에게만 — 누르면 바텀시트를 연다 */
   onAskPush?: () => void;
+  /** 오늘 남은 분석 횟수 — '다른 차트도 분석하기' 바로 위에 한 줄로 */
+  quota?: PhotoQuota | null;
 }) {
   const ex = result.explanation;
   const diag = result.diagnosis;
@@ -422,7 +451,7 @@ export function PhotoResult({
           {/* 제목·지표는 엔진 계산, AI 는 요약·사진 설명만 — 배지가 전부 AI 판단처럼 보이지 않게 */}
           <Badge label={byAi ? 'AI 요약 포함' : '기본 설명'} tone={byAi ? 'primary' : 'plain'} palette={p} />
         </View>
-        <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, lineHeight: 31 }}>
+        <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, ...lh(31) }}>
           {headline}
         </Text>
         {yearPos != null ? <RangeBar pos={yearPos} span={yearSpan} palette={p} /> : null}
@@ -436,7 +465,7 @@ export function PhotoResult({
             ))}
           </View>
         ) : null}
-        <Text style={{ fontSize: 15, color: p.sub, lineHeight: 24 }}>{ex.summary}</Text>
+        <Text style={{ fontSize: 15, color: p.sub, ...lh(24) }}>{ex.summary}</Text>
         <Text style={{ fontSize: 12.5, color: p.faint }}>
           {who} · {result.symbol} · {result.asOf} 종가 기준
         </Text>
@@ -457,7 +486,7 @@ export function PhotoResult({
           <Text style={{ fontSize: 12.5, fontWeight: '700', color: p.faint }}>
             {byAi ? '사진에서 보이는 것' : '안내'}
           </Text>
-          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>{ex.photoNote}</Text>
+          <Text style={{ fontSize: 14, color: p.sub, ...lh(21) }}>{ex.photoNote}</Text>
         </View>
       </Card>
 
@@ -470,14 +499,14 @@ export function PhotoResult({
           {diag.patterns.map((pt) => (
             <View key={pt.key} style={{ gap: 6 }}>
               <Text style={{ fontSize: 19, fontWeight: '800', color: p.text }}>{pt.name}</Text>
-              {pt.help ? <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 22 }}>{pt.help}</Text> : null}
+              {pt.help ? <Text style={{ fontSize: 14.5, color: p.sub, ...lh(22) }}>{pt.help}</Text> : null}
               {pt.note ? (
                 <View style={{ backgroundColor: p.sunken, borderRadius: 10, padding: 10 }}>
-                  <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 20 }}>{pt.note}</Text>
+                  <Text style={{ fontSize: 13.5, color: p.sub, ...lh(20) }}>{pt.note}</Text>
                 </View>
               ) : null}
               {pt.facts.map((f, i) => (
-                <Text key={i} style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
+                <Text key={i} style={{ fontSize: 14, color: p.sub, ...lh(21) }}>
                   · {f}
                 </Text>
               ))}
@@ -497,7 +526,7 @@ export function PhotoResult({
           {rows.map((r, i) => (
             <IndicatorRow key={`${tf}-${r.key}`} row={r} palette={p} first={i === 0} />
           ))}
-          <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
             (?)를 누르면 그 지표가 무엇을 재는지 알려 드려요. 지표는 지금 상태를 보여 줄 뿐, 좋다·나쁘다를 뜻하지 않아요.
           </Text>
         </Card>
@@ -508,7 +537,7 @@ export function PhotoResult({
         <Card palette={p} style={{ gap: 10 }}>
           <BarTitle title="평균선과 지금 주가의 거리" palette={p} />
           <Ladder ladder={ladder} palette={p} />
-          <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
             선의 값은 {result.asOf} 종가까지로 계산했어요. 날마다 바뀌어요.
           </Text>
         </Card>
@@ -540,7 +569,7 @@ export function PhotoResult({
                 {list.map((s, i) => (
                   <View key={`${s.label}-${i}`} style={{ gap: 2 }}>
                     <Text style={{ fontSize: 13, color: p.sub }}>{s.label}</Text>
-                    <Text style={{ fontSize: 14.5, color: p.text, lineHeight: 22 }}>{s.text}</Text>
+                    <Text style={{ fontSize: 14.5, color: p.text, ...lh(22) }}>{s.text}</Text>
                   </View>
                 ))}
               </View>
@@ -551,7 +580,8 @@ export function PhotoResult({
 
       <Notice palette={p}>{result.notice}</Notice>
 
-      {/* 다음 행동 */}
+      {/* 다음 행동 — 오늘 남은 횟수를 바로 위에 */}
+      {quota ? <QuotaMeter quota={quota} palette={p} compact /> : null}
       <Track name={LOG.photoAgain}>
         <TouchableOpacity
           onPress={onAgain}

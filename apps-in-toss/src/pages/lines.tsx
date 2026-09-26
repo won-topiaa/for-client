@@ -23,6 +23,7 @@ import { fmtDistPct, fmtPrice, fmtRate } from '../format';
 import { pendingAnalyze } from '../store';
 import { GUTTER, signColor, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/lines', {
   component: LinesPage,
@@ -142,7 +143,7 @@ const LineCard = React.memo(function LineCard({
       </View>
 
       <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
           {/* 분모는 decided(그 방향에서 결판난 횟수). touches 는 양방향 터치
               총합이라 여기 세워 두면 계산이 안 맞는 것처럼 보인다 — 지지선
               화면에서 똑같은 이유로 한 번 고쳤다.
@@ -347,7 +348,7 @@ function LinesPage() {
         </Notice>
 
         <Expandable title="어떤 종목을 골라 주나요?" palette={p}>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
             다섯 가지를 모두 만족하는 종목만 골라요.{'\n'}
             {'\n'}
             1. 최근 20봉 중 70% 이상이 그 선 {side === 'support' ? '위' : '아래'}에 있었어요
@@ -358,7 +359,7 @@ function LinesPage() {
             {'\n'}
             5. 3년 백테스트에서 그 선의 {word} 판정이 2회 이상, 성공률 50% 이상이에요
           </Text>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, marginTop: 10 }}>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 10 }}>
             성공률은 오래된 일보다 최근 일에 더 큰 가중치를 줘서, 요즘 잘 지켜지는 선이
             높게 나옵니다. 그래서 판정 횟수에 성공률을 곱해도 딱 떨어지지 않아요.
           </Text>
@@ -388,7 +389,7 @@ function LinesPage() {
                 }}
               />
             </View>
-            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
               처음 고른 기간은 서버가 한 번 훑어야 해요 — 보통 1~2분이면 끝나고, 그 뒤로는
               하루 종일 바로 나옵니다.
             </Text>
@@ -411,7 +412,7 @@ function LinesPage() {
             <View
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, ...lh(18) }}>
                 {statusText(body)}
               </Text>
               {!body.partial && !body.refreshing ? (
@@ -425,7 +426,7 @@ function LinesPage() {
             </View>
             {list.length === 0 ? (
               <Card palette={p}>
-                <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n조건에 맞는 종목이 나오면 여기 채워집니다.'
                     : `지금 MA ${period} 선에서 ${word} 중인 종목이 없습니다.\n다른 기간이나 다른 시장을 살펴보세요.`}
