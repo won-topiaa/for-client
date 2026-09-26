@@ -29,6 +29,22 @@ function catColors(p: Palette, cat: TipCategory): { fg: string; bg: string } {
   }
 }
 
+/** 경과 초 — 숫자가 바뀌어야 '멈추지 않았다'는 게 보인다. 매초 이것만 다시 그린다
+ *  (부모를 다시 그리면 게임 판까지 매초 다시 그려진다). */
+function Elapsed({ prefix, color }: { prefix: string; color: string }) {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <Text style={{ fontSize: 13, color, textAlign: 'center' }}>
+      {prefix}
+      {sec}초째
+    </Text>
+  );
+}
+
 /**
  * 기다리는 화면 한 장. progress 가 있으면(0~1) 진행 막대를 함께 보여 준다.
  * onInteract 는 게임에서 새총을 당기는 동안 true — 부모 ScrollView 의 스크롤을 잠근다.
@@ -49,16 +65,13 @@ export function WaitingShow({
   const fade = useRef(new Animated.Value(1)).current;
   // 시작 글은 무작위 — 매번 같은 글부터 나오면 두 번째부터는 읽지 않는다
   const [idx, setIdx] = useState(() => Math.floor(Math.random() * TIPS.length));
-  const [elapsed, setElapsed] = useState(0);
-
-  // 경과 시간 — 숫자가 바뀌어야 '멈추지 않았다'는 게 보인다
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   const next = useCallback(() => {
-    Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }).start(() => {
+    Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }).start(({ finished }) => {
+      // 흐려지는 도중 '다음'을 또 누르면 앞 애니메이션은 중단된다 — 그때 넘기면 글이 두 개씩 넘어간다
+      if (!finished) {
+        return;
+      }
       setIdx((i) => (i + 1) % TIPS.length);
       Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
     });
@@ -84,10 +97,7 @@ export function WaitingShow({
         >
           {title}
         </Text>
-        <Text style={{ fontSize: 13, color: p.faint, textAlign: 'center' }}>
-          {subtitle ? `${subtitle} · ` : ''}
-          {elapsed}초째
-        </Text>
+        <Elapsed prefix={subtitle ? `${subtitle} · ` : ''} color={p.faint} />
       </View>
 
       {pct !== null ? (
