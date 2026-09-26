@@ -196,11 +196,42 @@ export interface DiagnosisPattern {
   name: string;
   facts: string[];
   summary: string;
+  /** 교과서 속 생김새 한두 문장 — 방향은 말하지 않는다. */
+  help?: string;
   overlays: PatternOverlay[];
+}
+
+/** '주요 지표' 한 행 — 쉬운 이름 · 지금 상태 · 한 줄 풀이 · (?) 뜻 (서버 app/easy.py). */
+export interface DiagnosisRow {
+  key: string;
+  name: string;
+  /** 증권 앱에서 부르는 원래 이름 (RSI (14) 등) */
+  term: string;
+  value: string;
+  text: string;
+  help: string;
+}
+
+/** 지금 주가 바로 아래·위의 선 하나. */
+export interface DiagnosisLevel {
+  name: string;
+  value: number;
+  text: string;
+  gapPct: number;
+  note: string;
+}
+
+export interface DiagnosisLevels {
+  close: number;
+  closeText: string;
+  below: DiagnosisLevel | null;
+  above: DiagnosisLevel | null;
 }
 
 export interface DiagnosisTimeframe {
   sentences: DiagnosisSentence[];
+  /** 초보자용 행 — 예전 서버는 보내지 않는다 */
+  rows?: DiagnosisRow[];
 }
 
 export interface Diagnosis {
@@ -208,6 +239,9 @@ export interface Diagnosis {
   patterns: DiagnosisPattern[];
   timeframes: Partial<Record<Timeframe, DiagnosisTimeframe>>;
   notice: string;
+  /** 엔진이 만든 한 줄 요약 (AI 가 없을 때도 있다) */
+  headline?: string;
+  levels?: DiagnosisLevels | null;
 }
 
 export interface PhotoExplanationPoint {
@@ -226,6 +260,8 @@ export interface PhotoExplanation {
   sameStock: 'yes' | 'no' | 'unclear';
   timeframe: 'day' | 'week' | 'month' | 'intraday' | 'unclear';
   photoNote: string;
+  /** 한줄 요약 제목 — 예전 서버는 보내지 않는다 */
+  headline?: string;
   summary: string;
   points: PhotoExplanationPoint[];
 }
