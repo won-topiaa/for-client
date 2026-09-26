@@ -284,6 +284,8 @@ export interface PhotoQuota {
   used: number;
   left: number;
   resetAt: string;
+  /** 같은 IP 전체 한도가 먼저 닿았다 — 이 사람이 3번을 다 쓴 게 아니다(예전 서버는 보내지 않는다) */
+  shared?: boolean;
 }
 
 export interface PhotoAnalysisResponse {
