@@ -4,6 +4,7 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { ApiError, fetchPatterns, isRateLimited } from '../api/client';
 import type { Market, PatternKey, PatternMatch, PatternsResponse } from '../api/types';
 import { CandleChart, type ChartLine } from '../components/CandleChart';
+import { WaitingShow } from '../components/WaitingShow';
 import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import {
   Card,
@@ -363,26 +364,16 @@ function PatternsPage() {
         ) : null}
 
         {phase === 'running' && body ? (
-          <Card palette={p} style={{ gap: 12 }}>
-            <Text style={{ fontSize: 14, color: p.text, fontWeight: '600' }}>
-              {market === 'kr' ? '국내' : '미국'} 종목 패턴 스캔 중…{' '}
-              {body.total ? `${body.done ?? 0}/${body.total} 종목` : '대상 선정 중'}
-            </Text>
-            <View
-              style={{ height: 8, borderRadius: 4, backgroundColor: p.sunken, overflow: 'hidden' }}
-            >
-              <View
-                style={{
-                  height: 8,
-                  width: `${body.total ? Math.round(((body.done ?? 0) / body.total) * 100) : 0}%`,
-                  backgroundColor: p.primary,
-                }}
-              />
-            </View>
-            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
-              서버가 종목마다 패턴 모양을 맞춰보는 중이에요 — 보통 1~2분이면 끝나요.
-            </Text>
-          </Card>
+          // 스캔은 1~2분 걸린다 — 진행 막대만 보고 기다리기엔 길어서, 춤추는 캐릭터와
+          // 짧은 글을 함께 보여 준다 (components/WaitingShow)
+          <WaitingShow
+            palette={p}
+            title={`${market === 'kr' ? '국내' : '미국'} 종목 패턴 스캔 중 · ${
+              body.total ? `${body.done ?? 0}/${body.total} 종목` : '대상 선정 중'
+            }`}
+            subtitle="보통 1~2분"
+            progress={body.total ? (body.done ?? 0) / body.total : 0}
+          />
         ) : null}
 
         {phase === 'error' ? (
