@@ -204,7 +204,8 @@ function LevelTile({ title, level, palette: p }: { title: string; level: Diagnos
           <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 19 }}>{level.name}</Text>
           {/* 주가 기준으로 말한다 — '지금보다 3% 위'는 목표가처럼 읽힌다 */}
           <Text style={{ fontSize: 13, color: p.sub, lineHeight: 19 }}>
-            주가가 이 선보다 {Math.abs(level.gapPct).toFixed(1)}% {level.gapPct >= 0 ? '위' : '아래'}에 있어요
+            주가가 이 {level.name.includes('가격') ? '가격' : '선'}보다 {Math.abs(level.gapPct).toFixed(1)}%{' '}
+            {level.gapPct >= 0 ? '위' : '아래'}에 있어요
           </Text>
           {level.note ? <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>{level.note}</Text> : null}
         </>
@@ -432,9 +433,12 @@ export function PhotoResult({
             <LevelTile title="아래" level={levels.below} palette={p} />
             <LevelTile title="위" level={levels.above} palette={p} />
           </View>
-          <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
-            과거에 자주 지켜진 선이라도 앞으로도 그렇다는 뜻은 아니에요.
-          </Text>
+          {/* '지난 기록이에요' 면책은 제목 아래 한 번만 — 되풀이하면 읽지 않는다(판정) */}
+          {!diag.headlineNote ? (
+            <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+              과거에 자주 지켜진 선이라도 앞으로도 그렇다는 뜻은 아니에요.
+            </Text>
+          ) : null}
         </Card>
       ) : null}
 
