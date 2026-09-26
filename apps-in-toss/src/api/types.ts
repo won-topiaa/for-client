@@ -210,6 +210,8 @@ export interface DiagnosisRow {
   value: string;
   text: string;
   help: string;
+  /** 1년 범위 행만 — 0(최저)~1(최고) 위치, 막대로 그린다 */
+  pos?: number;
 }
 
 /** 지금 주가 바로 아래·위의 선 하나. */

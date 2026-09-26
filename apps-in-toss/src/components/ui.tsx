@@ -514,6 +514,7 @@ export function Expandable({
   title,
   palette: p,
   initiallyOpen,
+  logName,
   /** 자기 면색. 기본은 흰 카드 — 흰 카드 *안에* 넣을 때는 p.sunken 을 넘겨야
    *  흰 위에 흰이 겹쳐 토글이 보이지 않는 일이 없다. */
   surface,
@@ -523,32 +524,38 @@ export function Expandable({
   palette: Palette;
   initiallyOpen?: boolean;
   surface?: string;
+  /** 펼칠 때만 기록한다 (접을 때는 기록하지 않는다) */
+  logName?: string;
 }>) {
   const [open, setOpen] = useState(!!initiallyOpen);
+  const toggle = (
+    <TouchableOpacity
+      onPress={() => setOpen(!open)}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      activeOpacity={0.6}
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 20,
+      }}
+    >
+      <Text style={{ fontSize: 15, fontWeight: '600', color: p.text, flexShrink: 1 }}>
+        {title}
+      </Text>
+      {/* 이 카드에서 접힘/펼침을 알려 주는 표시는 이것 하나뿐이라, 장식용
+          회색이 아니라 읽히는 회색으로 칠한다 */}
+      <View accessibilityElementsHidden importantForAccessibility="no" style={{ marginLeft: 8 }}>
+        <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={9} />
+      </View>
+    </TouchableOpacity>
+  );
   return (
     <View style={{ backgroundColor: surface ?? p.card, borderRadius: RADIUS.card }}>
-      <TouchableOpacity
-        onPress={() => setOpen(!open)}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        activeOpacity={0.6}
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          paddingVertical: 16,
-          paddingHorizontal: 20,
-        }}
-      >
-        <Text style={{ fontSize: 15, fontWeight: '600', color: p.text, flexShrink: 1 }}>
-          {title}
-        </Text>
-        {/* 이 카드에서 접힘/펼침을 알려 주는 표시는 이것 하나뿐이라, 장식용
-            회색이 아니라 읽히는 회색으로 칠한다 */}
-        <View accessibilityElementsHidden importantForAccessibility="no" style={{ marginLeft: 8 }}>
-          <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={9} />
-        </View>
-      </TouchableOpacity>
+      {/* 펼칠 때만 기록 — 접는 누름까지 세면 '몇 명이 열어 봤나'가 부풀려진다 */}
+      {maybeTrack(logName, undefined, !open, toggle)}
       {open ? <View style={{ paddingHorizontal: 20, paddingBottom: 18 }}>{children}</View> : null}
     </View>
   );

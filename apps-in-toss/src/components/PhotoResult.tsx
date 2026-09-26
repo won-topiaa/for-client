@@ -9,6 +9,7 @@ import type {
   Timeframe,
 } from '../api/types';
 import type { Palette } from '../theme';
+import { LOG, Track } from '../analytics';
 import { Badge, Card, Chevron, Expandable, Notice, Segmented } from './ui';
 
 // 차트 사진 분석 결과 — 초보자가 위에서부터 읽어 내려가게.
@@ -64,25 +65,27 @@ function BarTitle({ title, palette: p, right }: { title: string; palette: Palett
 /** (?) 동그라미 — 눌러서 도움말을 펼친다. */
 function HelpDot({ open, palette: p, onPress, label }: { open: boolean; palette: Palette; onPress: () => void; label: string }) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${label} 뜻 ${open ? '접기' : '보기'}`}
-      accessibilityState={{ expanded: open }}
-      hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-      activeOpacity={0.6}
-      style={{
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 1.5,
-        borderColor: open ? p.primary : p.muted,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ fontSize: 11.5, fontWeight: '700', color: open ? p.primary : p.faint }}>?</Text>
-    </TouchableOpacity>
+    <Track name={LOG.photoHelp} text={label} enabled={!open}>
+      <TouchableOpacity
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label} 뜻 ${open ? '접기' : '보기'}`}
+        accessibilityState={{ expanded: open }}
+        hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+        activeOpacity={0.6}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          borderWidth: 1.5,
+          borderColor: open ? p.primary : p.muted,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 11.5, fontWeight: '700', color: open ? p.primary : p.faint }}>?</Text>
+      </TouchableOpacity>
+    </Track>
   );
 }
 
@@ -91,28 +94,30 @@ function QaRow({ q, a, palette: p }: { q: string; a: string; palette: Palette })
   const [open, setOpen] = useState(false);
   return (
     <View style={{ borderTopWidth: 1, borderTopColor: p.border, borderStyle: 'dashed', paddingTop: 14, gap: 8 }}>
-      <TouchableOpacity
-        onPress={() => setOpen(!open)}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-      >
-        <View
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 13,
-            backgroundColor: p.primaryBg,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+      <Track name={LOG.photoFaq} text={q} enabled={!open}>
+        <TouchableOpacity
+          onPress={() => setOpen(!open)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          activeOpacity={0.6}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
         >
-          <Text style={{ fontSize: 14, fontWeight: '800', color: p.primary }}>?</Text>
-        </View>
-        <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: p.text, lineHeight: 21 }}>{q}</Text>
-        <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={8} />
-      </TouchableOpacity>
+          <View
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              backgroundColor: p.primaryBg,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '800', color: p.primary }}>?</Text>
+          </View>
+          <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: p.text, lineHeight: 21 }}>{q}</Text>
+          <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={8} />
+        </TouchableOpacity>
+      </Track>
       {open ? (
         <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21, paddingLeft: 36 }}>{a}</Text>
       ) : null}
@@ -134,6 +139,7 @@ function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: 
         <Text style={{ fontSize: 15, fontWeight: '700', color: p.primary, flexShrink: 0 }}>{row.value}</Text>
       </View>
       <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 22 }}>{row.text}</Text>
+      {row.pos != null ? <RangeBar pos={row.pos} palette={p} /> : null}
       {open ? (
         <View style={{ backgroundColor: p.sunken, borderRadius: 10, padding: 12, gap: 4 }}>
           <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 20 }}>{row.help}</Text>
@@ -146,6 +152,35 @@ function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: 
   );
 }
 
+/** 1년 범위 안의 위치 — 최저(왼쪽) ~ 최고(오른쪽) 막대 위의 점. */
+function RangeBar({ pos, palette: p }: { pos: number; palette: Palette }) {
+  const x = Math.max(0, Math.min(1, pos));
+  return (
+    <View style={{ marginTop: 4, gap: 4 }} accessibilityLabel={`1년 범위의 ${Math.round(x * 100)}% 높이`}>
+      <View style={{ height: 14, justifyContent: 'center' }}>
+        <View style={{ height: 4, borderRadius: 2, backgroundColor: p.sunken }} />
+        <View
+          style={{
+            position: 'absolute',
+            left: `${x * 100}%`,
+            marginLeft: -7,
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: p.primary,
+            borderWidth: 2,
+            borderColor: p.card,
+          }}
+        />
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 12, color: p.faint }}>1년 최저</Text>
+        <Text style={{ fontSize: 12, color: p.faint }}>1년 최고</Text>
+      </View>
+    </View>
+  );
+}
+
 /** 지금 가까운 선 한 칸 — 방향 색(빨강/초록)을 쓰지 않는다. */
 function LevelTile({ title, level, palette: p }: { title: string; level: DiagnosisLevel | null; palette: Palette }) {
   return (
@@ -154,9 +189,10 @@ function LevelTile({ title, level, palette: p }: { title: string; level: Diagnos
       {level ? (
         <>
           <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{level.text}</Text>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 19 }}>
-            {level.name}
-            {'\n'}지금보다 {Math.abs(level.gapPct).toFixed(1)}% {level.gapPct < 0 ? '아래' : '위'}
+          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 19 }}>{level.name}</Text>
+          {/* 주가 기준으로 말한다 — '지금보다 3% 위'는 목표가처럼 읽힌다 */}
+          <Text style={{ fontSize: 13, color: p.sub, lineHeight: 19 }}>
+            주가가 이 선보다 {Math.abs(level.gapPct).toFixed(1)}% {level.gapPct >= 0 ? '위' : '아래'}에 있어요
           </Text>
           {level.note ? <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>{level.note}</Text> : null}
         </>
@@ -224,6 +260,19 @@ export function PhotoResult({
   const sentences = diag.timeframes[detailTf]?.sentences ?? [];
   const headline = ex.headline || diag.headline || `${who}의 지표를 모아 봤어요.`;
   const levels = diag.levels ?? null;
+  const dayRows = diag.timeframes.day?.rows ?? [];
+  const chips = useMemo(() => {
+    const by = new Map(dayRows.map((r) => [r.key, r]));
+    const out: string[] = [];
+    const yr = by.get('yearRange');
+    if (yr) out.push(`1년 범위 ${yr.value}`);
+    const sup = by.get('support');
+    if (sup) out.push(`잘 지켜진 선보다 ${sup.value}`);
+    const atr = by.get('atr');
+    if (atr) out.push(`하루 움직임 ${atr.value}`);
+    if (diag.patterns.length > 0) out.push(`${diag.patterns[0]?.name ?? ''} 모양`);
+    return out;
+  }, [dayRows, diag.patterns]);
   const tfOptions = useMemo(
     () => TIMEFRAMES.filter((t) => (diag.timeframes[t]?.rows ?? []).length > 0).map((t) => ({ value: t, label: TF_LABEL[t] })),
     [diag]
@@ -269,6 +318,16 @@ export function PhotoResult({
         <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, lineHeight: 31 }}>
           {headline}
         </Text>
+        {/* 한눈에 — '지금 어디쯤인지'를 숫자 사실로 (경쟁 앱의 '감지된 패턴 75%' 칩 자리) */}
+        {chips.length > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {chips.map((c) => (
+              <View key={c} style={{ backgroundColor: p.sunken, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 10 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: p.sub }}>{c}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <Text style={{ fontSize: 15, color: p.sub, lineHeight: 24 }}>{ex.summary}</Text>
         <Text style={{ fontSize: 12.5, color: p.faint }}>
           {who} · {result.symbol} · {result.asOf} 종가 기준
@@ -355,7 +414,7 @@ export function PhotoResult({
       </Card>
 
       {/* 자세히 보기 — 엔진 원문(숫자 그대로). 지표를 아는 사람용 */}
-      <Expandable title="자세히 보기 · 지표 원문" palette={p}>
+      <Expandable title="자세히 보기 · 지표 원문" palette={p} logName={LOG.photoDetail}>
         <View style={{ gap: 14 }}>
           <Segmented
             options={TIMEFRAMES.map((t) => ({ value: t, label: TF_LABEL[t] }))}
@@ -384,26 +443,30 @@ export function PhotoResult({
       <Notice palette={p}>{result.notice}</Notice>
 
       {/* 다음 행동 */}
-      <TouchableOpacity
-        onPress={onAgain}
-        accessibilityRole="button"
-        activeOpacity={0.8}
-        style={{ backgroundColor: p.primaryFill, borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
-      >
-        <Text style={{ fontSize: 16, fontWeight: '700', color: p.onPrimary }}>다른 차트도 분석하기</Text>
-      </TouchableOpacity>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
+      <Track name={LOG.photoAgain}>
         <TouchableOpacity
-          onPress={() => {
-            setShareFailed(false);
-            shareResult(result, headline).catch(() => setShareFailed(true));
-          }}
+          onPress={onAgain}
           accessibilityRole="button"
-          activeOpacity={0.7}
-          style={{ flex: 1, backgroundColor: p.card, borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+          activeOpacity={0.8}
+          style={{ backgroundColor: p.primaryFill, borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
         >
-          <Text style={{ fontSize: 15, fontWeight: '600', color: p.text }}>친구에게 공유하기</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: p.onPrimary }}>다른 차트도 분석하기</Text>
         </TouchableOpacity>
+      </Track>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Track name={LOG.photoShare}>
+          <TouchableOpacity
+            onPress={() => {
+              setShareFailed(false);
+              shareResult(result, headline).catch(() => setShareFailed(true));
+            }}
+            accessibilityRole="button"
+            activeOpacity={0.7}
+            style={{ flex: 1, backgroundColor: p.card, borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: p.text }}>친구에게 공유하기</Text>
+          </TouchableOpacity>
+        </Track>
         <TouchableOpacity
           onPress={onOpenRadar}
           accessibilityRole="button"
