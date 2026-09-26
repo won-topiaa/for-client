@@ -106,8 +106,16 @@ export function TodayBrief({
           <Text style={{ fontSize: 13.5, color: p.sub }}>오늘 시장을 불러오는 중…</Text>
         </View>
       ) : labels.length === 0 ? (
-        {/* paddingBottom 이 paddingVertical 보다 앞서므로 lh() 대신 직접 — 6 + 0.1(마지막 줄 잘림 방지, lineHeight.ts) */}
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, paddingTop: 6, paddingBottom: 6.1 }}>
+        <Text
+          style={{
+            fontSize: 13.5,
+            color: p.sub,
+            // paddingBottom 이 paddingVertical 보다 앞서므로 lh() 대신 직접 — 6 + 0.1(마지막 줄 잘림 방지, lineHeight.ts)
+            lineHeight: 21,
+            paddingTop: 6,
+            paddingBottom: 6.1,
+          }}
+        >
           지금은 지수를 불러올 수 없어요. 잠시 후 다시 열어 주세요.
         </Text>
       ) : (
