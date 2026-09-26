@@ -22,6 +22,18 @@ export const LOG = {
   openFeature: 'open_feature',
   /** 차트 사진으로 분석을 요청함 (1.3.5) */
   photoAnalyze: 'photo_analyze',
+  // ── 사진 분석 결과 화면에서 무엇을 여는지 (2026-09-26 토론: '측정으로 논쟁을 끝낸다') ──
+  // (?) 뜻풀이·질문을 많이 열면 초보 비중이, '자세히 보기'를 많이 열면 중급자 비중이 높다는 신호.
+  /** 지표 행의 (?) 뜻풀이를 펼침 — text 에 지표 이름 */
+  photoHelp: 'photo_help_open',
+  /** 자주 묻는 질문을 펼침 — text 에 질문 */
+  photoFaq: 'photo_faq_open',
+  /** '자세히 보기 · 지표 원문'을 펼침 */
+  photoDetail: 'photo_detail_open',
+  /** 결과를 공유함 */
+  photoShare: 'photo_share',
+  /** 결과를 본 뒤 다른 차트도 분석하기 */
+  photoAgain: 'photo_again',
 } as const;
 
 /**

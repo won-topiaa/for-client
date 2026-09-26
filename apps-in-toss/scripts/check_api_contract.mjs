@@ -117,6 +117,21 @@ if (!diag) {
   } else {
     ok = compare('DiagnosisSentence', declaredFields('DiagnosisSentence'), sent) && ok;
   }
+  // 사진 분석 결과 화면의 '주요 지표' 행과 '지금 주가 바로 아래·위에 있는 선' (서버 app/easy.py)
+  const row = (diag.timeframes?.day?.rows ?? [])[0];
+  if (!row) {
+    console.error('  ✗ DiagnosisRow: 일봉 쉬운 행이 비어 대조할 수 없습니다 (서버가 쉬운 설명 이전 버전?).');
+    ok = false;
+  } else {
+    ok = compare('DiagnosisRow', declaredFields('DiagnosisRow'), row, { optional: ['pos'] }) && ok;
+  }
+  const item = diag.ladder?.items?.[0];
+  if (item) {
+    ok = compare('DiagnosisLadderItem', declaredFields('DiagnosisLadderItem'), item) && ok;
+    ok = compare('DiagnosisLadder', declaredFields('DiagnosisLadder'), diag.ladder) && ok;
+  } else {
+    console.log('  … DiagnosisLadder: 평균선 목록이 없어 건너뜀');
+  }
   const pat = (diag.patterns ?? [])[0];
   if (pat) {
     ok = compare('DiagnosisPattern', declaredFields('DiagnosisPattern'), pat) && ok;

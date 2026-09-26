@@ -273,11 +273,45 @@ export interface DiagnosisPattern {
   name: string;
   facts: string[];
   summary: string;
+  /** 교과서 속 생김새 한두 문장 — 방향은 말하지 않는다. */
+  help?: string;
+  /** 이름 속 '상승·하락'이 주가 방향으로 읽히지 않게 바로잡는 한 줄 */
+  note?: string;
   overlays: PatternOverlay[];
+}
+
+/** '주요 지표' 한 행 — 쉬운 이름 · 지금 상태 · 한 줄 풀이 · (?) 뜻 (서버 app/easy.py). */
+export interface DiagnosisRow {
+  key: string;
+  name: string;
+  /** 증권 앱에서 부르는 원래 이름 (RSI (14) 등) */
+  term: string;
+  value: string;
+  text: string;
+  help: string;
+  /** 1년 범위 행만 — 0(최저)~1(최고) 위치, 막대로 그린다 */
+  pos?: number;
+}
+
+/** '평균선과 지금 주가의 거리' 목록의 한 줄 — 주가가 그 선보다 gapPct% 위(+)/아래(-). */
+export interface DiagnosisLadderItem {
+  name: string;
+  value: number;
+  text: string;
+  gapPct: number;
+}
+
+/** 평균선을 가격 순(높은 것부터)으로 — 아래·위 두 칸(손절가·목표가처럼 읽힘) 대신. */
+export interface DiagnosisLadder {
+  close: number;
+  closeText: string;
+  items: DiagnosisLadderItem[];
 }
 
 export interface DiagnosisTimeframe {
   sentences: DiagnosisSentence[];
+  /** 초보자용 행 — 예전 서버는 보내지 않는다 */
+  rows?: DiagnosisRow[];
 }
 
 export interface Diagnosis {
@@ -285,6 +319,9 @@ export interface Diagnosis {
   patterns: DiagnosisPattern[];
   timeframes: Partial<Record<Timeframe, DiagnosisTimeframe>>;
   notice: string;
+  /** 엔진이 만든 한 줄 요약 — 1년 가격 범위 안의 높이 */
+  headline?: string;
+  ladder?: DiagnosisLadder | null;
 }
 
 export interface PhotoExplanationPoint {
@@ -303,8 +340,16 @@ export interface PhotoExplanation {
   sameStock: 'yes' | 'no' | 'unclear';
   timeframe: 'day' | 'week' | 'month' | 'intraday' | 'unclear';
   photoNote: string;
+  /** 한줄 요약 제목 — 예전 서버는 보내지 않는다 */
+  headline?: string;
   summary: string;
   points: PhotoExplanationPoint[];
+}
+
+/** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린 같은 종목의 최근 일봉 위에. */
+export interface PhotoChart {
+  candles: Candle[];
+  lines: { name: string; kind: 'ma' | 'pattern'; points: TimeValue[] }[];
 }
 
 export interface PhotoAnalysisResponse {
@@ -314,4 +359,6 @@ export interface PhotoAnalysisResponse {
   explanation: PhotoExplanation;
   diagnosis: Diagnosis;
   notice: string;
+  /** 예전 서버는 보내지 않는다 */
+  chart?: PhotoChart | null;
 }

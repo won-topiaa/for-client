@@ -18,23 +18,22 @@ import {
 } from 'react-native';
 import { analyzePhoto, searchSymbols } from '../api/client';
 import type {
-  DiagnosisSentence,
   PhotoAnalysisResponse,
   SymbolInfo,
-  Timeframe,
 } from '../api/types';
 import {
-  Badge,
   Card,
   Chip,
   Footer,
   Notice,
   PageHeader,
   PrimaryButton,
-  Segmented,
   TextButton,
 } from '../components/ui';
+import { PhotoResult } from '../components/PhotoResult';
+import { PushAskSheet } from '../components/PushAskSheet';
 import { WaitingShow } from '../components/WaitingShow';
+import { isPushAvailable, useMorningPush } from '../notify';
 import { LOG } from '../analytics';
 import { lastAnalysis, pendingAnalyze } from '../store';
 import { GUTTER, RADIUS, usePalette, type Palette } from '../theme';
@@ -64,10 +63,6 @@ const QUICK_PICKS: SymbolInfo[] = [
   { symbol: 'TSLA', name: '테슬라', market: 'NASDAQ' },
 ];
 
-const TF_LABEL: Record<Timeframe, string> = { day: '일봉', week: '주봉', month: '월봉' };
-const TIMEFRAMES: Timeframe[] = ['day', 'week', 'month'];
-/** 지표 목록의 영역 순서 — 추세 → 모멘텀 → 변동성 → 거래량 → 차트 모양 */
-const AREA_ORDER = ['지지선', '추세', '모멘텀', '변동성', '거래량', '차트 모양'];
 
 type Picked = { base64: string; uri: string };
 
@@ -203,17 +198,6 @@ function StepTitle({ n, title, palette: p }: { n: number; title: string; palette
   );
 }
 
-function groupByArea(sentences: DiagnosisSentence[]): [string, DiagnosisSentence[]][] {
-  const groups = new Map<string, DiagnosisSentence[]>();
-  for (const s of sentences) {
-    groups.set(s.area, [...(groups.get(s.area) ?? []), s]);
-  }
-  const rank = (a: string) => {
-    const i = AREA_ORDER.indexOf(a);
-    return i < 0 ? AREA_ORDER.length : i;
-  };
-  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
-}
 
 function PhotoPage() {
   const p = usePalette();
@@ -233,7 +217,11 @@ function PhotoPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [result, setResult] = useState<PhotoAnalysisResponse | null>(null);
-  const [tf, setTf] = useState<Timeframe>('day');
+  const [viewer, setViewer] = useState(false);
+  // 결과 아래 '아침 시장 알림 받기' — 누르면 바텀시트(경쟁 앱 방식). 저절로 띄우지는 않는다:
+  // 앱인토스 체크리스트 '화면 전환 시 바텀시트로 행동을 강제 유도하지 않아요'.
+  const push = useMorningPush();
+  const [askPush, setAskPush] = useState(false);
   // 기다리는 동안 게임에서 새총을 당기는 중이면 스크롤을 잠근다 (안드로이드는 스크롤이 드래그를 빼앗는다)
   const [scrollLock, setScrollLock] = useState(false);
 
@@ -276,6 +264,13 @@ function PhotoPage() {
     };
     return navigation.addListener('focus', onFocus);
   }, [navigation]);
+
+  // 켜지면 시트를 닫는다
+  useEffect(() => {
+    if (push.enabled) {
+      setAskPush(false);
+    }
+  }, [push.enabled]);
 
   /* ---------- 1. 종목 ---------- */
 
@@ -370,8 +365,6 @@ function PhotoPage() {
       if (seq !== runSeq.current) {
         return;
       }
-      const shown = body.explanation.timeframe;
-      setTf(shown === 'week' || shown === 'month' ? shown : 'day');
       setResult(body);
       // 결과가 버튼 아래에 붙는다 — 사용자가 스크롤을 찾지 않게 내려 준다
       // 결과 묶음의 onLayout 이 먼저 돌아야 위치를 안다 — 한 프레임으로는 모자란 기기가 있다
@@ -396,13 +389,10 @@ function PhotoPage() {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const ex = result?.explanation;
-  const byAi = !!ex && ex.by !== 'template';
-  const who = result?.name || result?.symbol || '';
-  const sentences = result?.diagnosis.timeframes[tf]?.sentences ?? [];
   const canRun = !!selected && !!photo && !loading;
 
   return (
+    <View style={{ flex: 1, backgroundColor: p.bg }}>
     <ScrollView
       ref={scrollRef}
       scrollEnabled={!scrollLock}
@@ -557,117 +547,66 @@ function PhotoPage() {
       {errorMsg ? <Text style={{ fontSize: 14, color: p.danger }}>{errorMsg}</Text> : null}
 
       {/* ── 결과: 설명 전달 ── */}
-      {result && ex ? (
+      {result ? (
         <View
-          style={{ gap: 12 }}
           onLayout={(e) => {
             resultY.current = e.nativeEvent.layout.y;
           }}
         >
-          <Card palette={p} style={{ gap: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <View style={{ flexShrink: 1 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: p.text }} numberOfLines={1}>
-                  {who}
-                </Text>
-                <Text style={{ fontSize: 13, color: p.faint, marginTop: 3 }}>
-                  {result.symbol} · {result.asOf} 종가 기준
-                </Text>
-              </View>
-              <Badge label={byAi ? 'AI 설명' : '기본 설명'} tone={byAi ? 'primary' : 'plain'} palette={p} />
-            </View>
-
-            {ex.isChart === false ? (
-              <Notice palette={p} tone="warn">
-                주가 차트 사진이 아닌 것 같아요. 아래 내용은 사진이 아니라 {who}의 최신 데이터로 계산한 거예요.
-              </Notice>
-            ) : null}
-            {ex.sameStock === 'no' ? (
-              <Notice palette={p} tone="warn">
-                사진 속 종목이 {who}와(과) 달라 보여요. 아래 내용은 고르신 {who} 기준이에요.
-              </Notice>
-            ) : null}
-            {ex.timeframe === 'intraday' ? (
-              <Notice palette={p}>
-                사진은 분·시간 단위 차트로 보여요. 이 앱은 일봉·주봉·월봉으로 계산해요.
-              </Notice>
-            ) : null}
-
-            {byAi ? (
-              <View style={{ gap: 4 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: p.sub }}>사진에서 보이는 것</Text>
-                <Text style={{ fontSize: 15, color: p.text, lineHeight: 23 }}>{ex.photoNote}</Text>
-              </View>
-            ) : (
-              <Notice palette={p}>{ex.photoNote}</Notice>
-            )}
-
-            <View style={{ gap: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: p.sub }}>한눈에 보기</Text>
-              <Text style={{ fontSize: 15, color: p.text, lineHeight: 23 }}>{ex.summary}</Text>
-            </View>
-          </Card>
-
-          {/* AI 가 쉬운 말로 풀어 쓴 것 — 템플릿이면 아래 '지표 전체'와 같은 문장이라 뺀다 */}
-          {byAi && ex.points.length > 0 ? (
-            <Card palette={p} style={{ gap: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: p.text }}>쉽게 풀어 보면</Text>
-              {ex.points.map((pt, i) => (
-                <View key={`${pt.area}-${i}`} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-                  <Badge label={pt.area} tone="plain" palette={p} />
-                  <Text style={{ flex: 1, fontSize: 14, color: p.text, lineHeight: 21 }}>{pt.text}</Text>
-                </View>
-              ))}
-            </Card>
-          ) : null}
-
-          {/* 지표 전체 — 차트 모양 말고는 눈에 띄든 아니든 전부 보여 준다.
-              차트 모양은 서버가 '감지된 것만' 보낸다 (일봉 기준). */}
-          <Card palette={p} style={{ gap: 14 }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: p.text }}>지표 전체</Text>
-            <Segmented
-              options={TIMEFRAMES.map((t) => ({ value: t, label: TF_LABEL[t] }))}
-              value={tf}
-              palette={p}
-              onChange={setTf}
-            />
-            {sentences.length === 0 ? (
-              <Text style={{ fontSize: 14, color: p.sub }}>
-                {TF_LABEL[tf]} 데이터가 모자라 계산하지 못했어요.
-              </Text>
-            ) : (
-              groupByArea(sentences).map(([area, rows]) => (
-                <View key={area} style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: p.primary }}>{area}</Text>
-                  {rows.map((s, i) => (
-                    <View key={`${s.label}-${i}`} style={{ gap: 2 }}>
-                      <Text style={{ fontSize: 13, color: p.sub }}>{s.label}</Text>
-                      <Text style={{ fontSize: 14.5, color: p.text, lineHeight: 22 }}>{s.text}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))
-            )}
-          </Card>
-
-          <Notice palette={p}>{result.notice}</Notice>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-            <TextButton
-              label="이평선 분석 보기 →"
-              palette={p}
-              logName={LOG.analyze}
-              onPress={() => {
-                pendingAnalyze.symbol = result.symbol;
-                navigation.navigate('/radar');
-              }}
-            />
-            <TextButton label="다른 사진으로" palette={p} onPress={reset} />
-          </View>
+          <PhotoResult
+            palette={p}
+            result={result}
+            photoUri={photo?.uri ?? null}
+            onOpenPhoto={() => setViewer(true)}
+            onAgain={reset}
+            onOpenRadar={() => {
+              pendingAnalyze.symbol = result.symbol;
+              navigation.navigate('/radar');
+            }}
+            onAskPush={
+              isPushAvailable() && !push.loading && !push.enabled && !push.unsupported
+                ? () => setAskPush(true)
+                : undefined
+            }
+          />
         </View>
       ) : null}
 
       <Footer palette={p} />
     </ScrollView>
+
+      {/* 내가 올린 차트 크게 보기 */}
+      {viewer && photo ? (
+        <TouchableOpacity
+          onPress={() => setViewer(false)}
+          accessibilityRole="button"
+          accessibilityLabel="크게 보기 닫기"
+          activeOpacity={1}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.92)',
+            justifyContent: 'center',
+            padding: 12,
+          }}
+        >
+          <Image source={{ uri: photo.uri }} resizeMode="contain" style={{ width: '100%', height: '80%' }} />
+          <Text style={{ color: '#fff', textAlign: 'center', marginTop: 16, fontSize: 14 }}>눌러서 닫기</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {askPush ? (
+        <PushAskSheet
+          palette={p}
+          busy={push.busy}
+          problem={push.problem}
+          onAgree={push.toggle}
+          onLater={() => setAskPush(false)}
+        />
+      ) : null}
+    </View>
   );
 }
