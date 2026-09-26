@@ -278,6 +278,14 @@ export interface PhotoChart {
   lines: { name: string; kind: 'ma' | 'pattern' | 'level'; points: TimeValue[] }[];
 }
 
+/** 오늘의 사진 분석 횟수 — 서버 _photo_quota. resetAt 은 다음 0시(KST) ISO 문자열. */
+export interface PhotoQuota {
+  limit: number;
+  used: number;
+  left: number;
+  resetAt: string;
+}
+
 export interface PhotoAnalysisResponse {
   symbol: string;
   name: string;
@@ -287,4 +295,6 @@ export interface PhotoAnalysisResponse {
   notice: string;
   /** 예전 서버는 보내지 않는다 */
   chart?: PhotoChart | null;
+  /** 이번 분석까지 센 오늘의 남은 횟수 — 예전 서버는 보내지 않는다 */
+  quota?: PhotoQuota;
 }

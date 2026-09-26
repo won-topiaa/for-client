@@ -34,6 +34,7 @@ import {
   type Palette,
   type ThemeMode,
 } from '../theme';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/', {
   component: HomePage,
@@ -219,7 +220,7 @@ function Bullet({
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>{title}</Text>
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, marginTop: 3 }}>{body}</Text>
+        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 3 }}>{body}</Text>
       </View>
     </View>
   );
@@ -307,7 +308,7 @@ function HomePage() {
               fontWeight: '700',
               color: p.text,
               textAlign: 'center',
-              lineHeight: 44,
+              ...lh(44),
               letterSpacing: -1,
             }}
           >
@@ -319,7 +320,7 @@ function HomePage() {
               color: p.sub,
               textAlign: 'center',
               marginTop: 14,
-              lineHeight: 23,
+              ...lh(23),
             }}
           >
             종목마다 진짜 지켜온 선은 다릅니다
@@ -347,7 +348,7 @@ function HomePage() {
               fontWeight: '700',
               color: p.text,
               textAlign: 'center',
-              lineHeight: 44,
+              ...lh(44),
               letterSpacing: -1,
             }}
           >
@@ -359,7 +360,7 @@ function HomePage() {
               color: p.sub,
               textAlign: 'center',
               marginTop: 14,
-              lineHeight: 23,
+              ...lh(23),
             }}
           >
             {/* 두 줄 안에 들어가야 한다 — 시스템 글자 크기를 키우면 세 번째
@@ -539,12 +540,12 @@ function HomePage() {
 
           {/* ── 이평선이란? ── */}
           <Expandable title="이동평균선이란?" palette={p}>
-            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
               이동평균선(MA)은 과거 N일간의 평균 종가를 이은 선입니다.
               주가가 이 선 근처에서 반등하면 &apos;지지&apos;, 뚫고 내려가면
               &apos;이탈&apos;이라고 해요.
             </Text>
-            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22, marginTop: 10 }}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22), marginTop: 10 }}>
               이 앱은 과거 시세를 백테스트해서, 종목마다 실제로 자주 지켜진
               이평선을 자동으로 찾아줍니다. 남들이 많이 쓰는 선이 아닌, 이 종목에
               맞는 선을 알 수 있어요.
@@ -564,7 +565,7 @@ function HomePage() {
               palette={p}
               onChange={(v) => setMode(v)}
             />
-            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
               {mode === 'auto'
                 ? '휴대폰의 화면 설정을 따라가요.'
                 : mode === 'dark'
@@ -575,7 +576,7 @@ function HomePage() {
           {/* ── 문의·협업 ── */}
           <Card palette={p} style={{ gap: 10 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>문의 · 협업</Text>
-            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
               문의사항이나 협업 제안은 아래 이메일로 편하게 연락 주세요.
             </Text>
             <TouchableOpacity

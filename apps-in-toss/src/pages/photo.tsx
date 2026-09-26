@@ -16,9 +16,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { analyzePhoto, searchSymbols } from '../api/client';
+import { ApiError, analyzePhoto, fetchPhotoQuota, searchSymbols } from '../api/client';
 import type {
   PhotoAnalysisResponse,
+  PhotoQuota,
   SymbolInfo,
 } from '../api/types';
 import {
@@ -31,12 +32,14 @@ import {
   TextButton,
 } from '../components/ui';
 import { PhotoResult } from '../components/PhotoResult';
+import { QuotaMeter } from '../components/QuotaMeter';
 import { PushAskSheet } from '../components/PushAskSheet';
 import { WaitingShow } from '../components/WaitingShow';
 import { isPushAvailable, useMorningPush } from '../notify';
 import { LOG } from '../analytics';
 import { lastAnalysis, pendingAnalyze } from '../store';
 import { GUTTER, RADIUS, usePalette, type Palette } from '../theme';
+import { lh } from '../lineHeight';
 
 // 차트 사진 분석 — 사진 업로드 → 분석 → 설명 전달.
 //
@@ -217,6 +220,8 @@ function PhotoPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [result, setResult] = useState<PhotoAnalysisResponse | null>(null);
+  // 오늘 남은 분석 횟수 — 서버가 센 값. 못 받으면 칸을 그리지 않고 한도 문구만 둔다
+  const [quota, setQuota] = useState<PhotoQuota | null>(null);
   const [viewer, setViewer] = useState(false);
   // 결과 아래 '아침 시장 알림 받기' — 누르면 바텀시트(경쟁 앱 방식). 저절로 띄우지는 않는다:
   // 앱인토스 체크리스트 '화면 전환 시 바텀시트로 행동을 강제 유도하지 않아요'.
@@ -346,6 +351,18 @@ function PhotoPage() {
 
   /* ---------- 3. 분석 ---------- */
 
+  const refreshQuota = useCallback(async () => {
+    try {
+      setQuota(await fetchPhotoQuota(await clientKey()));
+    } catch {
+      // 조회가 실패해도 분석은 된다 — 서버가 한도를 지킨다
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshQuota();
+  }, [refreshQuota]);
+
   const run = async () => {
     if (!selected || !photo) {
       return;
@@ -366,12 +383,21 @@ function PhotoPage() {
         return;
       }
       setResult(body);
+      if (body.quota) {
+        setQuota(body.quota);
+      }
       // 결과가 버튼 아래에 붙는다 — 사용자가 스크롤을 찾지 않게 내려 준다
       // 결과 묶음의 onLayout 이 먼저 돌아야 위치를 안다 — 한 프레임으로는 모자란 기기가 있다
       setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, resultY.current - 12), animated: true }), 250);
     } catch (e) {
       if (seq === runSeq.current) {
         setErrorMsg(e instanceof Error ? e.message : '분석하지 못했어요.');
+        // 하루 한도(429)면 칸을 모두 비운다. 다른 실패는 서버가 횟수를 돌려주니 다시 읽는다
+        if (e instanceof ApiError && e.status === 429 && !e.retryAfterSec) {
+          setQuota((q) => ({ limit: q?.limit ?? 3, used: q?.limit ?? 3, left: 0, resetAt: q?.resetAt ?? '' }));
+        } else {
+          void refreshQuota();
+        }
       }
     } finally {
       if (seq === runSeq.current) {
@@ -389,7 +415,8 @@ function PhotoPage() {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const canRun = !!selected && !!photo && !loading;
+  const outOfQuota = quota != null && quota.left <= 0;
+  const canRun = !!selected && !!photo && !loading && !outOfQuota;
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
@@ -518,16 +545,17 @@ function PhotoPage() {
             {pickMsg.message}
           </Notice>
         ) : null}
-        <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
+        <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
           증권 앱 차트 화면을 캡처해 올리면 돼요. 잔고·평균 단가가 보이면 가리고 올려 주세요.
           사진은 설명을 만드는 데만 쓰고 저장하지 않아요. 설명을 쓰기 위해 AI 모델
-          제공업체(국외)로 전송될 수 있어요. 하루 10번까지 쓸 수 있어요.
+          제공업체(국외)로 전송될 수 있어요. 하루 3번까지 쓸 수 있어요.
         </Text>
       </Card>
 
       {/* ── 3. 분석 ── */}
+      {quota ? <QuotaMeter quota={quota} palette={p} /> : null}
       <PrimaryButton
-        label={loading ? '분석하는 중…' : '분석하기'}
+        label={loading ? '분석하는 중…' : outOfQuota ? '오늘 분석을 모두 썼어요' : '분석하기'}
         disabled={!canRun}
         palette={p}
         logName={LOG.photoAnalyze}
@@ -559,6 +587,7 @@ function PhotoPage() {
             photoUri={photo?.uri ?? null}
             onOpenPhoto={() => setViewer(true)}
             onAgain={reset}
+            quota={quota}
             onOpenRadar={() => {
               pendingAnalyze.symbol = result.symbol;
               navigation.navigate('/radar');

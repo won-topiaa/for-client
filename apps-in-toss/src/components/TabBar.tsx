@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import type { Palette } from '../theme';
+import { lh } from '../lineHeight';
 
 // 화면 하단 고정 탭바.
 //
@@ -100,7 +101,7 @@ function IconWedge({ color }: { color: string }) {
 function IconStar({ color }: { color: string }) {
   return (
     <View style={{ ...ICON_BOX, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 19, lineHeight: 21, color }}>★</Text>
+      <Text style={{ fontSize: 19, ...lh(21), color }}>★</Text>
     </View>
   );
 }

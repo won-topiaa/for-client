@@ -140,6 +140,10 @@ if (!diag) {
   }
 }
 
+// ---- /api/photo-quota (사진 분석 남은 횟수 — 세지 않는 조회) ----
+const quota = await get('/api/photo-quota?clientKey=contract-check-probe');
+ok = compare('PhotoQuota (/api/photo-quota)', declaredFields('PhotoQuota'), quota) && ok;
+
 // ---- /api/touches ----
 // TouchMatch 는 이름이 바뀌어 사고가 났던 바로 그 인터페이스다. 대조를 못 했으면
 // '통과'로 넘기지 않는다 — 스캔이 도는 중이거나 매치가 0건이면 잠시 뒤 다시

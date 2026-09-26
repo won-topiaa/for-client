@@ -5,6 +5,7 @@ import type {
   PatternKey,
   PatternsResponse,
   PhotoAnalysisResponse,
+  PhotoQuota,
   SearchResponse,
   TouchesResponse,
 } from './types';
@@ -135,7 +136,7 @@ async function api<T>(path: string, send?: Send): Promise<T> {
   const res = a.res;
   if (res.status === 429) {
     // 분당 제한은 Retry-After 헤더(초)를 함께 보낸다 — 폴링 화면이 그만큼 물러선다.
-    // 사진 분석의 '하루 10번' 한도는 헤더 없이 JSON detail 만 온다(30초 뒤 다시 해도 소용없다).
+    // 사진 분석의 하루 한도(3번)는 헤더 없이 JSON detail 만 온다(30초 뒤 다시 해도 소용없다).
     const raw = Number(res.headers.get('retry-after'));
     const retryAfter = Number.isFinite(raw) && raw > 0 ? raw : undefined;
     let detail: unknown = null;
@@ -251,4 +252,10 @@ export interface PhotoAnalysisRequest {
 export function analyzePhoto(req: PhotoAnalysisRequest): Promise<PhotoAnalysisResponse> {
   // 한 번만 보낸다 — 서버가 받자마자 하루 횟수를 깎는다 (위 api() 의 once 참고)
   return api<PhotoAnalysisResponse>('/api/photo-analysis', { json: req, once: true });
+}
+
+/** 오늘 남은 사진 분석 횟수 — 세지 않고 읽기만 한다. 화면을 열 때 '3번 중 N번 남았어요'를 그린다. */
+export function fetchPhotoQuota(clientKey?: string): Promise<PhotoQuota> {
+  const q = clientKey ? `?clientKey=${encodeURIComponent(clientKey)}` : '';
+  return api<PhotoQuota>(`/api/photo-quota${q}`);
 }

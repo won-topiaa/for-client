@@ -33,6 +33,7 @@ import { fmtRate } from '../format';
 import { lastAnalysis, pendingAnalyze } from '../store';
 import { GUTTER, RADIUS, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/radar', {
   component: RadarPage,
@@ -571,7 +572,7 @@ function RadarPage() {
                               MA {rec.period}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 12, color: p.sub, lineHeight: 18 }}>
+                          <Text style={{ fontSize: 12, color: p.sub, ...lh(18) }}>
                             {/* 기본 표기는 '몇 번 중 몇 번' — 비율만 있으면 표본이
                                 2회인지 200회인지 모른 채 숫자를 믿게 된다.
                                 분모는 supportTests (touches 는 저항 포함이라 안 맞다). */}
@@ -607,7 +608,7 @@ function RadarPage() {
                   })}
                   {recommended.length === 0 ? (
                     <Card palette={p} style={{ flexBasis: '100%' }}>
-                      <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                      <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                         추천할 만한 이평선을 찾지 못했습니다 (데이터·터치 부족)
                       </Text>
                     </Card>
@@ -628,7 +629,7 @@ function RadarPage() {
                   onPress={() => setShowStats((v) => !v)}
                 />
                 {showStats ? (
-                  <Text style={{ fontSize: 12, color: p.faint, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: p.faint, ...lh(18) }}>
                     분석 구간: {data.windowStart} ~ {data.windowEnd} ({TF_LABEL[tf]} {data.bars}개
                     {data.lookbackYears ? `, 약 ${data.lookbackYears}년` : ', 전체 기간'}) · 최근
                     가중 반감기 {data.halfLifeBars}봉
@@ -723,7 +724,7 @@ function RadarPage() {
 
         {!analysis && !loading && !errorMsg ? (
           <Expandable title="어떻게 쓰나요?" palette={p}>
-            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
               1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
               2. 일봉·주봉·월봉별로 가장 자주, 믿을 만하게 지지/저항 역할을 해온 이동평균선
               2~3개를 백테스트로 찾아 차트에 그려드려요{'\n'}

@@ -23,6 +23,7 @@ import { LOG } from '../analytics';
 import { pendingAnalyze } from '../store';
 import { GUTTER, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/patterns', {
   component: PatternsPage,
@@ -138,7 +139,7 @@ const PatternCard = React.memo(function PatternCard({
 
       {/* 왜 이 패턴으로 봤는지 — 서버가 만든 한 줄 */}
       {m.summary ? (
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>{m.summary}</Text>
+        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>{m.summary}</Text>
       ) : null}
 
       <CandleChart
@@ -318,9 +319,9 @@ function PatternsPage() {
             <IconChip glyph={current.emoji} accent="violet" palette={p} size={36} />
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{current.label}</Text>
           </View>
-          <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 23 }}>{current.plain}</Text>
+          <Text style={{ fontSize: 14.5, color: p.sub, ...lh(23) }}>{current.plain}</Text>
           <Expandable title="좀 더 자세히" palette={p} surface={p.sunken}>
-            <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>{current.detail}</Text>
+            <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>{current.detail}</Text>
           </Expandable>
           {/* 패턴을 매수신호로 읽지 않게 — 설명과 같은 카드 안에 둔다 */}
           <Notice palette={p}>
@@ -374,7 +375,7 @@ function PatternsPage() {
             <View
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, ...lh(18) }}>
                 {statusText(body)}
               </Text>
               {!body.partial && !body.refreshing ? (
@@ -388,7 +389,7 @@ function PatternsPage() {
             </View>
             {(body.matches ?? []).length === 0 ? (
               <Card palette={p}>
-                <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n이 모양을 만드는 종목이 나오면 여기 채워집니다.'
                     : `지금 ${current.label} 모양을 만들고 있는 종목이 없습니다.\n패턴은 매일 달라집니다 — 다른 패턴이나 다른 시장을 살펴보세요.`}

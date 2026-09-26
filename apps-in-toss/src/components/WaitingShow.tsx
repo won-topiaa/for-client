@@ -3,6 +3,7 @@ import { AccessibilityInfo, Animated, Text, TouchableOpacity, View } from 'react
 import { TIPS, type Tip, type TipCategory } from '../tips';
 import type { Palette } from '../theme';
 import { SlingshotGame } from './SlingshotGame';
+import { lh } from '../lineHeight';
 
 // 기다리는 동안 보여 주는 화면 — 새총 게임 + 경제·주식·매크로 짧은 글.
 //
@@ -132,7 +133,7 @@ export function WaitingShow({
             </View>
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text, flexShrink: 1 }}>{tip.title}</Text>
           </View>
-          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>{tip.body}</Text>
+          <Text style={{ fontSize: 14, color: p.sub, ...lh(21) }}>{tip.body}</Text>
         </Animated.View>
       </View>
       <Text style={{ fontSize: 11.5, color: p.faint, textAlign: 'center' }}>

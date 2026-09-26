@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { BRAND_NAME, CONTACT_EMAIL } from '../env';
 import { LIGHT, type Palette } from '../theme';
+import { lh } from '../lineHeight';
 
 // 렌더 중 예외 하나가 앱 전체를 흰 화면으로 만드는 것을 막는다.
 // RN 에는 브라우저의 '깨진 화면이라도 남는' 안전망이 없어서, 잡지 않으면
@@ -70,7 +71,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <Text style={{ fontSize: 20, fontWeight: '700', color: p.text }}>
             화면을 그리지 못했어요
           </Text>
-          <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 23 }}>
+          <Text style={{ fontSize: 14.5, color: p.sub, ...lh(23) }}>
             {stuck
               ? '같은 문제가 반복되고 있어요. 앱을 완전히 닫았다가 다시 열어 주세요. ' +
                 '그래도 같으면 아래 이메일로 알려주시면 빠르게 고치겠습니다.'

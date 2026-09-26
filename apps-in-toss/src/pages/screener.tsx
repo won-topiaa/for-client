@@ -23,6 +23,7 @@ import { LOG } from '../analytics';
 import { pendingAnalyze } from '../store';
 import { GUTTER, signColor, usePalette, type Palette } from '../theme';
 import { isWatched, useWatchlist } from '../watchlist';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/screener', {
   component: ScreenerPage,
@@ -135,7 +136,7 @@ const MatchCard = React.memo(function MatchCard({
       </View>
 
       <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
           {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
               함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%).
               이름은 '지지 성공률' 하나로 통일한다 — 예전엔 같은 수치를 여기서만
@@ -314,11 +315,11 @@ function ScreenerPage() {
         </Notice>
 
         <Expandable title="스캔 기준 · 지지 성공률이란?" palette={p}>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
             {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
           </Text>
           {/* 같은 수치를 화면마다 다른 이름으로 부르지 않는다. 뜻은 여기 한 번만 적는다. */}
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21, marginTop: 10 }}>
+          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 10 }}>
             지지 성공률 = 그 선까지 눌렸을 때 실제로 버틴 비율입니다. 오래된 일보다 최근 일에 더 큰
             가중치를 줘서, 요즘 잘 지켜지는 선이 높게 나옵니다.
           </Text>
@@ -348,7 +349,7 @@ function ScreenerPage() {
                 }}
               />
             </View>
-            <Text style={{ fontSize: 13, color: p.faint, lineHeight: 20 }}>
+            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
               서버가 종목마다 3년 백테스트를 돌리는 중이에요 — 보통 1~2분이면 끝나요.
             </Text>
           </Card>
@@ -366,7 +367,7 @@ function ScreenerPage() {
             <View
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: p.faint, flexShrink: 1, ...lh(18) }}>
                 {statusText(body)}
               </Text>
               {!body.partial && !body.refreshing ? (
@@ -380,7 +381,7 @@ function ScreenerPage() {
             </View>
             {(body.matches ?? []).length === 0 ? (
               <Card palette={p}>
-                <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+                <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.'
                     : '오늘 검증된 지지선에 닿아 있는 종목이 없습니다.\n터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.'}

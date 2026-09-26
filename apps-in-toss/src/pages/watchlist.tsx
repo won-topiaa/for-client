@@ -17,6 +17,7 @@ import { SCREENER_REFRESH_HOUR_KST, SCREENER_REFRESH_MIN_KST } from '../env';
 import { pendingAnalyze } from '../store';
 import { GUTTER, usePalette } from '../theme';
 import { useWatchlist } from '../watchlist';
+import { lh } from '../lineHeight';
 
 export const Route = createRoute('/watchlist', {
   component: WatchlistPage,
@@ -147,7 +148,7 @@ function WatchlistPage() {
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>
               ⚠ 관심종목이 저장되지 않아요
             </Text>
-            <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 21 }}>
+            <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
               이 기기의 저장소를 쓸 수 없어서, 지금 담는 종목은 앱을 껐다 켜면 사라집니다. 토스
               앱을 최신 버전으로 올린 뒤 다시 시도해 주세요.
             </Text>
@@ -164,7 +165,7 @@ function WatchlistPage() {
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>
               아직 담은 종목이 없어요
             </Text>
-            <Text style={{ fontSize: 14, color: p.sub, lineHeight: 22 }}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
               &apos;내 종목 이평선&apos;이나 &apos;오늘의 지지선&apos; 화면에서 종목 오른쪽 위의 ☆
               를 누르면 여기에 모입니다.
             </Text>
@@ -243,13 +244,13 @@ function WatchlistPage() {
               ))}
             </Card>
             {touched.size > 0 ? (
-              <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
+              <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
                 <Text style={{ color: p.primary, fontWeight: '700' }}>오늘 지지선</Text> 배지는 그
                 종목이 과거에 자주 지켜진 이평선에 오늘 닿았다는 뜻이에요. 매수·매도 신호가
                 아니에요.
               </Text>
             ) : null}
-            <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
+            <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
               관심종목은 이 기기에만 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
             </Text>
           </>
