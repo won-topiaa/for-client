@@ -2,20 +2,25 @@ import { getTossShareLink, share } from '@apps-in-toss/framework';
 import React, { useMemo, useState } from 'react';
 import { Image, Text, TouchableOpacity, View } from 'react-native';
 import type {
-  DiagnosisLevel,
+  DiagnosisLadder,
   DiagnosisRow,
   DiagnosisSentence,
   PhotoAnalysisResponse,
+  PhotoChart,
   Timeframe,
 } from '../api/types';
 import type { Palette } from '../theme';
 import { LOG, Track } from '../analytics';
+import { CandleChart } from './CandleChart';
 import { Badge, Card, Chevron, Expandable, Notice, Segmented } from './ui';
 
 // 차트 사진 분석 결과 — 초보자가 위에서부터 읽어 내려가게.
 //
-//   내가 올린 차트 → 한줄 요약 → (감지된 모양) → 주요 지표 행 → 지금 가까운 선
-//   → 자주 묻는 질문 → 자세히 보기(엔진 원문, 중급자용)
+//   내가 올린 차트 → 한 줄 요약(1년 범위 막대) → 선을 그린 차트 → (감지된 모양) → 주요 지표 행
+//   → 평균선과 지금 주가의 거리 → 자주 묻는 질문 → 자세히 보기(엔진 원문, 중급자용)
+//
+// 정책 검토(2026-09-26) 뒤 보수적으로: 제목 아래 과거 횟수 줄(경쟁 앱 '반등 가능성' 자리)과
+// 아래·위 두 칸(손절가·목표가처럼 읽힘)은 두지 않는다. 과거 기록은 지표 행에, 선은 가격 순 목록으로.
 //
 // 토론 결론(2026-09-26): 사용자는 '혼합, 초보 쪽으로 기움'. 지표 이름은 남기고(자기
 // 증권 앱과 이어 보게) 뜻은 행마다 한 줄 + (?) 도움말로 푼다. 원문과 숫자는 '자세히
@@ -29,15 +34,19 @@ const AREA_ORDER = ['지지선', '추세', '모멘텀', '변동성', '거래량'
 /** 결과 화면 공통 질문 — 광고로 잠그지 않는다(답이 곧 오해를 막는 안내라서).
  *  경쟁 앱의 '무엇을 봐야 하나'(권유) 대신 '무엇을 재나 / 어떻게 골랐나'(사실). */
 function faqFor(supportPeriod: number | null): { q: string; a: string }[] {
-  const line = supportPeriod ? `${supportPeriod}일 평균선` : '가장 잘 지켜진 선';
+  const pick = supportPeriod
+    ? [
+        {
+          q: `${supportPeriod}일 평균선은 어떻게 골랐나요?`,
+          a: '최근 3년 동안 주가가 위에서 닿은 횟수와, 그 뒤 선 위에서 마감한 비율을 함께 따져 골랐어요. 10일선 이상이고 그 비율이 60% 이상인 선만 골라요. 횟수가 많은 선이 앞에 오게 계산해서, 비율이 가장 높은 선은 아닐 수 있어요. 지난 기록일 뿐, 앞으로 그렇게 될 확률은 아니에요.',
+        },
+      ]
+    : [];
   return [
-    {
-      q: `${line}은 어떻게 골랐나요?`,
-      a: '앱이 여러 평균선을 이 종목의 과거 가격에 대 보고, 주가가 내려와 닿은 뒤 다시 올라간 비율과 횟수를 함께 따져 골랐어요. 지난 기록일 뿐, 앞으로 그렇게 될 확률은 아니에요.',
-    },
+    ...pick,
     {
       q: 'RSI·MACD는 각각 무엇을 재는 값인가요?',
-      a: 'RSI는 최근 14거래일쯤 동안 오른 폭과 내린 폭을 비교해 0~100으로 나타낸 값이에요. MACD는 12일 평균과 26일 평균의 차이예요. 0보다 크면 짧은 기간 평균이 더 위에 있다는 뜻이에요.',
+      a: 'RSI는 오른 폭과 내린 폭을 최근 날일수록 무게를 더 두어 평균 낸 뒤(기준 14일) 0~100으로 나타낸 값이에요. 50보다 크면 그 평균에서 오른 폭이 더 컸다는 뜻이에요. MACD는 최근 가격에 더 무게를 둔 12일 평균에서 26일 평균을 뺀 값이에요. 0보다 크면 짧은 기간 평균이 더 위에 있다는 뜻이에요.',
     },
     {
       q: '지표가 대부분 ‘위’면 좋은 건가요?',
@@ -54,9 +63,10 @@ const FAQ_TAIL: { q: string; a: string }[] = [
   },
 ];
 
+// '모양 → 이후 결과'라는 틀을 앱이 먼저 꺼내지 않는다(정책 검토) — 무엇을 하고 안 하는지만
 const PATTERN_FAQ = {
-  q: '이 모양이 나오면 보통 어떻게 됐어요?',
-  a: '이 앱은 차트가 교과서 속 모양과 맞는지까지만 알려 드려요. 같은 모양이라도 그 뒤의 움직임은 종목과 시기마다 달라서, 방향은 말씀드리지 않아요.',
+  q: '이 모양 뒤의 움직임도 알려 주나요?',
+  a: '아니요. 이 앱은 차트가 교과서 속 생김새와 맞는지만 확인해요. 모양이 나온 뒤 주가가 어떻게 움직였는지는 세지 않아요.',
 };
 
 /** 파란 세로 막대 + 제목 — 카드 안의 섹션 머리. */
@@ -193,26 +203,87 @@ function RangeBar({ pos, palette: p }: { pos: number; palette: Palette }) {
   );
 }
 
-/** 지금 가까운 선 한 칸 — 방향 색(빨강/초록)을 쓰지 않는다. */
-function LevelTile({ title, level, palette: p }: { title: string; level: DiagnosisLevel | null; palette: Palette }) {
+/** 평균선과 지금 주가의 거리 — 가격 순(높은 것부터)으로 늘어놓고 '지금 주가' 줄을 끼워 넣는다.
+ *  아래·위 두 칸은 손절가·목표가로 읽혀서(정책 검토) 한 목록·한 색으로 둔다. */
+function Ladder({ ladder, palette: p }: { ladder: DiagnosisLadder; palette: Palette }) {
+  const rows: { name: string; text: string; gap: number | null }[] = ladder.items.map((it) => ({
+    name: it.name,
+    text: it.text,
+    gap: it.gapPct,
+  }));
+  const at = rows.findIndex((r) => (r.gap ?? 0) > 0); // 주가가 선보다 위 = 선이 주가보다 아래
+  rows.splice(at < 0 ? rows.length : at, 0, { name: '지금 주가', text: ladder.closeText, gap: null });
   return (
-    <View style={{ flex: 1, backgroundColor: p.sunken, borderRadius: 14, padding: 14, gap: 6 }}>
-      <Text style={{ fontSize: 13, fontWeight: '700', color: p.faint }}>{title}</Text>
-      {level ? (
-        <>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{level.text}</Text>
-          <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 19 }}>{level.name}</Text>
-          {/* 주가 기준으로 말한다 — '지금보다 3% 위'는 목표가처럼 읽힌다 */}
-          <Text style={{ fontSize: 13, color: p.sub, lineHeight: 19 }}>
-            주가가 이 {level.name.includes('가격') ? '가격' : '선'}보다 {Math.abs(level.gapPct).toFixed(1)}%{' '}
-            {level.gapPct >= 0 ? '위' : '아래'}에 있어요
-          </Text>
-          {level.note ? <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>{level.note}</Text> : null}
-        </>
-      ) : (
-        <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 19 }}>이쪽에는 가까운 선이 없어요</Text>
-      )}
+    <View style={{ gap: 0 }}>
+      {rows.map((r, i) => {
+        const now = r.gap == null;
+        return (
+          <View
+            key={`${r.name}-${i}`}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingVertical: 10,
+              borderTopWidth: i === 0 ? 0 : 1,
+              borderTopColor: p.border,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: now ? p.primary : p.muted }} />
+              <Text style={{ fontSize: 14.5, fontWeight: now ? '700' : '500', color: now ? p.primary : p.text }}>
+                {r.name}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 14, color: now ? p.primary : p.sub, fontWeight: now ? '700' : '400' }}>
+              {r.text}
+              {now ? '' : ` · 주가가 ${Math.abs(r.gap ?? 0).toFixed(1)}% ${(r.gap ?? 0) >= 0 ? '위' : '아래'}`}
+            </Text>
+          </View>
+        );
+      })}
     </View>
+  );
+}
+
+/** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린 같은 종목의 최근 일봉 위에.
+ *  사진의 가격 눈금을 읽어 그리면 앱마다 몇 %씩 어긋난다('숫자는 사진에서 읽지 않는다'). */
+function PhotoChartCard({ chart, palette: p }: { chart: PhotoChart; palette: Palette }) {
+  const colors = [p.primary, p.ma[1] ?? p.warn, p.ma[2] ?? p.sub, p.ma[3] ?? p.faint];
+  const lines = chart.lines.map((ln, i) => ({
+    color: colors[i % colors.length] ?? p.primary,
+    points: ln.points,
+    width: ln.kind === 'ma' ? 2 : 1.5,
+  }));
+  return (
+    <Card palette={p} style={{ gap: 12 }}>
+      <BarTitle title="선을 그린 차트" palette={p} />
+      <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
+        같은 종목의 최근 6개월 일봉을 앱이 다시 그리고, 앱이 고른 평균선과 감지된 모양의 선을 겹쳐 그렸어요.
+      </Text>
+      <CandleChart
+        candles={chart.candles}
+        lines={lines}
+        height={200}
+        maxBars={120}
+        colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
+      />
+      {chart.lines.length > 0 ? (
+        <View style={{ gap: 6 }}>
+          {chart.lines.map((ln, i) => (
+            <View key={`${ln.name}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: colors[i % colors.length] }} />
+              <Text style={{ fontSize: 13, color: p.sub, flexShrink: 1 }}>{ln.name}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 앱이 고른 평균선이나 감지된 모양이 없어 캔들만 그렸어요.</Text>
+      )}
+      <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+        사진 위에 직접 그리지 않은 건, 증권 앱마다 가격 눈금이 달라 선 위치가 어긋날 수 있어서예요.
+      </Text>
+    </Card>
   );
 }
 
@@ -228,8 +299,8 @@ function groupByArea(sentences: DiagnosisSentence[]): [string, DiagnosisSentence
   return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
 }
 
-/** 공유 — 사실 한 줄 요약 + 보인 모양 이름만. 과거 횟수('12번 중 8번')는 넣지 않는다:
- *  앱 밖 제3자에게는 설명 없이 승률처럼 퍼진다. 📈(오른다는 느낌) 대신 📊. 계좌·사진은 보내지 않는다. */
+/** 공유 — 엔진이 계산한 한 줄 요약(1년 범위 높이)만. 모양 이름·과거 횟수는 넣지 않는다:
+ *  앱 밖 제3자에게는 풀이 없이 종목 신호처럼 퍼진다(정책 검토). 📈 대신 📊. 계좌·사진은 보내지 않는다. */
 async function shareResult(result: PhotoAnalysisResponse, headline: string): Promise<void> {
   const who = result.name || result.symbol;
   let link = '';
@@ -238,12 +309,10 @@ async function shareResult(result: PhotoAnalysisResponse, headline: string): Pro
   } catch {
     link = ''; // 오래된 토스 앱 — 링크 없이 글만 보낸다
   }
-  const shape = result.diagnosis.patterns[0]?.name;
   const message = [
     `📊 ${who} 차트 사진 풀이`,
     headline,
-    shape ? `보인 모양: ${shape}` : '',
-    `이평선 레이더가 ${result.asOf} 종가까지의 지난 데이터로 계산했어요. 투자 권유가 아니에요.`,
+    `이평선 레이더가 ${result.asOf} 종가까지의 지난 가격으로 계산한 숫자예요. 앞으로의 움직임은 알려 주지 않고, 투자 권유가 아니에요.`,
     link,
   ]
     .filter(Boolean)
@@ -277,19 +346,20 @@ export function PhotoResult({
   const [tf, setTf] = useState<Timeframe>(shownTf);
   const [detailTf, setDetailTf] = useState<Timeframe>(shownTf);
   const [shareFailed, setShareFailed] = useState(false);
-  // 일봉의 '가장 잘 지켜진 선'은 제목·강조 줄이 이미 말한다 — 같은 숫자를 또 보이지 않는다
-  const rows = (diag.timeframes[tf]?.rows ?? []).filter((r) => !(tf === 'day' && r.key === 'support' && diag.headlineSub));
+  const rows = diag.timeframes[tf]?.rows ?? [];
   const supportPeriod = Number((diag.timeframes.day?.rows ?? []).find((r) => r.key === 'support')?.term.match(/^(\d+)/)?.[1]) || null;
   const sentences = diag.timeframes[detailTf]?.sentences ?? [];
-  const headline = ex.headline || diag.headline || `${who}의 지표를 모아 봤어요.`;
-  const levels = diag.levels ?? null;
+  // 제목은 엔진이 계산한 문장을 먼저(공유로도 나간다) — 서버도 같은 순서로 정한다
+  const headline = diag.headline || ex.headline || `${who}의 지표를 모아 봤어요.`;
+  const ladder = diag.ladder ?? null;
   const dayRows = diag.timeframes.day?.rows ?? [];
+  const yearPos = dayRows.find((r) => r.key === 'yearRange')?.pos ?? null;
   const chips = useMemo(() => {
     const by = new Map(dayRows.map((r) => [r.key, r]));
     const out: string[] = [];
-    // 제목·강조 줄에 이미 있는 숫자(선과의 거리·횟수)는 칩에 되풀이하지 않는다
-    const yr = by.get('yearRange');
-    if (yr) out.push(`1년 범위 ${yr.value}`);
+    // 제목의 숫자(1년 범위 높이)는 칩에 되풀이하지 않는다
+    const atr = by.get('atr');
+    if (atr) out.push(`하루 움직임 ${atr.value}`);
     const vol = by.get('volume');
     if (vol) out.push(`거래량 ${vol.value}`);
     if (diag.patterns.length > 0) out.push(`${diag.patterns[0]?.name ?? ''} 모양`);
@@ -334,22 +404,15 @@ export function PhotoResult({
       {/* 한줄 요약 */}
       <Card palette={p} style={{ gap: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: p.primary }}>한줄 요약</Text>
-          <Badge label={byAi ? 'AI 설명' : '기본 설명'} tone={byAi ? 'primary' : 'plain'} palette={p} />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: p.primary }}>한 줄 요약</Text>
+          {/* 제목·지표는 엔진 계산, AI 는 요약·사진 설명만 — 배지가 전부 AI 판단처럼 보이지 않게 */}
+          <Badge label={byAi ? 'AI 요약 포함' : '기본 설명'} tone={byAi ? 'primary' : 'plain'} palette={p} />
         </View>
         <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, lineHeight: 31 }}>
           {headline}
         </Text>
-        {/* 경쟁 앱의 '반등 가능성이 보여요'(초록) 자리 — 과거 기록을 양쪽 결과 함께, 기본색으로 */}
-        {diag.headlineSub ? (
-          <View style={{ gap: 4 }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: p.text, lineHeight: 24 }}>{diag.headlineSub}</Text>
-            {diag.headlineNote ? (
-              <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>{diag.headlineNote}</Text>
-            ) : null}
-          </View>
-        ) : null}
-        {/* 한눈에 — '지금 어디쯤인지'를 숫자 사실로 (경쟁 앱의 '감지된 패턴 75%' 칩 자리) */}
+        {yearPos != null ? <RangeBar pos={yearPos} palette={p} /> : null}
+        {/* 한눈에 — 숫자 사실 칩 (경쟁 앱의 '감지된 패턴 75%' 칩 자리) */}
         {chips.length > 0 ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {chips.map((c) => (
@@ -370,7 +433,7 @@ export function PhotoResult({
         ) : null}
         {ex.sameStock === 'no' ? (
           <Notice palette={p} tone="warn">
-            사진 속 종목이 {who}와(과) 달라 보여요. 위 내용은 고르신 {who} 기준이에요.
+            사진 속 종목이 고르신 종목과 달라 보여요. 위 내용은 {who} 기준이에요.
           </Notice>
         ) : null}
         {ex.timeframe === 'intraday' ? (
@@ -383,6 +446,8 @@ export function PhotoResult({
           <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>{ex.photoNote}</Text>
         </View>
       </Card>
+
+      {result.chart ? <PhotoChartCard chart={result.chart} palette={p} /> : null}
 
       {/* 감지된 차트 모양 — 보일 때만 (일봉 기준) */}
       {diag.patterns.length > 0 ? (
@@ -424,21 +489,14 @@ export function PhotoResult({
         </Card>
       ) : null}
 
-      {/* 지금 가까운 선 — '앞으로 어떻게 될까' 대신 사실만 */}
-      {levels && (levels.below || levels.above) ? (
-        <Card palette={p} style={{ gap: 14 }}>
-          <BarTitle title="지금 주가 바로 아래·위에 있는 선" palette={p} />
-          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>지금 주가 {levels.closeText} 기준이에요.</Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <LevelTile title="아래" level={levels.below} palette={p} />
-            <LevelTile title="위" level={levels.above} palette={p} />
-          </View>
-          {/* '지난 기록이에요' 면책은 제목 아래 한 번만 — 되풀이하면 읽지 않는다(판정) */}
-          {!diag.headlineNote ? (
-            <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
-              과거에 자주 지켜진 선이라도 앞으로도 그렇다는 뜻은 아니에요.
-            </Text>
-          ) : null}
+      {/* 평균선과 지금 주가의 거리 — '앞으로 어떻게 될까' 대신 사실만, 아래·위 두 칸 없이 */}
+      {ladder && ladder.items.length > 0 ? (
+        <Card palette={p} style={{ gap: 10 }}>
+          <BarTitle title="평균선과 지금 주가의 거리" palette={p} />
+          <Ladder ladder={ladder} palette={p} />
+          <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+            선의 값은 {result.asOf} 종가까지로 계산했어요. 날마다 바뀌어요.
+          </Text>
         </Card>
       ) : null}
 
@@ -523,7 +581,7 @@ export function PhotoResult({
           <Text style={{ fontSize: 22 }}>🔔</Text>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>아침 시장 알림 받기</Text>
-            <Text style={{ fontSize: 13, color: p.sub, marginTop: 2 }}>전날 미국 시장을 아침에 한 줄로 보내 드려요</Text>
+            <Text style={{ fontSize: 13, color: p.sub, marginTop: 2 }}>화~토 아침, 전날 미국 시장을 한 줄로 보내 드려요</Text>
           </View>
           <Chevron dir="right" color={p.faint} size={9} />
         </TouchableOpacity>

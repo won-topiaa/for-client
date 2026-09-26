@@ -125,12 +125,12 @@ if (!diag) {
   } else {
     ok = compare('DiagnosisRow', declaredFields('DiagnosisRow'), row, { optional: ['pos'] }) && ok;
   }
-  const lv = diag.levels?.below ?? diag.levels?.above;
-  if (lv) {
-    ok = compare('DiagnosisLevel', declaredFields('DiagnosisLevel'), lv) && ok;
-    ok = compare('DiagnosisLevels', declaredFields('DiagnosisLevels'), diag.levels) && ok;
+  const item = diag.ladder?.items?.[0];
+  if (item) {
+    ok = compare('DiagnosisLadderItem', declaredFields('DiagnosisLadderItem'), item) && ok;
+    ok = compare('DiagnosisLadder', declaredFields('DiagnosisLadder'), diag.ladder) && ok;
   } else {
-    console.log('  … DiagnosisLevel: 가까운 선이 없어 건너뜀');
+    console.log('  … DiagnosisLadder: 평균선 목록이 없어 건너뜀');
   }
   const pat = (diag.patterns ?? [])[0];
   if (pat) {

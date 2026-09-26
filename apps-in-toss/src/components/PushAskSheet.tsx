@@ -57,11 +57,9 @@ export function PushAskSheet({
       >
         <View style={{ gap: 6 }}>
           <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text }}>
-            아침마다 시장 한 줄을 보내드릴까요?
+            전날 미국 시장을 한 줄로 보내 드릴까요?
           </Text>
-          <Text style={{ fontSize: 15, color: p.sub, lineHeight: 22 }}>
-            {PUSH_TIME_LABEL}, 전날 미국 시장을 한 줄로 보내 드려요
-          </Text>
+          <Text style={{ fontSize: 15, color: p.sub, lineHeight: 22 }}>{PUSH_TIME_LABEL}에 보내 드려요</Text>
         </View>
         {/* 실제로 오는 알림의 모양 */}
         <View
@@ -92,7 +90,8 @@ export function PushAskSheet({
           </View>
         </View>
         <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
-          예시 문구예요. 알림은 홈의 ‘아침 시장 알림’에서 언제든 끌 수 있어요.
+          예시 문구예요. 공포탐욕은 미국 CNN이 발표하는 시장 심리 지수(0~100)이고, ‘중립’은 CNN이 붙인 구간
+          이름이에요. 알림은 홈의 ‘아침 시장 알림’에서 언제든 끌 수 있어요.
         </Text>
         {problem ? <Text style={{ fontSize: 13.5, color: p.danger, lineHeight: 20 }}>{problem}</Text> : null}
         <TouchableOpacity
@@ -110,7 +109,7 @@ export function PushAskSheet({
           }}
         >
           <Text style={{ fontSize: 16, fontWeight: '700', color: p.onPrimary }}>
-            {busy ? '처리 중…' : '동의하고 알림받기'}
+            {busy ? '처리 중…' : '동의하고 알림 받기'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onLater} accessibilityRole="button" activeOpacity={0.6} style={{ alignItems: 'center', paddingVertical: 4 }}>

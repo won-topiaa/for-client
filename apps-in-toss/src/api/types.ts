@@ -216,20 +216,19 @@ export interface DiagnosisRow {
   pos?: number;
 }
 
-/** 지금 주가 바로 아래·위의 선 하나. */
-export interface DiagnosisLevel {
+/** '평균선과 지금 주가의 거리' 목록의 한 줄 — 주가가 그 선보다 gapPct% 위(+)/아래(-). */
+export interface DiagnosisLadderItem {
   name: string;
   value: number;
   text: string;
   gapPct: number;
-  note: string;
 }
 
-export interface DiagnosisLevels {
+/** 평균선을 가격 순(높은 것부터)으로 — 아래·위 두 칸(손절가·목표가처럼 읽힘) 대신. */
+export interface DiagnosisLadder {
   close: number;
   closeText: string;
-  below: DiagnosisLevel | null;
-  above: DiagnosisLevel | null;
+  items: DiagnosisLadderItem[];
 }
 
 export interface DiagnosisTimeframe {
@@ -243,13 +242,9 @@ export interface Diagnosis {
   patterns: DiagnosisPattern[];
   timeframes: Partial<Record<Timeframe, DiagnosisTimeframe>>;
   notice: string;
-  /** 엔진이 만든 한 줄 요약 (AI 가 없을 때도 있다) */
+  /** 엔진이 만든 한 줄 요약 — 1년 가격 범위 안의 높이 */
   headline?: string;
-  /** 제목 아래 강조 줄 — 가장 잘 지켜진 선의 과거 기록(올라간 횟수·내려간 횟수 함께) */
-  headlineSub?: string;
-  /** 그 아래 작은 글씨 — 선을 고른 방법 + '지난 기록이에요' (화면에서 이 한 번만) */
-  headlineNote?: string;
-  levels?: DiagnosisLevels | null;
+  ladder?: DiagnosisLadder | null;
 }
 
 export interface PhotoExplanationPoint {
@@ -274,6 +269,12 @@ export interface PhotoExplanation {
   points: PhotoExplanationPoint[];
 }
 
+/** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린 같은 종목의 최근 일봉 위에. */
+export interface PhotoChart {
+  candles: Candle[];
+  lines: { name: string; kind: 'ma' | 'pattern'; points: TimeValue[] }[];
+}
+
 export interface PhotoAnalysisResponse {
   symbol: string;
   name: string;
@@ -281,4 +282,6 @@ export interface PhotoAnalysisResponse {
   explanation: PhotoExplanation;
   diagnosis: Diagnosis;
   notice: string;
+  /** 예전 서버는 보내지 않는다 */
+  chart?: PhotoChart | null;
 }
