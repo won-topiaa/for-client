@@ -123,7 +123,7 @@ if (!diag) {
     console.error('  ✗ DiagnosisRow: 일봉 쉬운 행이 비어 대조할 수 없습니다 (서버가 쉬운 설명 이전 버전?).');
     ok = false;
   } else {
-    ok = compare('DiagnosisRow', declaredFields('DiagnosisRow'), row, { optional: ['pos'] }) && ok;
+    ok = compare('DiagnosisRow', declaredFields('DiagnosisRow'), row, { optional: ['pos', 'span'] }) && ok;
   }
   const item = diag.ladder?.items?.[0];
   if (item) {

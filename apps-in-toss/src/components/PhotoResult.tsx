@@ -38,7 +38,9 @@ function faqFor(supportPeriod: number | null): { q: string; a: string }[] {
     ? [
         {
           q: `${supportPeriod}일 평균선은 어떻게 골랐나요?`,
-          a: '최근 3년 동안 주가가 위에서 닿은 횟수와, 그 뒤 선 위에서 마감한 비율을 함께 따져 골랐어요. 10일선 이상이고 그 비율이 60% 이상인 선만 골라요. 횟수가 많은 선이 앞에 오게 계산해서, 비율이 가장 높은 선은 아닐 수 있어요. 지난 기록일 뿐, 앞으로 그렇게 될 확률은 아니에요.',
+          // 60% 는 최근에 무게를 둔 비율이다(서버 diagnosis.SUPPORT_MIN_RATE) — 화면의 횟수를 그대로
+          // 나누면 60%보다 낮게 나올 수 있어(운영 삼성전자 28/51), 그렇다고 밝힌다
+          a: '최근 3년 동안 주가가 위에서 닿은 횟수와, 그 뒤 선 위에서 마감한 비율을 함께 따져 골랐어요. 기간이 10일 이상인 선 가운데, 최근 기록에 무게를 더 두어 센 선 위 마감 비율이 60% 이상인 선만 골라요. 그래서 위에 적힌 횟수를 그대로 나눈 값과는 다를 수 있어요. 횟수가 많은 선이 앞에 오게 계산해서, 비율이 가장 높은 선은 아닐 수 있어요. 지난 기록일 뿐, 앞으로도 그렇게 된다는 뜻은 아니에요.',
         },
       ]
     : [];
@@ -161,7 +163,7 @@ function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: 
         <Text style={{ fontSize: 15, fontWeight: '700', color: p.primary, flexShrink: 0 }}>{row.value}</Text>
       </View>
       <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 22 }}>{row.text}</Text>
-      {row.pos != null ? <RangeBar pos={row.pos} palette={p} /> : null}
+      {row.pos != null ? <RangeBar pos={row.pos} span={row.span} palette={p} /> : null}
       {open ? (
         <View style={{ backgroundColor: p.sunken, borderRadius: 10, padding: 12, gap: 4 }}>
           <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 20 }}>{row.help}</Text>
@@ -174,11 +176,13 @@ function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: 
   );
 }
 
-/** 1년 범위 안의 위치 — 최저(왼쪽) ~ 최고(오른쪽) 막대 위의 점. */
-function RangeBar({ pos, palette: p }: { pos: number; palette: Palette }) {
+/** 가격 범위(보통 1년) 안의 위치 — 최저(왼쪽) ~ 최고(오른쪽) 막대 위의 점.
+ *  상장한 지 1년이 안 된 종목은 범위도 짧다 — 서버가 준 실제 기간(span)으로 끝 이름을 단다. */
+function RangeBar({ pos, span, palette: p }: { pos: number; span?: string; palette: Palette }) {
   const x = Math.max(0, Math.min(1, pos));
+  const sp = span || '1년';
   return (
-    <View style={{ marginTop: 4, gap: 4 }} accessibilityLabel={`1년 범위의 ${Math.round(x * 100)}% 높이`}>
+    <View style={{ marginTop: 4, gap: 4 }} accessibilityLabel={`${sp} 가격 범위의 ${Math.round(x * 100)}% 높이`}>
       <View style={{ height: 14, justifyContent: 'center' }}>
         <View style={{ height: 4, borderRadius: 2, backgroundColor: p.sunken }} />
         <View
@@ -196,8 +200,8 @@ function RangeBar({ pos, palette: p }: { pos: number; palette: Palette }) {
         />
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 12, color: p.faint }}>1년 최저</Text>
-        <Text style={{ fontSize: 12, color: p.faint }}>1년 최고</Text>
+        <Text style={{ fontSize: 12, color: p.faint }}>{sp} 최저</Text>
+        <Text style={{ fontSize: 12, color: p.faint }}>{sp} 최고</Text>
       </View>
     </View>
   );
@@ -246,9 +250,17 @@ function Ladder({ ladder, palette: p }: { ladder: DiagnosisLadder; palette: Pale
   );
 }
 
-/** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린 같은 종목의 최근 일봉 위에.
- *  사진의 가격 눈금을 읽어 그리면 앱마다 몇 %씩 어긋난다('숫자는 사진에서 읽지 않는다'). */
-function PhotoChartCard({ chart, palette: p }: { chart: PhotoChart; palette: Palette }) {
+/** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린, 고른 종목의 최근 일봉 위에.
+ *  사진의 가격 눈금을 읽어 그리면 앱마다 몇 %씩 어긋난다('숫자는 사진에서 읽지 않는다').
+ *  소개 문장은 실제로 그린 선에 맞춘다 — 모양이 없는데 '모양의 선을 그렸어요'라고 하지 않고,
+ *  사진 속 종목이 달라 보일 때도 있으니 '같은 종목' 대신 종목 이름을 쓴다. */
+function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: string; palette: Palette }) {
+  const hasMa = chart.lines.some((l) => l.kind === 'ma');
+  const hasPat = chart.lines.some((l) => l.kind === 'pattern');
+  const what =
+    hasMa && hasPat ? '앱이 고른 평균선과 감지된 모양의 선을' : hasMa ? '앱이 고른 평균선을' : hasPat ? '감지된 모양의 선을' : null;
+  const n = chart.candles.length;
+  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${what ? ` 그 위에 ${what} 겹쳐 그렸어요.` : ''}`;
   const colors = [p.primary, p.ma[1] ?? p.warn, p.ma[2] ?? p.sub, p.ma[3] ?? p.faint];
   const lines = chart.lines.map((ln, i) => ({
     color: colors[i % colors.length] ?? p.primary,
@@ -259,7 +271,7 @@ function PhotoChartCard({ chart, palette: p }: { chart: PhotoChart; palette: Pal
     <Card palette={p} style={{ gap: 12 }}>
       <BarTitle title="선을 그린 차트" palette={p} />
       <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
-        같은 종목의 최근 6개월 일봉을 앱이 다시 그리고, 앱이 고른 평균선과 감지된 모양의 선을 겹쳐 그렸어요.
+        {intro}
       </Text>
       <CandleChart
         candles={chart.candles}
@@ -353,7 +365,9 @@ export function PhotoResult({
   const headline = diag.headline || ex.headline || `${who}의 지표를 모아 봤어요.`;
   const ladder = diag.ladder ?? null;
   const dayRows = diag.timeframes.day?.rows ?? [];
-  const yearPos = dayRows.find((r) => r.key === 'yearRange')?.pos ?? null;
+  const yearRow = dayRows.find((r) => r.key === 'yearRange');
+  const yearPos = yearRow?.pos ?? null;
+  const yearSpan = yearRow?.span;
   const chips = useMemo(() => {
     const by = new Map(dayRows.map((r) => [r.key, r]));
     const out: string[] = [];
@@ -411,7 +425,7 @@ export function PhotoResult({
         <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, lineHeight: 31 }}>
           {headline}
         </Text>
-        {yearPos != null ? <RangeBar pos={yearPos} palette={p} /> : null}
+        {yearPos != null ? <RangeBar pos={yearPos} span={yearSpan} palette={p} /> : null}
         {/* 한눈에 — 숫자 사실 칩 (경쟁 앱의 '감지된 패턴 75%' 칩 자리) */}
         {chips.length > 0 ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -447,7 +461,7 @@ export function PhotoResult({
         </View>
       </Card>
 
-      {result.chart ? <PhotoChartCard chart={result.chart} palette={p} /> : null}
+      {result.chart ? <PhotoChartCard chart={result.chart} who={who} palette={p} /> : null}
 
       {/* 감지된 차트 모양 — 보일 때만 (일봉 기준) */}
       {diag.patterns.length > 0 ? (
