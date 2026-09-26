@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, PanResponder, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Palette } from '../theme';
 
@@ -40,8 +40,10 @@ let bestScore = 0;
 /** 곰 세 마리를 새총 오른쪽 빈 곳에 고르게 세운다 — 좁은 폰(게임 판 약 280px)에서도
  *  곰끼리 겹치지 않게 간격을 폭에서 계산한다. */
 function newRound(width: number): Target[] {
-  const lo = ANCHOR_X + 110;
-  const hi = Math.max(lo + 70, width - 20);
+  // 오른쪽 끝: 판 안(width-20)이면서 최대 사거리 안(새총에서 280px) — 태블릿·폴드처럼
+  // 판이 넓어도 끝 곰을 맞힐 수 있게. 왼쪽 끝: 좁은 판(240px)이면 새총 쪽으로 당긴다.
+  const hi = Math.min(width - 20, ANCHOR_X + 280);
+  const lo = Math.min(ANCHOR_X + 110, hi - 72);
   const gap = (hi - lo) / 2;
   const jitter = Math.min(8, Math.max(0, gap - 36) / 2); // 곰 폭(귀 포함 32px)보다 가까워지지 않게
   return [0, 1, 2].map((i) => ({
@@ -92,10 +94,17 @@ function Line({ x1, y1, x2, y2, w, color }: {
   );
 }
 
-function Bear({ t, fall, palette: p }: { t: Target; fall: Animated.Value; palette: Palette }) {
-  const drop = fall.interpolate({ inputRange: [0, 1], outputRange: [0, 46] });
-  const spin = fall.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '100deg'] });
-  const fade = fall.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 1, 0] });
+// memo: 드래그할 때마다(초당 수십 번) 판 전체가 다시 그려지는데, 곰까지 매번 새
+// 보간 노드를 만들면 저가 안드로이드에서 버벅이고 넘어진 곰이 한 프레임 되살아난다.
+const Bear = memo(function Bear({ x, blockH, fall, color }: {
+  x: number; blockH: number; fall: Animated.Value; color: string;
+}) {
+  const { drop, spin, fade } = useMemo(() => ({
+    drop: fall.interpolate({ inputRange: [0, 1], outputRange: [0, 46] }),
+    spin: fall.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '100deg'] }),
+    fade: fall.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 1, 0] }),
+  }), [fall]);
+  const t = { x, blockH };
   const top = GROUND - t.blockH - BEAR_R * 2 - 3;
   return (
     <Animated.View
@@ -145,20 +154,21 @@ function Bear({ t, fall, palette: p }: { t: Target; fall: Animated.Value; palett
       </View>
       {/* 받침 — 파란(음봉) 캔들 */}
       <View style={{ alignItems: 'center', marginTop: 3 }}>
-        <View style={{ width: BLOCK_W, height: t.blockH, borderRadius: 3, backgroundColor: p.down }} />
+        <View style={{ width: BLOCK_W, height: t.blockH, borderRadius: 3, backgroundColor: color }} />
       </View>
     </Animated.View>
   );
-}
+});
 
-export function SlingshotGame({ palette: p, onInteract }: {
+export const SlingshotGame = memo(function SlingshotGame({ palette: p, onInteract }: {
   palette: Palette;
   /** 당기는 동안 true — 부모 ScrollView 의 스크롤을 잠근다 */
   onInteract?: (active: boolean) => void;
 }) {
   const [width, setWidth] = useState(0);
   const [targets, setTargets] = useState<Target[]>([]);
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  // x·y: 화면에 보이는 탄 위치(판 밖으로 안 나가게 자른 값), dx·dy: 실제로 당긴 양(발사 속도)
+  const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const [shotsLeft, setShotsLeft] = useState(SHOTS);
   const [score, setScore] = useState(0);
   const [best, setBest] = useState(bestScore);
@@ -300,6 +310,7 @@ export function SlingshotGame({ palette: p, onInteract }: {
           return false;
         }
         g.start = { x: locationX, y: locationY };
+        setLocked(true); // grant 보다 한 박자 먼저 — iOS 스크롤이 당기기를 가로채기 전에
         return true;
       },
       onMoveShouldSetPanResponder: () => false,
@@ -324,7 +335,7 @@ export function SlingshotGame({ palette: p, onInteract }: {
         const x = Math.max(R + 2, ANCHOR_X + dx); // 판 왼쪽 밖으로 나가 잘리지 않게
         const y = Math.min(GROUND - R, ANCHOR_Y + dy);
         pos.setValue({ x: x - R, y: y - R });
-        setDrag({ x, y });
+        setDrag({ x, y, dx, dy });
       },
       onPanResponderRelease: (_e, gs) => {
         const g = game.current;
@@ -336,8 +347,9 @@ export function SlingshotGame({ palette: p, onInteract }: {
         let dx = g.start.x + gs.dx - ANCHOR_X;
         let dy = g.start.y + gs.dy - ANCHOR_Y;
         const len = Math.hypot(dx, dy);
-        if (len < 12) {
-          resetShot(); // 살짝 건드린 건 발사로 치지 않는다
+        // 손가락이 거의 움직이지 않았거나(탭) 거의 안 당겼으면 발사로 치지 않는다
+        if (Math.hypot(gs.dx, gs.dy) < 8 || len < 12) {
+          resetShot();
           return;
         }
         if (len > MAX_PULL) {
@@ -387,8 +399,9 @@ export function SlingshotGame({ palette: p, onInteract }: {
   // 당기는 동안의 조준 점 — 발사하면 지나갈 길을 미리 보여 준다
   const aim: { x: number; y: number }[] = [];
   if (drag) {
-    const vx = -(drag.x - ANCHOR_X) * POWER;
-    const vy = -(drag.y - ANCHOR_Y) * POWER;
+    // 발사와 같은 식 — 출발점은 보이는 자리, 속도는 당긴 양 (fly(-dx·POWER, -dy·POWER))
+    const vx = -drag.dx * POWER;
+    const vy = -drag.dy * POWER;
     for (let i = 1; i <= 8; i++) {
       const t = i * 0.07;
       const y = drag.y + vy * t + 0.5 * GRAVITY * t * t;
@@ -420,7 +433,7 @@ export function SlingshotGame({ palette: p, onInteract }: {
 
       {/* 곰과 받침 */}
       {width > 0
-        ? targets.map((t, i) => <Bear key={`${i}-${t.x}`} t={t} fall={falls[i] ?? falls[0]!} palette={p} />)
+        ? targets.map((t, i) => <Bear key={`${i}-${t.x}`} x={t.x} blockH={t.blockH} fall={falls[i] ?? falls[0]!} color={p.down} />)
         : null}
 
       {/* 새총 기둥과 뒷고무줄 */}
@@ -497,4 +510,4 @@ export function SlingshotGame({ palette: p, onInteract }: {
       <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} {...pan.panHandlers} />
     </View>
   );
-}
+});

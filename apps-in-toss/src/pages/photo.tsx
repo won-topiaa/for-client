@@ -141,6 +141,15 @@ async function pickFromCamera(): Promise<Picked | null> {
   }
 }
 
+/** 지금 권한 상태('allowed'|'denied'|'notDetermined'). 못 읽으면 null. */
+async function permissionNow(kind: 'photos' | 'camera'): Promise<string | null> {
+  try {
+    return kind === 'photos' ? await fetchAlbumPhotos.getPermission() : await openCamera.getPermission();
+  } catch {
+    return null;
+  }
+}
+
 /** 권한 다시 묻기. 허용되면 true. */
 async function askPermission(kind: 'photos' | 'camera'): Promise<boolean> {
   try {
@@ -154,20 +163,24 @@ async function askPermission(kind: 'photos' | 'camera'): Promise<boolean> {
   }
 }
 
-let cachedClientKey: string | null | undefined;
+let cachedClientKey: string | undefined;
 
-/** 하루 횟수를 사람 단위로 세기 위한 익명 식별값. 못 받으면 없이 보낸다(서버가 IP 로 센다). */
+/** 하루 횟수를 사람 단위로 세기 위한 익명 식별값. 못 받으면 없이 보낸다(서버가 IP 로 센다).
+ *  성공만 기억한다 — 한 번 삐끗한 실패를 기억하면 그 세션 내내 통신사 IP 를 나눠 쓰는
+ *  다른 사람들과 하루 횟수를 함께 쓰게 된다. */
 async function clientKey(): Promise<string | undefined> {
-  if (cachedClientKey !== undefined) {
-    return cachedClientKey ?? undefined;
+  if (cachedClientKey) {
+    return cachedClientKey;
   }
   try {
     const got = await getAnonymousKey();
-    cachedClientKey = got && got !== 'ERROR' && typeof got.hash === 'string' ? got.hash : null;
+    if (got && got !== 'ERROR' && typeof got.hash === 'string' && got.hash) {
+      cachedClientKey = got.hash;
+    }
   } catch {
-    cachedClientKey = null;
+    // 다음 분석 때 다시 받아 본다
   }
-  return cachedClientKey ?? undefined;
+  return cachedClientKey;
 }
 
 function StepTitle({ n, title, palette: p }: { n: number; title: string; palette: Palette }) {
@@ -210,6 +223,8 @@ function PhotoPage() {
 
   // 방금 이평선 분석에서 보던 종목이 있으면 미리 골라 둔다 (바꿀 수 있다)
   const initial = lastAnalysis.value?.info ?? null;
+  // 마지막으로 미리 골라 둔 종목 — 이평선 화면에 다녀오면 새 종목으로 바꿔 준다(아래 focus)
+  const seeded = useRef(initial?.symbol ?? null);
   const [query, setQuery] = useState(initial ? `${initial.name} (${initial.symbol})` : '');
   const [selected, setSelected] = useState<SymbolInfo | null>(initial);
   const [suggests, setSuggests] = useState<SymbolInfo[]>([]);
@@ -225,6 +240,16 @@ function PhotoPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
   const runSeq = useRef(0);
+  // 분석 중에 사진·종목을 바꾸면 도는 요청의 결과는 버린다 — 새 사진 아래에
+  // 예전 사진의 설명이 붙으면 안 된다. 기다리는 화면 제목도 보낸 종목 이름으로 고정한다.
+  const [runningName, setRunningName] = useState('');
+  const loadingRef = useRef(false);
+  loadingRef.current = loading;
+
+  const cancelRun = () => {
+    runSeq.current++;
+    setLoading(false);
+  };
 
   useEffect(
     () => () => {
@@ -235,10 +260,30 @@ function PhotoPage() {
     []
   );
 
+  // 이 화면은 스택에 남는다 — 사진 → 이평선 분석 → '차트 사진으로 설명 듣기'로 오면
+  // 새로 열리지 않고 이 화면으로 되돌아온다. 그 사이 다른 종목을 분석했으면 그 종목으로 바꿔 둔다.
+  useEffect(() => {
+    const onFocus = () => {
+      const info = lastAnalysis.value?.info;
+      if (!info || info.symbol === seeded.current || loadingRef.current) {
+        return;
+      }
+      seeded.current = info.symbol;
+      searchSeq.current++;
+      setSelected(info);
+      setQuery(`${info.name} (${info.symbol})`);
+      setSuggests([]);
+    };
+    return navigation.addListener('focus', onFocus);
+  }, [navigation]);
+
   /* ---------- 1. 종목 ---------- */
 
   const onChangeQuery = (text: string) => {
     searchSeq.current++;
+    if (loading) {
+      cancelRun();
+    }
     setQuery(text);
     setSelected(null);
     if (searchTimer.current) {
@@ -268,6 +313,9 @@ function PhotoPage() {
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
     }
+    if (loading && item.symbol !== selected?.symbol) {
+      cancelRun();
+    }
     setSelected(item);
     setQuery(`${item.name} (${item.symbol})`);
     setSuggests([]);
@@ -277,17 +325,23 @@ function PhotoPage() {
 
   const choose = useCallback(async (from: 'album' | 'camera', retried = false) => {
     setPickMsg(null);
+    const kind = from === 'album' ? 'photos' : 'camera';
+    // 처음 묻는 경우(notDetermined)엔 토스가 권한 창을 직접 띄운다 — 거기서 '안하기'를
+    // 고른 사람에게 같은 창을 곧바로 또 띄우지 않으려고, 누르기 전 상태를 봐 둔다.
+    const before = retried ? null : await permissionNow(kind);
     try {
       const got = from === 'album' ? await pickFromAlbum() : await pickFromCamera();
       if (got) {
+        runSeq.current++; // 분석 중이었다면 그 결과는 이전 사진의 것 — 버린다
+        setLoading(false);
         setPhoto(got);
         setResult(null);
         setErrorMsg('');
       }
     } catch (e) {
       const err = e instanceof PickError ? e : new PickError('사진을 가져오지 못했어요.');
-      // 권한이 없으면 한 번 물어보고, 허용되면 바로 다시 연다
-      if (err.permission && !retried && (await askPermission(err.permission))) {
+      // 전에 거부해 둔 권한이면(창 없이 거절됨) 한 번 물어보고, 허용되면 바로 다시 연다
+      if (err.permission && !retried && before !== 'notDetermined' && (await askPermission(err.permission))) {
         await choose(from, true);
         return;
       }
@@ -302,6 +356,7 @@ function PhotoPage() {
       return;
     }
     const seq = ++runSeq.current;
+    setRunningName(selected.name);
     setLoading(true);
     setErrorMsg('');
     setResult(null);
@@ -494,7 +549,7 @@ function PhotoPage() {
       {loading ? (
         <WaitingShow
           palette={p}
-          title={`사진과 ${selected?.name ?? '종목'}의 최신 데이터를 함께 보고 있어요`}
+          title={`사진과 ${runningName || '종목'}의 최신 데이터를 함께 보고 있어요`}
           subtitle="보통 10~30초"
           onInteract={setScrollLock}
         />

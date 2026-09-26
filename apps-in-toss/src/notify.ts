@@ -224,11 +224,15 @@ export function useMorningPush(): MorningPush {
         if (!alive.current) {
           return;
         }
-        // 서버 목록이 진실이다 — 기억해 둔 값과 다르면 서버를 따른다
-        setEnabled(!!res.subscribed);
+        // ready:false 는 '서버가 모른다'(DB 장애)는 뜻이다 — 그때의 subscribed:false 를
+        // 믿고 저장하면 켜 둔 사람의 스위치가 꺼진 채로 남는다. 기억해 둔 값을 그대로 둔다.
         setServerNotReady(res.ready === false);
-        setWatchCount(res.watchCount);
-        void rememberFlag(!!res.subscribed);
+        if (res.ready !== false) {
+          // 서버 목록이 진실이다 — 기억해 둔 값과 다르면 서버를 따른다
+          setEnabled(!!res.subscribed);
+          setWatchCount(res.watchCount);
+          void rememberFlag(!!res.subscribed);
+        }
       } catch (err) {
         if (!alive.current) {
           return;

@@ -41,7 +41,8 @@ const MARKETS: Market[] = ['kr', 'us'];
 let touchedCache: { day: string; map: Map<string, number> } | null = null;
 
 /**
- * 오늘 검증된 지지선에 닿은 종목 → 그 선의 기간(MA 60 등).
+ * 오늘 검증된 지지선에 닿은 종목 → 그 선의 기간(MA 60 등). 기간이 0 이면 닿은 건
+ * 맞지만 상위 목록(matches) 밖이라 어느 선인지 모르는 종목이다.
  *
  * 담아 두기만 하고 끝나던 화면에 '오늘 이 종목이 지지선에 닿았나'를 들여온다.
  * 읽는 곳은 '오늘의 지지선'과 같은 결과(하루 한 번 스캔해 종일 고정)라서,
@@ -70,26 +71,36 @@ function useTouchedToday(): Map<string, number> {
         return;
       }
       const found = new Map<string, number>();
-      let settled = false;         // 한 시장이라도 스캔을 마쳤는가
+      // 두 시장 모두 '오늘 것'을 끝까지 받았는가. 06:30 직후엔 어제 결과를 보여 주며
+      // 다시 훑는 중(refreshing)이거나 일부만 훑은(partial) 결과가 온다 — 그걸 오늘 것으로
+      // 캐시하면 그날 내내 어제 배지가 남는다. 한 시장이라도 덜 끝났으면 보여 주기만 한다.
+      let settled = true;
       for (const r of results) {
         if (r.status !== 'fulfilled') {
+          settled = false;
           continue;
         }
-        if (r.value.status === 'done') {
-          settled = true;
+        if (r.value.status !== 'done' || r.value.refreshing || r.value.partial) {
+          settled = false;
+        }
+        // 상위 목록 밖에서 닿은 종목 — 선 기간은 모르지만 닿은 건 맞다
+        for (const sym of r.value.touchedSymbols ?? []) {
+          if (!found.has(sym)) {
+            found.set(sym, 0);
+          }
         }
         // 스캔이 아직 돌고 있으면(status !== 'done') matches 가 없다 — 그냥 건너뛴다
         for (const m of r.value.matches ?? []) {
           // 같은 종목이 여러 선에 닿았으면 더 긴(=보통 더 의미 있는) 선을 남긴다
           const prev = found.get(m.symbol);
-          if (prev === undefined || m.period > prev) {
+          if (!prev || m.period > prev) {
             found.set(m.symbol, m.period);
           }
         }
       }
-      // 아직 스캔 중이었다면 캐시하지 않는다. 캐시는 '오늘 하루' 유효하므로,
-      // 빈 결과를 넣어 버리면 재스캔 직후에 들어온 사람은 그날 내내
-      // 배지를 못 본다 — 다음에 들어올 때 다시 받게 둔다.
+      // 덜 끝났으면 캐시하지 않는다. 캐시는 '오늘 하루' 유효하므로, 덜 된 결과를
+      // 넣어 버리면 재스캔 직후에 들어온 사람은 그날 내내 배지를 못 본다
+      // — 다음에 들어올 때 다시 받게 둔다.
       if (settled) {
         touchedCache = { day: today, map: found };
       }
@@ -202,7 +213,7 @@ function WatchlistPage() {
                             '지금 볼 만한 것'이 바로 눈에 띄게 한다 */}
                         {touched.has(it.symbol) ? (
                           <Badge
-                            label={`오늘 지지선 · MA ${touched.get(it.symbol)}`}
+                            label={touched.get(it.symbol) ? `오늘 지지선 · MA ${touched.get(it.symbol)}` : '오늘 지지선'}
                             palette={p}
                             tone="primary"
                           />
@@ -231,8 +242,8 @@ function WatchlistPage() {
             {touched.size > 0 ? (
               <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>
                 <Text style={{ color: p.primary, fontWeight: '700' }}>오늘 지지선</Text> 배지는 그
-                종목이 오늘 검증된 지지 이평선에 닿아 있다는 뜻이에요. 매수 신호가 아니라 지켜보기
-                좋은 지점입니다.
+                종목이 과거에 자주 지켜진 이평선에 오늘 닿았다는 뜻이에요. 매수·매도 신호가
+                아니에요.
               </Text>
             ) : null}
             <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 19 }}>

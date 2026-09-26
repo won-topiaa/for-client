@@ -127,7 +127,7 @@ function NotifyPage() {
           </>
         ) : briefFailed ? (
           <Text style={{ fontSize: 15, color: p.sub, lineHeight: 23 }}>
-            평일 아침, 나스닥 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요. (나머지 지수는 알림을
+            미국 장이 열린 다음 날(화~토) 아침, 나스닥 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요. (나머지 지수는 알림을
             눌러 앱에서 볼 수 있어요.)
           </Text>
         ) : (
