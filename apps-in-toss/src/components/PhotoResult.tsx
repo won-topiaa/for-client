@@ -26,16 +26,28 @@ const TF_LABEL: Record<Timeframe, string> = { day: '일봉', week: '주봉', mon
 const TIMEFRAMES: Timeframe[] = ['day', 'week', 'month'];
 const AREA_ORDER = ['지지선', '추세', '모멘텀', '변동성', '거래량', '차트 모양'];
 
-/** 결과 화면 공통 질문 — 광고로 잠그지 않는다(답이 곧 오해를 막는 안내라서). */
-const FAQ: { q: string; a: string }[] = [
-  {
-    q: '지표가 대부분 ‘위’면 좋은 건가요?',
-    a: '지표는 지금 가격이 과거와 비교해 어디쯤 있는지를 보여 줄 뿐이에요. 좋다·나쁘다나 앞으로의 방향을 알려 주지는 않아요. 같은 상태에서도 과거에는 오른 때와 내린 때가 모두 있었어요.',
-  },
-  {
-    q: '‘가장 잘 지켜진 선’은 어떻게 고른 거예요?',
-    a: '이 앱이 지난 기록을 뒤져, 주가가 평균선까지 내려왔다가 다시 올라간 일이 가장 많았던 선을 골라요. 몇 번 중 몇 번이었는지도 함께 보여 드려요. 지난 기록일 뿐, 앞으로 그렇게 될 확률은 아니에요.',
-  },
+/** 결과 화면 공통 질문 — 광고로 잠그지 않는다(답이 곧 오해를 막는 안내라서).
+ *  경쟁 앱의 '무엇을 봐야 하나'(권유) 대신 '무엇을 재나 / 어떻게 골랐나'(사실). */
+function faqFor(supportPeriod: number | null): { q: string; a: string }[] {
+  const line = supportPeriod ? `${supportPeriod}일 평균선` : '가장 잘 지켜진 선';
+  return [
+    {
+      q: `${line}은 어떻게 골랐나요?`,
+      a: '앱이 여러 평균선을 이 종목의 과거 가격에 대 보고, 주가가 내려와 닿은 뒤 다시 올라간 비율과 횟수를 함께 따져 골랐어요. 지난 기록일 뿐, 앞으로 그렇게 될 확률은 아니에요.',
+    },
+    {
+      q: 'RSI·MACD는 각각 무엇을 재는 값인가요?',
+      a: 'RSI는 최근 14거래일쯤 동안 오른 폭과 내린 폭을 비교해 0~100으로 나타낸 값이에요. MACD는 12일 평균과 26일 평균의 차이예요. 0보다 크면 짧은 기간 평균이 더 위에 있다는 뜻이에요.',
+    },
+    {
+      q: '지표가 대부분 ‘위’면 좋은 건가요?',
+      a: '지표는 지금 가격이 과거와 비교해 어디쯤 있는지를 보여 줄 뿐이에요. 좋다·나쁘다나 앞으로의 방향을 알려 주지는 않아요. 같은 상태에서도 과거에는 오른 때와 내린 때가 모두 있었어요.',
+    },
+    ...FAQ_TAIL,
+  ];
+}
+
+const FAQ_TAIL: { q: string; a: string }[] = [
   {
     q: '사진 속 숫자와 조금 달라요.',
     a: '숫자는 사진에서 읽지 않고, 그 종목의 최신 종가 데이터로 다시 계산해요. 사진을 찍은 시점이나 증권 앱 설정(평균선 기간 등)에 따라 조금 다를 수 있어요.',
@@ -215,7 +227,8 @@ function groupByArea(sentences: DiagnosisSentence[]): [string, DiagnosisSentence
   return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
 }
 
-/** 공유 — 한줄 요약만 담는다. 계좌·사진은 보내지 않는다. */
+/** 공유 — 사실 한 줄 요약 + 보인 모양 이름만. 과거 횟수('12번 중 8번')는 넣지 않는다:
+ *  앱 밖 제3자에게는 설명 없이 승률처럼 퍼진다. 📈(오른다는 느낌) 대신 📊. 계좌·사진은 보내지 않는다. */
 async function shareResult(result: PhotoAnalysisResponse, headline: string): Promise<void> {
   const who = result.name || result.symbol;
   let link = '';
@@ -224,7 +237,14 @@ async function shareResult(result: PhotoAnalysisResponse, headline: string): Pro
   } catch {
     link = ''; // 오래된 토스 앱 — 링크 없이 글만 보낸다
   }
-  const message = [`📈 ${who} 차트 사진 분석`, headline, `(${result.asOf} 종가 기준 · 투자 권유가 아니에요)`, link]
+  const shape = result.diagnosis.patterns[0]?.name;
+  const message = [
+    `📊 ${who} 차트 사진 풀이`,
+    headline,
+    shape ? `보인 모양: ${shape}` : '',
+    `이평선 레이더가 ${result.asOf} 종가까지의 지난 데이터로 계산했어요. 투자 권유가 아니에요.`,
+    link,
+  ]
     .filter(Boolean)
     .join('\n');
   await share({ message });
@@ -256,7 +276,9 @@ export function PhotoResult({
   const [tf, setTf] = useState<Timeframe>(shownTf);
   const [detailTf, setDetailTf] = useState<Timeframe>(shownTf);
   const [shareFailed, setShareFailed] = useState(false);
-  const rows = diag.timeframes[tf]?.rows ?? [];
+  // 일봉의 '가장 잘 지켜진 선'은 제목·강조 줄이 이미 말한다 — 같은 숫자를 또 보이지 않는다
+  const rows = (diag.timeframes[tf]?.rows ?? []).filter((r) => !(tf === 'day' && r.key === 'support' && diag.headlineSub));
+  const supportPeriod = Number((diag.timeframes.day?.rows ?? []).find((r) => r.key === 'support')?.term.match(/^(\d+)/)?.[1]) || null;
   const sentences = diag.timeframes[detailTf]?.sentences ?? [];
   const headline = ex.headline || diag.headline || `${who}의 지표를 모아 봤어요.`;
   const levels = diag.levels ?? null;
@@ -264,12 +286,11 @@ export function PhotoResult({
   const chips = useMemo(() => {
     const by = new Map(dayRows.map((r) => [r.key, r]));
     const out: string[] = [];
+    // 제목·강조 줄에 이미 있는 숫자(선과의 거리·횟수)는 칩에 되풀이하지 않는다
     const yr = by.get('yearRange');
     if (yr) out.push(`1년 범위 ${yr.value}`);
-    const sup = by.get('support');
-    if (sup) out.push(`잘 지켜진 선보다 ${sup.value}`);
-    const atr = by.get('atr');
-    if (atr) out.push(`하루 움직임 ${atr.value}`);
+    const vol = by.get('volume');
+    if (vol) out.push(`거래량 ${vol.value}`);
     if (diag.patterns.length > 0) out.push(`${diag.patterns[0]?.name ?? ''} 모양`);
     return out;
   }, [dayRows, diag.patterns]);
@@ -318,6 +339,15 @@ export function PhotoResult({
         <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: '800', color: p.text, lineHeight: 31 }}>
           {headline}
         </Text>
+        {/* 경쟁 앱의 '반등 가능성이 보여요'(초록) 자리 — 과거 기록을 양쪽 결과 함께, 기본색으로 */}
+        {diag.headlineSub ? (
+          <View style={{ gap: 4 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: p.text, lineHeight: 24 }}>{diag.headlineSub}</Text>
+            {diag.headlineNote ? (
+              <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>{diag.headlineNote}</Text>
+            ) : null}
+          </View>
+        ) : null}
         {/* 한눈에 — '지금 어디쯤인지'를 숫자 사실로 (경쟁 앱의 '감지된 패턴 75%' 칩 자리) */}
         {chips.length > 0 ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -361,6 +391,11 @@ export function PhotoResult({
             <View key={pt.key} style={{ gap: 6 }}>
               <Text style={{ fontSize: 19, fontWeight: '800', color: p.text }}>{pt.name}</Text>
               {pt.help ? <Text style={{ fontSize: 14.5, color: p.sub, lineHeight: 22 }}>{pt.help}</Text> : null}
+              {pt.note ? (
+                <View style={{ backgroundColor: p.sunken, borderRadius: 10, padding: 10 }}>
+                  <Text style={{ fontSize: 13.5, color: p.sub, lineHeight: 20 }}>{pt.note}</Text>
+                </View>
+              ) : null}
               {pt.facts.map((f, i) => (
                 <Text key={i} style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
                   · {f}
@@ -391,13 +426,11 @@ export function PhotoResult({
       {/* 지금 가까운 선 — '앞으로 어떻게 될까' 대신 사실만 */}
       {levels && (levels.below || levels.above) ? (
         <Card palette={p} style={{ gap: 14 }}>
-          <BarTitle title="지금 가격 주변의 선" palette={p} />
-          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>
-            지금 주가({levels.closeText}) 바로 아래와 바로 위에 있는 선이에요.
-          </Text>
+          <BarTitle title="지금 주가 바로 아래·위에 있는 선" palette={p} />
+          <Text style={{ fontSize: 14, color: p.sub, lineHeight: 21 }}>지금 주가 {levels.closeText} 기준이에요.</Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <LevelTile title="아래쪽 가까운 선" level={levels.below} palette={p} />
-            <LevelTile title="위쪽 가까운 선" level={levels.above} palette={p} />
+            <LevelTile title="아래" level={levels.below} palette={p} />
+            <LevelTile title="위" level={levels.above} palette={p} />
           </View>
           <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
             과거에 자주 지켜진 선이라도 앞으로도 그렇다는 뜻은 아니에요.
@@ -408,7 +441,7 @@ export function PhotoResult({
       {/* 자주 묻는 질문 */}
       <Card palette={p} style={{ gap: 14 }}>
         <BarTitle title="자주 묻는 질문" palette={p} />
-        {FAQ.map((f) => (
+        {faqFor(supportPeriod).map((f) => (
           <QaRow key={f.q} q={f.q} a={f.a} palette={p} />
         ))}
       </Card>
@@ -486,7 +519,7 @@ export function PhotoResult({
           <Text style={{ fontSize: 22 }}>🔔</Text>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: p.text }}>아침 시장 알림 받기</Text>
-            <Text style={{ fontSize: 13, color: p.sub, marginTop: 2 }}>전날 미국 시장을 아침에 한 줄로 챙겨 드려요</Text>
+            <Text style={{ fontSize: 13, color: p.sub, marginTop: 2 }}>전날 미국 시장을 아침에 한 줄로 보내 드려요</Text>
           </View>
           <Chevron dir="right" color={p.faint} size={9} />
         </TouchableOpacity>

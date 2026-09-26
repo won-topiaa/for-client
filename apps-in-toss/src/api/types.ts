@@ -198,6 +198,8 @@ export interface DiagnosisPattern {
   summary: string;
   /** 교과서 속 생김새 한두 문장 — 방향은 말하지 않는다. */
   help?: string;
+  /** 이름 속 '상승·하락'이 주가 방향으로 읽히지 않게 바로잡는 한 줄 */
+  note?: string;
   overlays: PatternOverlay[];
 }
 
@@ -243,6 +245,10 @@ export interface Diagnosis {
   notice: string;
   /** 엔진이 만든 한 줄 요약 (AI 가 없을 때도 있다) */
   headline?: string;
+  /** 제목 아래 강조 줄 — 가장 잘 지켜진 선의 과거 기록(올라간 횟수·내려간 횟수 함께) */
+  headlineSub?: string;
+  /** 그 아래 작은 글씨 — 선을 고른 방법 + '지난 기록이에요' (화면에서 이 한 번만) */
+  headlineNote?: string;
   levels?: DiagnosisLevels | null;
 }
 

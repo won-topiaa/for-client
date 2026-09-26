@@ -3,13 +3,13 @@ import { Text, TouchableOpacity, View } from 'react-native';
 import { PUSH_TIME_LABEL } from '../env';
 import type { Palette } from '../theme';
 
-// 결과를 본 직후 한 번 뜨는 '아침 알림 받기' 바텀시트.
+// 결과 화면 맨 아래 '아침 시장 알림 받기'를 눌렀을 때 뜨는 바텀시트.
 //
-// 경쟁 앱이 분석 결과 위에 '매일 퀴즈 알림' 시트를 띄우는 방식을 가져왔다 — 가치를
-// 막 느낀 순간이라 알림 화면을 따로 찾아가게 하는 것보다 켜는 사람이 많다.
+// 경쟁 앱이 분석 결과 위에 알림 신청 시트를 띄우는 방식을 가져왔다. 다만 저절로 띄우지는
+// 않는다 — 앱인토스 체크리스트 '화면 전환 시 바텀시트로 행동을 강제 유도하지 않아요'.
 // 보내는 것은 승인된 아침 알림(템플릿 wontopia-ma-radar-morning-brief)과 같은 것뿐이다.
-// '동의하고 알림받기'는 알림 화면의 스위치와 같은 흐름(토스 동의 → 구독)을 탄다.
-// 한 사람에게 한 번만 묻는다(photo.tsx PUSH_ASKED_KEY) — '나중에'를 누르면 다시 묻지 않는다.
+// '동의하고 알림받기'는 알림 화면의 스위치와 같은 흐름(토스 SDK 동의 → 구독)을 탄다.
+// 리텐션 문구('놓치지 않도록', '매일')는 쓰지 않는다 — 기능성 알림으로만 보낸다.
 
 export function PushAskSheet({
   palette: p,
@@ -60,7 +60,7 @@ export function PushAskSheet({
             아침마다 시장 한 줄을 보내드릴까요?
           </Text>
           <Text style={{ fontSize: 15, color: p.sub, lineHeight: 22 }}>
-            {PUSH_TIME_LABEL}, 전날 미국 시장을 한 줄로 챙겨 드려요
+            {PUSH_TIME_LABEL}, 전날 미국 시장을 한 줄로 보내 드려요
           </Text>
         </View>
         {/* 실제로 오는 알림의 모양 */}
