@@ -9,7 +9,6 @@ import {
 import { createRoute } from '@granite-js/react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
   Text,
@@ -35,6 +34,7 @@ import {
   Segmented,
   TextButton,
 } from '../components/ui';
+import { WaitingShow } from '../components/WaitingShow';
 import { LOG } from '../analytics';
 import { lastAnalysis, pendingAnalyze } from '../store';
 import { GUTTER, RADIUS, usePalette, type Palette } from '../theme';
@@ -489,12 +489,11 @@ function PhotoPage() {
         <Text style={{ fontSize: 13, color: p.warnText }}>종목을 먼저 골라 주세요.</Text>
       ) : null}
       {loading ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-          <ActivityIndicator color={p.primary} />
-          <Text style={{ fontSize: 14, color: p.sub, flexShrink: 1 }}>
-            사진과 {selected?.name ?? '종목'}의 최신 데이터를 함께 보고 있어요 (보통 10~30초)
-          </Text>
-        </View>
+        <WaitingShow
+          palette={p}
+          title={`사진과 ${selected?.name ?? '종목'}의 최신 데이터를 함께 보고 있어요`}
+          subtitle="보통 10~30초"
+        />
       ) : null}
       {errorMsg ? <Text style={{ fontSize: 14, color: p.danger }}>{errorMsg}</Text> : null}
 
