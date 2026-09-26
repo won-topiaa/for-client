@@ -211,6 +211,8 @@ function PatternsPage() {
   const [pattern, setPattern] = useState<PatternKey>('stage2');
   const [market, setMarket] = useState<Market>('kr');
   const [phase, setPhase] = useState<Phase>('boot');
+  // 기다리는 동안 게임에서 새총을 당기는 중이면 스크롤을 잠근다 (안드로이드는 스크롤이 드래그를 빼앗는다)
+  const [scrollLock, setScrollLock] = useState(false);
   const [body, setBody] = useState<PatternsResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const { items: watched, toggle: toggleWatch } = useWatchlist();
@@ -304,6 +306,7 @@ function PatternsPage() {
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
       <ScrollView
+        scrollEnabled={!scrollLock}
         style={{ flex: 1, backgroundColor: p.bg }}
         contentContainerStyle={{
           paddingHorizontal: GUTTER,
@@ -373,6 +376,7 @@ function PatternsPage() {
             }`}
             subtitle="보통 1~2분"
             progress={body.total ? (body.done ?? 0) / body.total : 0}
+            onInteract={setScrollLock}
           />
         ) : null}
 
