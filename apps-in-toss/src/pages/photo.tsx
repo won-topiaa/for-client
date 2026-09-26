@@ -219,6 +219,8 @@ function PhotoPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [result, setResult] = useState<PhotoAnalysisResponse | null>(null);
   const [tf, setTf] = useState<Timeframe>('day');
+  // 기다리는 동안 게임에서 새총을 당기는 중이면 스크롤을 잠근다 (안드로이드는 스크롤이 드래그를 빼앗는다)
+  const [scrollLock, setScrollLock] = useState(false);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
@@ -348,6 +350,7 @@ function PhotoPage() {
   return (
     <ScrollView
       ref={scrollRef}
+      scrollEnabled={!scrollLock}
       style={{ flex: 1, backgroundColor: p.bg }}
       contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 32, gap: 12 }}
       keyboardShouldPersistTaps="handled"
@@ -493,6 +496,7 @@ function PhotoPage() {
           palette={p}
           title={`사진과 ${selected?.name ?? '종목'}의 최신 데이터를 함께 보고 있어요`}
           subtitle="보통 10~30초"
+          onInteract={setScrollLock}
         />
       ) : null}
       {errorMsg ? <Text style={{ fontSize: 14, color: p.danger }}>{errorMsg}</Text> : null}
