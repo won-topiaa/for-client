@@ -274,7 +274,8 @@ export interface PhotoExplanation {
 /** 선을 그린 차트 — 사진 위가 아니라 앱이 다시 그린 같은 종목의 최근 일봉 위에. */
 export interface PhotoChart {
   candles: Candle[];
-  lines: { name: string; kind: 'ma' | 'pattern'; points: TimeValue[] }[];
+  /** level = 주가가 여러 번 방향을 바꾼 가격(가로 점선, 서버 app/levels.py) — 예전 서버는 보내지 않는다 */
+  lines: { name: string; kind: 'ma' | 'pattern' | 'level'; points: TimeValue[] }[];
 }
 
 export interface PhotoAnalysisResponse {

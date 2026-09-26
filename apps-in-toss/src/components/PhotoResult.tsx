@@ -257,16 +257,23 @@ function Ladder({ ladder, palette: p }: { ladder: DiagnosisLadder; palette: Pale
 function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: string; palette: Palette }) {
   const hasMa = chart.lines.some((l) => l.kind === 'ma');
   const hasPat = chart.lines.some((l) => l.kind === 'pattern');
-  const what =
-    hasMa && hasPat ? '앱이 고른 평균선과 감지된 모양의 선을' : hasMa ? '앱이 고른 평균선을' : hasPat ? '감지된 모양의 선을' : null;
+  const hasLevel = chart.lines.some((l) => l.kind === 'level');
+  const parts = [
+    hasMa ? '앱이 고른 평균선' : null,
+    hasPat ? '감지된 모양의 선' : null,
+    hasLevel ? '주가가 여러 번 방향을 바꾼 가격(가로 점선)' : null,
+  ].filter(Boolean);
   const n = chart.candles.length;
-  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${what ? ` 그 위에 ${what} 겹쳐 그렸어요.` : ''}`;
+  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${parts.length ? ` 그 위에 ${parts.join(', ')}을 겹쳐 그렸어요.` : ''}`;
+  // 평균선·모양 선은 색을 돌려 쓰고, 가로 가격선은 한 가지 무채색 점선 — 추세선과 섞여 보이지 않게
   const colors = [p.primary, p.ma[1] ?? p.warn, p.ma[2] ?? p.sub, p.ma[3] ?? p.faint];
-  const lines = chart.lines.map((ln, i) => ({
-    color: colors[i % colors.length] ?? p.primary,
-    points: ln.points,
-    width: ln.kind === 'ma' ? 2 : 1.5,
-  }));
+  let ci = 0;
+  const styled = chart.lines.map((ln) =>
+    ln.kind === 'level'
+      ? { ...ln, color: p.sub, width: 1.5, dashed: true }
+      : { ...ln, color: colors[ci++ % colors.length] ?? p.primary, width: ln.kind === 'ma' ? 2 : 1.5, dashed: false }
+  );
+  const lines = styled.map((ln) => ({ color: ln.color, points: ln.points, width: ln.width, dashed: ln.dashed }));
   return (
     <Card palette={p} style={{ gap: 12 }}>
       <BarTitle title="선을 그린 차트" palette={p} />
@@ -282,16 +289,32 @@ function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: st
       />
       {chart.lines.length > 0 ? (
         <View style={{ gap: 6 }}>
-          {chart.lines.map((ln, i) => (
+          {styled.map((ln, i) => (
             <View key={`${ln.name}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: colors[i % colors.length] }} />
+              {ln.dashed ? (
+                <View style={{ width: 16, flexDirection: 'row', justifyContent: 'space-between' }}>
+                  {[0, 1, 2].map((k) => (
+                    <View key={k} style={{ width: 4, height: 2, borderRadius: 1, backgroundColor: ln.color }} />
+                  ))}
+                </View>
+              ) : (
+                <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: ln.color }} />
+              )}
               <Text style={{ fontSize: 13, color: p.sub, flexShrink: 1 }}>{ln.name}</Text>
             </View>
           ))}
         </View>
       ) : (
-        <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 앱이 고른 평균선이나 감지된 모양이 없어 캔들만 그렸어요.</Text>
+        <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 겹쳐 그릴 선이 없어 캔들만 그렸어요.</Text>
       )}
+      {hasLevel ? (
+        // 지난 사실만 — 선마다 '지지선/저항선'이라 이름 붙이지 않는다(지금 가격 아래·위의 이름 붙은 선은
+        // 손절가·목표가로 읽힌다). 흔히 부르는 이름은 용어 풀이로만 알려 준다.
+        <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
+          가로 점선은 최근 1년 동안 주가가 여러 번 오르다 꺾이거나 내리다 돌아선 가격이에요. 증권 앱에서는
+          지지선·저항선이라고 불러요. 다음에도 그 가격에서 멈춘다는 뜻은 아니에요.
+        </Text>
+      ) : null}
       <Text style={{ fontSize: 12.5, color: p.faint, lineHeight: 18 }}>
         사진 위에 직접 그리지 않은 건, 증권 앱마다 가격 눈금이 달라 선 위치가 어긋날 수 있어서예요.
       </Text>

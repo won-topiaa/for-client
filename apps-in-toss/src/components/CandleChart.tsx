@@ -12,7 +12,12 @@ export interface ChartLine {
   color: string;
   points: TimeValue[];
   width?: number;
+  /** 점선 — 가로 가격선처럼 평균선·모양 선과 구분해 보여야 할 때 */
+  dashed?: boolean;
 }
+
+const DASH = 6;
+const DASH_GAP = 4;
 
 export interface ChartMarker {
   time: string;
@@ -163,6 +168,27 @@ export function CandleChart({
         const dy = b.py - a.py;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len < 0.5) {
+          continue;
+        }
+        if (line.dashed) {
+          // 점선: 선분을 DASH 길이 조각으로 나눠 사이를 띄운다
+          const ux = dx / len;
+          const uy = dy / len;
+          for (let s = 0, d = 0; s < len; s += DASH + DASH_GAP, d++) {
+            const piece = Math.min(DASH, len - s);
+            const cx = a.px + ux * (s + piece / 2);
+            const cy = a.py + uy * (s + piece / 2);
+            lineBoxes.push({
+              key: `l${li}-${i}-${d}`,
+              left: cx - piece / 2,
+              top: cy - lw / 2,
+              width: piece,
+              height: lw,
+              color: line.color,
+              radius: lw / 2,
+              rotate: Math.atan2(dy, dx),
+            });
+          }
           continue;
         }
         // 선분을 선 굵기만큼 늘려 이웃 선분과 겹치게 한다 — 딱 맞추면 회전한 상자 사이가
