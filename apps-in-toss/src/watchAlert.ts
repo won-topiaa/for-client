@@ -172,10 +172,17 @@ export function reconcileWatchAlert(watchCount: number | undefined): void {
   emit(true);
   attachListener();
   void Storage.setItem(FLAG_KEY, '1').catch(() => undefined);
+  // 원본은 기기 목록이다 — 켜기만 하고 맞추지 않으면 화면은 기기 개수(0개)를 말하는데
+  // 서버는 예전 종목으로 계속 알린다.
+  scheduleSync();
 }
 
 /** 아침 알림을 끄면 관심종목 알림도 의미가 없다 — 함께 내린다.
- *  (서버는 구독 해지 시 종목코드도 같이 지운다) */
+ *
+ *  서버는 구독 해지 때 종목코드도 같이 지우지만, 해지가 여기서 일어난 게 아닐 수
+ *  있다(토스 쪽 동의 철회로 발송이 거듭 실패해 서버가 구독을 지운 경우 등). 그래서
+ *  서버의 종목코드도 한 번 더 비운다 — 방침이 '끄면 지운다'를 약속한다. 실패는
+ *  조용히 넘긴다(구독이 없는 키의 종목은 서버가 새로 받지도 않는다). */
 export function forgetWatchAlert(): void {
   if (!enabled) {
     return;
@@ -184,6 +191,10 @@ export function forgetWatchAlert(): void {
   emit(false);
   detachListener();
   void Storage.setItem(FLAG_KEY, '0').catch(() => undefined);
+  void (async () => {
+    const key = await anonKey();
+    await pushSetWatchlist(key, []);
+  })().catch(() => undefined);
 }
 
 /**
