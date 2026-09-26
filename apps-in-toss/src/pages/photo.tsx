@@ -9,6 +9,7 @@ import {
 import { createRoute } from '@granite-js/react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   Image,
   ScrollView,
   Text,
@@ -359,9 +360,33 @@ function PhotoPage() {
     }
   }, []);
 
+  // 남은 횟수는 서버 값을 자주 다시 읽는다 — 이 화면은 스택에 남아 있다가 되돌아오고, 밤 12시를
+  // 넘겨 다시 열 수도 있다. 처음 열 때 · 화면으로 돌아올 때 · 앱이 다시 앞으로 올 때 · 0시가 지날 때.
   useEffect(() => {
     void refreshQuota();
-  }, [refreshQuota]);
+    const offFocus = navigation.addListener('focus', () => void refreshQuota());
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') {
+        void refreshQuota();
+      }
+    });
+    return () => {
+      offFocus();
+      sub.remove();
+    };
+  }, [navigation, refreshQuota]);
+
+  useEffect(() => {
+    if (!quota || quota.left > 0 || !quota.resetAt) {
+      return undefined;
+    }
+    const wait = Date.parse(quota.resetAt) - Date.now();
+    if (!Number.isFinite(wait) || wait > 26 * 3600 * 1000) {
+      return undefined;
+    }
+    const t = setTimeout(() => void refreshQuota(), Math.max(0, wait) + 3000);
+    return () => clearTimeout(t);
+  }, [quota, refreshQuota]);
 
   const run = async () => {
     if (!selected || !photo) {
@@ -379,26 +404,27 @@ function PhotoPage() {
         image: photo.base64,
         clientKey: await clientKey(),
       });
+      // 횟수는 서버가 이미 깎았다 — 도중에 종목·사진을 바꿔 결과를 버리더라도 칸은 맞춘다
+      if (body.quota) {
+        setQuota(body.quota);
+      }
       if (seq !== runSeq.current) {
         return;
       }
       setResult(body);
-      if (body.quota) {
-        setQuota(body.quota);
-      }
       // 결과가 버튼 아래에 붙는다 — 사용자가 스크롤을 찾지 않게 내려 준다
       // 결과 묶음의 onLayout 이 먼저 돌아야 위치를 안다 — 한 프레임으로는 모자란 기기가 있다
       setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, resultY.current - 12), animated: true }), 250);
     } catch (e) {
       if (seq === runSeq.current) {
         setErrorMsg(e instanceof Error ? e.message : '분석하지 못했어요.');
-        // 하루 한도(429)면 칸을 모두 비운다. 다른 실패는 서버가 횟수를 돌려주니 다시 읽는다
-        if (e instanceof ApiError && e.status === 429 && !e.retryAfterSec) {
-          setQuota((q) => ({ limit: q?.limit ?? 3, used: q?.limit ?? 3, left: 0, resetAt: q?.resetAt ?? '' }));
-        } else {
-          void refreshQuota();
-        }
       }
+      // 하루 한도(429)면 칸을 바로 비우고, 어느 한도였는지(shared)·다시 채워질 시각은 서버에서 다시
+      // 읽는다. 다른 실패는 서버가 횟수를 돌려주니 다시 읽는다. 도중에 취소된 요청도 칸은 맞춘다.
+      if (e instanceof ApiError && e.status === 429 && !e.retryAfterSec) {
+        setQuota((q) => ({ limit: q?.limit ?? 3, used: q?.used ?? 0, left: 0, resetAt: q?.resetAt ?? '' }));
+      }
+      void refreshQuota();
     } finally {
       if (seq === runSeq.current) {
         setLoading(false);
@@ -555,7 +581,7 @@ function PhotoPage() {
       {/* ── 3. 분석 ── */}
       {quota ? <QuotaMeter quota={quota} palette={p} /> : null}
       <PrimaryButton
-        label={loading ? '분석하는 중…' : outOfQuota ? '오늘 분석을 모두 썼어요' : '분석하기'}
+        label={loading ? '분석하는 중…' : outOfQuota ? (quota?.shared ? '지금은 분석할 수 없어요' : '오늘 분석을 모두 썼어요') : '분석하기'}
         disabled={!canRun}
         palette={p}
         logName={LOG.photoAnalyze}

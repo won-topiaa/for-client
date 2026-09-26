@@ -21,6 +21,8 @@ export function QuotaMeter({
   const limit = Math.max(1, quota.limit);
   const left = Math.max(0, Math.min(limit, quota.left));
   const done = left === 0;
+  // 같은 와이파이·통신사 주소 전체 한도에 막힌 경우 — '3번을 다 썼어요'라고 하지 않는다
+  const network = done && quota.shared === true;
   const slots = (
     <View style={{ flexDirection: 'row', gap: 6 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {Array.from({ length: limit }, (_, i) => (
@@ -38,9 +40,11 @@ export function QuotaMeter({
       ))}
     </View>
   );
-  const label = done
-    ? `오늘 ${limit}번을 모두 썼어요. 내일 0시에 다시 ${limit}번 쓸 수 있어요.`
-    : `오늘 ${limit}번 중 ${left}번 남았어요`;
+  const label = network
+    ? '지금 연결된 인터넷에서 오늘 분석이 많아 잠시 쓸 수 없어요.'
+    : done
+      ? `오늘 ${limit}번을 모두 썼어요. 내일 0시에 다시 ${limit}번 쓸 수 있어요.`
+      : `오늘 ${limit}번 중 ${left}번 남았어요`;
 
   if (compact) {
     return (
@@ -51,7 +55,11 @@ export function QuotaMeter({
       >
         {slots}
         <Text style={{ fontSize: 13, color: done ? p.warnText : p.sub, flexShrink: 1 }}>
-          {done ? '오늘 분석을 모두 썼어요 · 내일 0시에 다시' : `오늘 ${left}번 더 분석할 수 있어요`}
+          {network
+            ? '지금 네트워크에서는 잠시 쓸 수 없어요'
+            : done
+              ? '오늘 분석을 모두 썼어요 · 내일 0시에 다시'
+              : `오늘 ${left}번 더 분석할 수 있어요`}
         </Text>
       </View>
     );
@@ -70,9 +78,11 @@ export function QuotaMeter({
       </View>
       {slots}
       <Text style={{ fontSize: 13, color: done ? p.warnText : p.faint, ...lh(19) }}>
-        {done
-          ? `오늘 ${limit}번을 모두 썼어요. 내일 0시(한국 시간)에 다시 ${limit}번 쓸 수 있어요.`
-          : `하루 ${limit}번까지 쓸 수 있어요. 분석을 마칠 때마다 한 칸씩 줄고, 매일 0시에 다시 채워져요.`}
+        {network
+          ? '지금 연결된 인터넷(같은 와이파이·통신사 주소)에서 오늘 분석이 많아 잠시 쓸 수 없어요. 와이파이나 데이터를 바꿔 다시 해 보거나 내일 0시 이후에 다시 해 주세요.'
+          : done
+            ? `오늘 ${limit}번을 모두 썼어요. 내일 0시(한국 시간)에 다시 ${limit}번 쓸 수 있어요.`
+            : `하루 ${limit}번까지 쓸 수 있어요. 분석을 마칠 때마다 한 칸씩 줄고, 매일 0시에 다시 채워져요.`}
       </Text>
     </View>
   );
