@@ -206,15 +206,23 @@ export interface LinesResponse {
 
 /* ---------- 차트 패턴 스크리너 ---------- */
 
-// 서버(/api/patterns)가 받는 패턴 키. 앱 화면에는 이 중 셋만 노출하지만,
-// 타입은 서버가 주는 값 전부를 인정한다 — 나중에 노출을 늘릴 때 타입을
-// 건드리지 않아도 되고, 서버가 다른 키를 돌려줘도 타입이 거짓말하지 않는다.
+// 서버(/api/patterns)가 받는 패턴 키 — app/patterns.py PATTERN_KEYS 와 같다(14개, 화면에 전부 노출).
+// 새 키는 서버 배포가 먼저다: 모르는 키는 서버가 422 로 돌려보낸다(patterns 화면이 안내한다).
 export type PatternKey =
   | 'stage2'
   | 'triangle'
   | 'head_shoulders'
   | 'inv_head_shoulders'
-  | 'cup_handle';
+  | 'cup_handle'
+  | 'double_top'
+  | 'double_bottom'
+  | 'rectangle'
+  | 'wedge'
+  | 'triple_top'
+  | 'triple_bottom'
+  | 'downtrend_break'
+  | 'uptrend_break'
+  | 'flag';
 
 /** 차트에 겹쳐 그리는 보조선 (넥라인·추세선·컵 테두리 등). */
 export interface PatternOverlay {
