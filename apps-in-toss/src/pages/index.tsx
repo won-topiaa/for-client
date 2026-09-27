@@ -484,17 +484,17 @@ function HomePage() {
             onPress={() => navigation.navigate('/patterns')}
           >
             <Bullet
-              glyph="📈"
+              glyph="📏"
               accent="violet"
-              title="초기 상승추세"
-              body="긴 횡보 뒤에 주가가 장기 이동평균선 위로 올라선 모양을 찾아요."
+              title="하락 추세선 돌파 · 상승 추세선 이탈"
+              body="점점 낮아지던 고점들을 이은 선 위에서(또는 높아지던 저점들을 이은 선 아래에서) 종가가 처음 마감한 종목을 찾아요."
               palette={p}
             />
             <Bullet
               glyph="📐"
               accent="violet"
-              title="삼각수렴 · 컵앤핸들"
-              body="변동폭이 점점 좁아지는 모양, U자로 회복한 뒤 살짝 눌린 모양처럼 잘 알려진 패턴을 기하학적으로 맞춰봅니다."
+              title="헤드앤숄더 · 쌍봉 · 삼각수렴 등 14가지"
+              body="쌍바닥 · 삼중천장 · 쐐기형 · 박스권 · 깃발형 · 컵앤핸들처럼 잘 알려진 차트 모양을 기하학적으로 맞춰 봐요."
               palette={p}
             />
             <Bullet
