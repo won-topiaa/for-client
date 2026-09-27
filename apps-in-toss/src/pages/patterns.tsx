@@ -35,7 +35,7 @@ function PatternsPage() {
         {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
         <PageHeader
           title="차트 패턴"
-          subtitle="지금 이 모양을 만들고 있는 종목을 찾아드려요"
+          subtitle="교과서 속 차트 모양을 지금 만들고 있는 종목을 찾아드려요"
           palette={p}
         />
 

@@ -31,7 +31,8 @@ export const Route = createRoute('/pattern-group', {
   component: PatternGroupPage,
 });
 
-type Phase = 'boot' | 'running' | 'done' | 'error';
+// unsupported: 서버가 아직 모르는 패턴(422) — 실패도 아니고 다시 해도 같으니 버튼 없이 안내만
+type Phase = 'boot' | 'running' | 'done' | 'error' | 'unsupported';
 
 const POLL_RUNNING_MS = 2000;
 const POLL_PARTIAL_MS = 5000;
@@ -219,8 +220,7 @@ function PatternGroupPage() {
       // 서버가 아직 이 패턴을 모른다(새 패턴이 서버보다 먼저 나간 경우) — 영어 검증 오류를
       // 보여 주거나 15초마다 헛되이 다시 묻지 않고, 다른 패턴을 고르라고 안내한다
       if (err instanceof ApiError && err.status === 422) {
-        setErrorMsg('이 모양은 아직 준비 중이에요. 다른 패턴을 골라 주세요.');
-        setPhase('error');
+        setPhase('unsupported');
         return;
       }
       setErrorMsg(err instanceof Error ? err.message : '스캔 실패');
@@ -329,6 +329,14 @@ function PatternGroupPage() {
             progress={body.total ? (body.done ?? 0) / body.total : 0}
             onInteract={setScrollLock}
           />
+        ) : null}
+
+        {phase === 'unsupported' ? (
+          <Card palette={p}>
+            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
+              이 모양은 아직 준비 중이에요. 다른 패턴을 골라 주세요.
+            </Text>
+          </Card>
         ) : null}
 
         {phase === 'error' ? (
