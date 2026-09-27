@@ -137,7 +137,16 @@ export type PatternKey =
   | 'triangle'
   | 'head_shoulders'
   | 'inv_head_shoulders'
-  | 'cup_handle';
+  | 'cup_handle'
+  | 'double_top'
+  | 'double_bottom'
+  | 'rectangle'
+  | 'wedge'
+  | 'triple_top'
+  | 'triple_bottom'
+  | 'downtrend_break'
+  | 'uptrend_break'
+  | 'flag';
 
 /** 차트에 겹쳐 그리는 보조선 (넥라인·추세선·컵 테두리 등). */
 export interface PatternOverlay {

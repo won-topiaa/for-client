@@ -47,10 +47,14 @@ const MARKET_OPTIONS: { value: Market; label: string }[] = [
   { value: 'us', label: '미국' },
 ];
 
+const TAIL = ' 모양이 맞는지만 보고, 앞으로의 움직임은 말하지 않아요.';
+
 /**
- * 화면에 노출하는 패턴. 서버는 5종(헤드앤숄더·역헤드앤숄더 포함)을 주지만,
- * 여기서는 초보도 한 줄로 이해할 수 있는 셋만 먼저 보여준다.
- * 늘리고 싶으면 이 배열에 추가만 하면 된다 (서버·타입 수정 불필요).
+ * 화면에 노출하는 패턴 — 서버(app/patterns.py PATTERN_KEYS)가 찾는 14가지 전부.
+ * 설명은 생김새와 탐지 기준(지난 사실)만 쓴다. 이름 속 '상승·하락·급등·급락'은
+ * 선의 기울기나 지난 움직임이지 앞으로의 방향이 아니라는 점을 detail 에 밝힌다.
+ * bars: 카드 차트에 그릴 봉 수(기본 CHART_BARS). 깃발형은 최근 40봉 안의 모양이라
+ * 200봉에 그리면 오른쪽 끝에 점처럼 보여, 짧게 잘라 크게 그린다(보조선이 모두 그 안에 있다).
  */
 const PATTERNS: {
   key: PatternKey;
@@ -58,16 +62,87 @@ const PATTERNS: {
   emoji: string;
   plain: string;
   detail: string;
+  bars?: number;
 }[] = [
   {
-    key: 'stage2',
-    label: '초기 상승추세',
-    emoji: '📈',
-    plain: '오래 옆으로 움직이던 주가가 장기 이동평균선 위로 올라선 모양이에요.',
+    key: 'downtrend_break',
+    label: '하락 추세선 돌파',
+    emoji: '📏',
+    plain: '점점 낮아지던 고점들을 이은 선(하락 추세선) 위에서 종가가 처음 마감한 모양이에요.',
     detail:
-      '오래 옆으로 움직이던 구간(박스)의 위쪽 선을 최근 넘어섰고, 150일 이동평균선 ' +
-      '위에 있으며, 그 이동평균선이 최근 위를 향하기 시작한 모양을 찾아요. 모양이 ' +
-      '맞는지만 보고, 앞으로의 움직임은 말하지 않아요.',
+      '최근 약 9개월 안에서 점점 낮아지는 고점들을 한 줄로 이은 선을 찾아요. 선에 3번 이상 ' +
+      '닿았고, 두 달 넘게 종가가 한 번도 선 위에서 마감하지 않다가 최근 10거래일 안에 처음 ' +
+      '선 위에서 마감한 종목이에요. 이미 선보다 5% 넘게 위에 있거나, 다시 선 아래로 2% 넘게 ' +
+      '내려오면 목록에서 빠져요.' + TAIL,
+  },
+  {
+    key: 'uptrend_break',
+    label: '상승 추세선 이탈',
+    emoji: '✏️',
+    plain: '점점 높아지던 저점들을 이은 선(상승 추세선) 아래에서 종가가 처음 마감한 모양이에요.',
+    detail:
+      '하락 추세선 돌파를 뒤집은 모양이에요. 점점 높아지는 저점들을 이은 선에 3번 이상 닿았고, ' +
+      '두 달 넘게 종가가 한 번도 선 아래에서 마감하지 않다가 최근 10거래일 안에 처음 선 아래에서 ' +
+      '마감한 종목이에요. 이미 선보다 5% 넘게 아래에 있거나, 다시 선 위로 2% 넘게 올라오면 ' +
+      '목록에서 빠져요.' + TAIL,
+  },
+  {
+    key: 'head_shoulders',
+    label: '헤드앤숄더',
+    emoji: '⛰️',
+    plain: '봉우리 셋 중 가운데가 가장 높은 모양이에요. 머리와 두 어깨를 닮아 붙은 이름이에요.',
+    detail:
+      '왼쪽 어깨 → 머리 → 오른쪽 어깨 순으로 고점 세 개가 만들어지고, 두 번의 ' +
+      '되돌림 저점을 이은 선(넥라인)이 기준이 돼요.' + TAIL,
+  },
+  {
+    key: 'inv_head_shoulders',
+    label: '역헤드앤숄더',
+    emoji: '🏞️',
+    plain: '헤드앤숄더를 뒤집은 모양이에요. 골짜기 셋 중 가운데가 가장 깊어요.',
+    detail:
+      '왼쪽 어깨 → 머리 → 오른쪽 어깨 순으로 저점 세 개가 만들어지고, 가운데(머리)가 ' +
+      '가장 깊어요. 되돌림 고점 둘을 이은 선(넥라인)이 기준이 돼요.' + TAIL,
+  },
+  {
+    key: 'double_top',
+    label: '쌍봉',
+    emoji: '🐫',
+    plain: '비슷한 높이에서 고점을 두 번 만든 모양이에요. 낙타 등의 두 혹을 닮았어요.',
+    detail:
+      '두 고점의 높이 차이가 3% 안이고, 두 고점 사이에서 가장 낮았던 가격(넥라인)보다 ' +
+      '10% 넘게 높은 모양을 찾아요. 넥라인 가까이 왔거나, 넥라인 아래에서 마감한 지 ' +
+      '10거래일이 안 된 종목만 보여 줘요.' + TAIL,
+  },
+  {
+    key: 'double_bottom',
+    label: '쌍바닥',
+    emoji: '👓',
+    plain: '비슷한 높이에서 저점을 두 번 만든 모양이에요. 알파벳 W를 닮았어요.',
+    detail:
+      '쌍봉을 뒤집은 모양이에요. 두 저점의 높이 차이가 3% 안이고, 두 저점 사이에서 가장 ' +
+      '높았던 가격(넥라인)보다 10% 넘게 낮은 모양을 찾아요. 넥라인 가까이 왔거나, 넥라인 ' +
+      '위에서 마감한 지 10거래일이 안 된 종목만 보여 줘요.' + TAIL,
+  },
+  {
+    key: 'triple_top',
+    label: '삼중천장',
+    emoji: '🔱',
+    plain: '비슷한 높이에서 고점을 세 번 만든 모양이에요.',
+    detail:
+      '세 고점의 높이 차이가 3% 안에 모인 모양이에요. 가운데가 두드러지게 높으면 ' +
+      '헤드앤숄더로 따로 봐요. 고점 사이 두 저점 중 더 낮은 가격을 넥라인이라고 불러요. ' +
+      '마지막 두 고점이 쌍봉으로도 보이면 여기에서만 보여 줘요.' + TAIL,
+  },
+  {
+    key: 'triple_bottom',
+    label: '삼중바닥',
+    emoji: '🍡',
+    plain: '비슷한 높이에서 저점을 세 번 만든 모양이에요.',
+    detail:
+      '삼중천장을 뒤집은 모양이에요. 세 저점의 높이 차이가 3% 안에 모여 있고, 저점 사이 ' +
+      '두 고점 중 더 높은 가격을 넥라인이라고 불러요. 마지막 두 저점이 쌍바닥으로도 보이면 ' +
+      '여기에서만 보여 줘요.' + TAIL,
   },
   {
     key: 'triangle',
@@ -80,6 +155,37 @@ const PATTERNS: {
       '모양을 찾아요.',
   },
   {
+    key: 'wedge',
+    label: '쐐기형',
+    emoji: '🧀',
+    plain: '위아래 두 선이 같은 쪽으로 기울면서 폭이 좁아지는 모양이에요.',
+    detail:
+      '고점들을 따라 그은 선과 저점들을 따라 그은 선이 둘 다 오르거나(상승 쐐기) 둘 다 ' +
+      '내리며(하락 쐐기) 가까워지는 모양이에요. 이름의 상승·하락은 두 선이 기운 방향이고, ' +
+      '주가 방향을 말하는 이름이 아니에요.' + TAIL,
+  },
+  {
+    key: 'rectangle',
+    label: '박스권',
+    emoji: '📦',
+    plain: '거의 수평인 두 선 사이를 여러 번 오간 모양이에요.',
+    detail:
+      '위아래 두 선이 거의 수평이고, 한 달 넘게 그 사이에서 오르내린 종목을 찾아요. ' +
+      '두 선 사이의 폭은 5~35%예요. 종가가 이미 선 밖으로 크게 나갔으면 빼요.' + TAIL,
+  },
+  {
+    key: 'flag',
+    label: '깃발형',
+    emoji: '🚩',
+    plain: '짧은 기간 크게 움직인 구간(깃대) 뒤에, 좁은 폭 안에서 쉬어 가는 구간(깃발)이 붙은 모양이에요.',
+    detail:
+      '3~20거래일 동안 15% 넘게 오르거나 내린 구간(깃대) 뒤에, 5~20거래일 동안 깃대의 절반보다 ' +
+      '적게 되돌리며 좁은 폭 안에서 움직이는 모양을 찾아요. 위아래 두 선이 나란하면 깃발형, ' +
+      '서로 모이면 페넌트형이에요. 이름 앞의 ‘급등 뒤·급락 뒤’는 이 모양 앞의 지난 움직임이에요.' +
+      TAIL,
+    bars: 80,
+  },
+  {
     key: 'cup_handle',
     label: '컵앤핸들',
     emoji: '☕',
@@ -89,6 +195,26 @@ const PATTERNS: {
       '짧고 얕게 내려온 구간(핸들)이 붙은 형태예요. 모양이 커피잔과 손잡이를 ' +
       '닮아 붙은 이름이에요.',
   },
+  {
+    key: 'stage2',
+    label: '초기 상승추세',
+    emoji: '📈',
+    plain: '오래 옆으로 움직이던 주가가 장기 이동평균선 위로 올라선 모양이에요.',
+    detail:
+      '오래 옆으로 움직이던 구간(박스)의 위쪽 선을 최근 넘어섰고, 150일 이동평균선 ' +
+      '위에 있으며, 그 이동평균선이 최근 위를 향하기 시작한 모양을 찾아요.' + TAIL,
+  },
+];
+
+/** 고르는 칸 묶음 — 14개를 한 줄로 늘어놓으면 찾기 어려워, 생김새끼리 묶는다. */
+const GROUPS: { title: string; keys: PatternKey[] }[] = [
+  { title: '추세선', keys: ['downtrend_break', 'uptrend_break'] },
+  {
+    title: '봉우리·골짜기',
+    keys: ['head_shoulders', 'inv_head_shoulders', 'double_top', 'double_bottom', 'triple_top', 'triple_bottom'],
+  },
+  { title: '두 선 사이', keys: ['triangle', 'wedge', 'rectangle', 'flag'] },
+  { title: '그 밖의 모양', keys: ['cup_handle', 'stage2'] },
 ];
 
 /**
@@ -99,12 +225,14 @@ const PATTERNS: {
 const PatternCard = React.memo(function PatternCard({
   match: m,
   palette: p,
+  bars,
   watched,
   onToggleWatch,
   onOpenRadar,
 }: {
   match: PatternMatch;
   palette: Palette;
+  bars: number;
   watched: boolean;
   onToggleWatch: (item: { symbol: string; name: string; market?: string | null }) => void;
   onOpenRadar: (m: PatternMatch) => void;
@@ -146,7 +274,7 @@ const PatternCard = React.memo(function PatternCard({
         candles={m.candles}
         lines={lines}
         height={165}
-        maxBars={CHART_BARS}
+        maxBars={bars}
         colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
         showPriceAxis={false}
       />
@@ -187,7 +315,7 @@ function PatternsPage() {
   const p = usePalette();
   const navigation = Route.useNavigation();
 
-  const [pattern, setPattern] = useState<PatternKey>('stage2');
+  const [pattern, setPattern] = useState<PatternKey>(PATTERNS[0]!.key);
   const [market, setMarket] = useState<Market>('kr');
   const [phase, setPhase] = useState<Phase>('boot');
   // 기다리는 동안 게임에서 새총을 당기는 중이면 스크롤을 잠근다 (안드로이드는 스크롤이 드래그를 빼앗는다)
@@ -300,16 +428,26 @@ function PatternsPage() {
           palette={p}
         />
 
-        {/* 패턴 선택 */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {PATTERNS.map((x) => (
-            <Chip
-              key={x.key}
-              label={x.label}
-              active={pattern === x.key}
-              palette={p}
-              onPress={() => setPattern(x.key)}
-            />
+        {/* 패턴 선택 — 생김새끼리 묶어 보여 준다 */}
+        <View style={{ gap: 12 }}>
+          {GROUPS.map((g) => (
+            <View key={g.title} style={{ gap: 6 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '600', color: p.faint }}>{g.title}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {g.keys.map((k) => {
+                  const x = PATTERNS.find((y) => y.key === k);
+                  return x ? (
+                    <Chip
+                      key={x.key}
+                      label={x.label}
+                      active={pattern === x.key}
+                      palette={p}
+                      onPress={() => setPattern(x.key)}
+                    />
+                  ) : null;
+                })}
+              </View>
+            </View>
           ))}
         </View>
 
@@ -326,7 +464,7 @@ function PatternsPage() {
           {/* 패턴을 매수신호로 읽지 않게 — 설명과 같은 카드 안에 둔다 */}
           <Notice palette={p}>
             패턴은 &apos;지금 이런 모양&apos;이라는 관찰일 뿐이에요. 모양이 나왔다고 그대로
-            간다는 보장은 없고, 매수 신호가 아닙니다.
+            간다는 보장은 없고, 매수·매도 신호가 아닙니다.
           </Notice>
         </Card>
 
@@ -401,6 +539,7 @@ function PatternsPage() {
                 key={`${m.symbol}-${pattern}`}
                 match={m}
                 palette={p}
+                bars={current.bars ?? CHART_BARS}
                 watched={isWatched(watched, m.symbol)}
                 onToggleWatch={toggleWatch}
                 onOpenRadar={openRadar}
