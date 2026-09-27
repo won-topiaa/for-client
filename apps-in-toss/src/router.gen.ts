@@ -3,6 +3,7 @@
 import { Route as _IndexRoute } from '../pages/';
 import { Route as _LinesRoute } from '../pages/lines';
 import { Route as _NotifyRoute } from '../pages/notify';
+import { Route as _PatternGroupRoute } from '../pages/pattern-group';
 import { Route as _PatternsRoute } from '../pages/patterns';
 import { Route as _PhotoRoute } from '../pages/photo';
 import { Route as _RadarRoute } from '../pages/radar';
@@ -14,6 +15,7 @@ declare module '@granite-js/react-native' {
     '/': (typeof _IndexRoute)['_inputType'];
     '/lines': (typeof _LinesRoute)['_inputType'];
     '/notify': (typeof _NotifyRoute)['_inputType'];
+    '/pattern-group': (typeof _PatternGroupRoute)['_inputType'];
     '/patterns': (typeof _PatternsRoute)['_inputType'];
     '/photo': (typeof _PhotoRoute)['_inputType'];
     '/radar': (typeof _RadarRoute)['_inputType'];
@@ -25,6 +27,7 @@ declare module '@granite-js/react-native' {
     '/': (typeof _IndexRoute)['_outputType'];
     '/lines': (typeof _LinesRoute)['_outputType'];
     '/notify': (typeof _NotifyRoute)['_outputType'];
+    '/pattern-group': (typeof _PatternGroupRoute)['_outputType'];
     '/patterns': (typeof _PatternsRoute)['_outputType'];
     '/photo': (typeof _PhotoRoute)['_outputType'];
     '/radar': (typeof _RadarRoute)['_outputType'];

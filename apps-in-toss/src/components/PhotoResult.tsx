@@ -287,7 +287,8 @@ function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: st
         candles={chart.candles}
         lines={lines}
         height={200}
-        maxBars={120}
+        // 서버가 모양의 첫 점까지 창을 넓혀 보낸다(최대 200봉) — 받은 봉을 모두 그린다
+        maxBars={Math.max(1, chart.candles.length)}
         colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
       />
       {chart.lines.length > 0 ? (
