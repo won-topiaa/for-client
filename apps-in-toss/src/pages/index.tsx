@@ -58,6 +58,9 @@ const INTRO_MIN_H = 300;
 // 같은 아침에 두 번 보게 된다 — '오늘 이미 봤다'는 사람이 쓰는 말이라
 // 달력 날짜로 세는 편이 뜻과 맞다.
 const INTRO_SEEN_KEY = 'wontopia.introSeen';
+/** 소개를 보여 줄지 정하려고 저장소를 기다리는 최대 시간 */
+const STORAGE_WAIT_MS = 400;
+const STORAGE_SLOW = '\u0000slow';
 
 /** KST 기준 오늘 날짜 'YYYY-MM-DD'. */
 function kstToday(): string {
@@ -273,11 +276,20 @@ function HomePage() {
     void (async () => {
       let seen: string | null = null;
       try {
-        seen = await Storage.getItem(INTRO_SEEN_KEY);
+        // 저장소가 늦으면 기다리지 않고 소개 없이 바로 그린다 — 첫 화면을
+        // 저장소 응답에 묶어 두지 않는다 (앱인토스 심사: 최초 접속 20초 이내)
+        seen = await Promise.race([
+          Storage.getItem(INTRO_SEEN_KEY),
+          new Promise<string>((resolve) => setTimeout(() => resolve(STORAGE_SLOW), STORAGE_WAIT_MS)),
+        ]);
       } catch {
         seen = null;
       }
       if (!alive) {
+        return;
+      }
+      if (seen === STORAGE_SLOW) {
+        setIntro('skip');
         return;
       }
       const today = kstToday();
