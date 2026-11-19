@@ -42,31 +42,6 @@ const MARKET_OPTIONS: { value: Market; label: string }[] = [
   { value: 'us', label: '미국' },
 ];
 
-/** 이름표 위, 숫자 아래 — 토스가 수치를 늘어놓을 때 쓰는 두 줄 묶음 */
-function Stat({
-  label,
-  value,
-  palette: p,
-  color,
-}: {
-  label: string;
-  value: string;
-  palette: Palette;
-  color?: string;
-}) {
-  return (
-    <View style={{ flex: 1 }}>
-      <Text style={{ fontSize: 12, color: p.faint }}>{label}</Text>
-      <Text
-        style={{ fontSize: 15, fontWeight: '700', color: color ?? p.text, marginTop: 2 }}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 /**
  * 매치 한 건 카드. React.memo 로 감싼 이유:
  *
@@ -96,58 +71,48 @@ const MatchCard = React.memo(function MatchCard({
     ? Math.max(0, Math.min(100, Math.round(m.supportRate * 100)))
     : 0;
   return (
-    <Card palette={p} style={{ gap: 14 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View style={{ flexShrink: 1, paddingRight: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text
-              style={{ fontSize: 17, fontWeight: '700', color: p.text, flexShrink: 1 }}
-              numberOfLines={1}
-            >
-              {m.name}
-            </Text>
+    <Card palette={p} style={{ gap: 12 }}>
+      {/* 머리 줄 — 증권 앱 종목 목록처럼 왼쪽에 이름, 오른쪽에 가격.
+          예전엔 '현재가 · MA 선 · 선 대비' 세 칸을 따로 한 줄 더 썼는데, 가격과
+          선 대비는 이름 옆 오른쪽에 두는 게 증권 앱에서 익숙한 자리라 한 줄을 줄였다.
+          '선 대비'는 토스처럼 양수 빨강 · 음수 파랑. */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View style={{ flex: 1, paddingRight: 10 }}>
+          {/* 이름이 왼쪽 칸을 다 쓰게 MA 배지는 둘째 줄로 — 같은 줄에 두면 좁은
+              폰(320px)에서 '이수스페셜티케미컬'이 '이수…'로 잘린다 */}
+          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }} numberOfLines={1}>
+            {m.name}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <Badge label={`MA ${m.period}`} palette={p} tone="primary" />
+            <Text style={{ fontSize: 13, color: p.faint, flexShrink: 1 }} numberOfLines={1}>
+              {m.symbol}
+              {m.market ? ` · ${m.market}` : ''}
+            </Text>
           </View>
+        </View>
+        <View style={{ alignItems: 'flex-end', marginRight: 12 }}>
+          <Text
+            style={{ fontSize: 17, fontWeight: '700', color: p.text, fontVariant: ['tabular-nums'] }}
+            accessibilityLabel={`현재가 ${fmtPrice(m.close)}`}
+          >
+            {fmtPrice(m.close)}
+          </Text>
           <Text style={{ fontSize: 13, color: p.faint, marginTop: 3 }}>
-            {m.symbol}
-            {m.market ? ` · ${m.market}` : ''}
+            선 대비{' '}
+            <Text style={{ fontWeight: '600', color: signColor(m.distPct, p), fontVariant: ['tabular-nums'] }}>
+              {fmtDistPct(m.distPct)}
+            </Text>
           </Text>
         </View>
-        <StarButton
-          watched={watched}
-          palette={p}
-          label={m.name}
-          logName={LOG.watchlistAdd}
-          onPress={() => onToggleWatch({ symbol: m.symbol, name: m.name, market: m.market })}
-        />
-      </View>
-
-      {/* 가격 한 줄 — 숫자를 이름표와 함께 세워 둔다.
-          '선 대비'는 토스처럼 양수 빨강 · 음수 파랑으로 칠한다. */}
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Stat label="현재가" value={fmtPrice(m.close)} palette={p} />
-        <Stat label={`MA ${m.period} 선`} value={fmtPrice(m.maValue)} palette={p} />
-        <Stat
-          label="선 대비"
-          value={fmtDistPct(m.distPct)}
-          palette={p}
-          color={signColor(m.distPct, p)}
-        />
-      </View>
-
-      <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-          {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
-              함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%).
-              이름은 '지지 성공률' 하나로 통일한다 — 예전엔 같은 수치를 여기서만
-              '최근 가중 성공률'이라 불러서 다른 지표처럼 보였다. */}
-          3년 지지 시험 {m.supportTests}회 중{' '}
-          <Text style={{ fontWeight: '700', color: p.text }}>{m.supportBounces}회 성공</Text>
-          {' · '}지지 성공률{' '}
-          <Text style={{ fontWeight: '700', color: p.text }}>{fmtRate(m.supportRate)}</Text>
-        </Text>
-        <View style={{ height: 6, borderRadius: 3, backgroundColor: p.sunken, overflow: 'hidden' }}>
-          <View style={{ height: 6, width: `${ratePct}%`, backgroundColor: p.primary }} />
+        <View style={{ paddingTop: 1 }}>
+          <StarButton
+            watched={watched}
+            palette={p}
+            label={m.name}
+            logName={LOG.watchlistAdd}
+            onPress={() => onToggleWatch({ symbol: m.symbol, name: m.name, market: m.market })}
+          />
         </View>
       </View>
 
@@ -166,17 +131,48 @@ const MatchCard = React.memo(function MatchCard({
               ]
             : []
         }
-        height={140}
+        height={120}
         maxBars={40}
         colors={{ up: p.up, down: p.down, grid: p.grid, text: p.faint }}
         showPriceAxis={false}
       />
-      <TextButton
-        label="이평선 분석 →"
-        palette={p}
-        onPress={() => onOpenRadar(m)}
-        logName={LOG.analyze}
-      />
+
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', columnGap: 8, rowGap: 2 }}>
+          {/* 분모는 supportTests(지지 판정 시도) — touches 는 저항 터치까지 포함해서
+              함께 쓰면 성공률과 계산이 안 맞는다(34/89=38% vs 표기 77%).
+              이름은 '지지 성공률' 하나로 통일한다 — 예전엔 같은 수치를 여기서만
+              '최근 가중 성공률'이라 불러서 다른 지표처럼 보였다. */}
+          <Text style={{ fontSize: 13, color: p.sub }}>
+            지지 성공률{' '}
+            <Text style={{ fontSize: 15, fontWeight: '700', color: p.text, fontVariant: ['tabular-nums'] }}>
+              {fmtRate(m.supportRate)}
+            </Text>
+          </Text>
+          <Text style={{ fontSize: 12, color: p.faint, ...lh(18) }}>
+            3년 시험 {m.supportTests}회 중 {m.supportBounces}회 성공
+          </Text>
+        </View>
+        <View
+          style={{ height: 4, borderRadius: 2, backgroundColor: p.sunken, overflow: 'hidden' }}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <View style={{ height: 4, width: `${ratePct}%`, borderRadius: 2, backgroundColor: p.ma[0] ?? p.primary }} />
+        </View>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 12, color: p.faint, fontVariant: ['tabular-nums'] }}>
+          MA {m.period} 선 {fmtPrice(m.maValue)}
+        </Text>
+        <TextButton
+          label="이평선 분석 →"
+          palette={p}
+          onPress={() => onOpenRadar(m)}
+          logName={LOG.analyze}
+        />
+      </View>
     </Card>
   );
 });
