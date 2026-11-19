@@ -8,7 +8,6 @@ import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import {
   Badge,
   Card,
-  Expandable,
   Footer,
   Notice,
   PageHeader,
@@ -17,7 +16,6 @@ import {
   StarButton,
   TextButton,
 } from '../components/ui';
-import { SCREENER_RULE_LABEL } from '../env';
 import { fmtDistPct, fmtPrice, fmtRate } from '../format';
 import { LOG } from '../analytics';
 import { pendingAnalyze } from '../store';
@@ -274,8 +272,8 @@ function ScreenerPage() {
     const shown = (b.matches ?? []).length;
     const total = b.totalMatches ?? 0;
     return (
-      `${b.scanned}개 종목 ${b.partial ? '백테스트' : '백테스트 완료'} · 오늘 지지선 터치 ${total}개` +
-      (total > shown ? ` (상위 ${shown}개 표시)` : '') +
+      `${b.scanned}개 종목 ${b.partial ? '확인 중' : '확인'} · 오늘 지지선 터치 ${total}개` +
+      (total > shown ? ` · ${shown}개 표시` : '') +
       (b.partial ? ' · 남은 종목 계속 확인 중…' : b.refreshing ? ' · 백그라운드에서 새 스캔 진행 중' : '')
     );
   };
@@ -303,7 +301,6 @@ function ScreenerPage() {
         {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
         <PageHeader
           title="오늘의 지지선"
-          subtitle="검증된 지지 이평선에 오늘 저가가 닿은 종목만"
           palette={p}
         />
 
@@ -334,25 +331,9 @@ function ScreenerPage() {
         {/* '닿음'을 매수 신호로 읽지 않게 — 카드마다 반복하면 잔소리가 되므로
             목록 위에 한 번만 둔다 */}
         <Notice palette={p}>
-          지지선에 닿았다는 건 과거에 자주 지켜진 이평선 근처에 지금 주가가 있다는 뜻이에요.
-          성공률은 과거 통계일 뿐, 매수·매도 신호가 아니에요.
+          과거 통계예요. 매수·매도 신호가 아니에요.
         </Notice>
 
-        <Expandable title="스캔 기준 · 지지 성공률이란?" palette={p}>
-          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-            {SCREENER_RULE_LABEL} 인정합니다.{' '}
-            {/* 몇 일선부터 보는지는 서버가 알려 준다 — 서버가 바뀌기 전에 앱이 먼저 나가도 틀리지 않게 */}
-            {body?.minPeriod
-              ? `${body.minPeriod}일선보다 짧은 선은 제외 — 이평선 분석에서 ★ 추천 대상이 아닌 짧은 선이에요.`
-              : '5일선은 제외합니다.'}
-          </Text>
-          {/* 같은 수치를 화면마다 다른 이름으로 부르지 않는다. 뜻은 여기 한 번만 적는다. */}
-          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 10 }}>
-            지지 성공률 = 가격이 위에서 그 선 근처로 내려온 뒤, 종가가 선보다 평소 변동폭(ATR)만큼 위로
-            먼저 올라간(반등 판정) 비율이에요. 오래된 일보다 최근 일에 더 큰 가중치를 줘요. 앞으로 오를
-            확률은 아니에요 — 가격 순서를 무작위로 섞어도 이 비율의 대부분이 나와요.
-          </Text>
-        </Expandable>
 
         {phase === 'boot' ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
@@ -413,7 +394,7 @@ function ScreenerPage() {
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.'
-                    : '오늘 검증된 지지선에 닿아 있는 종목이 없습니다.\n터치는 매일 달라집니다 — 내일 다시 확인하거나 다른 시장을 살펴보세요.'}
+                    : '오늘 지지선에 닿은 종목이 없어요.'}
                 </Text>
               </Card>
             ) : null}

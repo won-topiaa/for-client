@@ -188,7 +188,7 @@ function NotifyPage() {
         <Card palette={p} style={{ gap: 12 }}>
           <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>관심종목 알림</Text>
           <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
-            담아 두신 종목이 오늘 검증된 지지선에 닿으면, 아침 알림을 그 소식으로
+            담아 두신 종목이 오늘 지지선에 닿으면, 아침 알림을 그 소식으로
             바꿔 보내 드려요. 닿은 종목이 없는 날은 평소처럼 지수를 보내요.
           </Text>
           <Notice palette={p}>

@@ -138,7 +138,7 @@ function WatchlistPage() {
       >
         {/* 우상단 '홈' 버튼은 하단 탭바로 대체했다 — 같은 이동을 두 군데 두면
             어디를 눌러야 할지 고민만 늘린다 */}
-        <PageHeader title="관심종목" subtitle="별표로 담아 둔 종목을 모아서 봐요" palette={p} />
+        <PageHeader title="관심종목" palette={p} />
 
         {saveBroken ? (
           <Card palette={p} style={{ gap: 6, backgroundColor: p.warnBg }}>
@@ -240,13 +240,6 @@ function WatchlistPage() {
                 </View>
               ))}
             </Card>
-            {touched.size > 0 ? (
-              <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
-                <Text style={{ color: p.primary, fontWeight: '700' }}>오늘 지지선</Text> 배지는 그
-                종목이 과거에 자주 지켜진 이평선에 오늘 닿았다는 뜻이에요. 매수·매도 신호가
-                아니에요.
-              </Text>
-            ) : null}
             <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
               관심종목은 이 기기에만 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
             </Text>

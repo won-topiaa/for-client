@@ -10,7 +10,6 @@ import {
   Badge,
   Card,
   Chip,
-  Expandable,
   Footer,
   Notice,
   PageHeader,
@@ -280,8 +279,8 @@ function LinesPage() {
   const statusText = (b: LinesResponse): string => {
     const shown = list.length;
     return (
-      `${b.scanned ?? 0}개 종목 ${b.partial ? '백테스트' : '백테스트 완료'} · MA ${period} ${word} ${total}개` +
-      (total > shown ? ` (상위 ${shown}개 표시)` : '') +
+      `${b.scanned ?? 0}개 종목 ${b.partial ? '확인 중' : '확인'} · MA ${period} ${word} ${total}개` +
+      (total > shown ? ` · ${shown}개 표시` : '') +
       (b.partial ? ' · 남은 종목 계속 확인 중…' : b.refreshing ? ' · 새 스캔 진행 중' : '')
     );
   };
@@ -298,7 +297,6 @@ function LinesPage() {
       >
         <PageHeader
           title="맞춤 이평선"
-          subtitle="내가 고른 선이 지금 버티고 있는 종목 · 막고 있는 종목"
           palette={p}
         />
 
@@ -342,28 +340,9 @@ function LinesPage() {
         </Card>
 
         <Notice palette={p}>
-          {side === 'support'
-            ? '선 위에서 움직이던 종목이 그 선 근처까지 내려와 있고, 아직 그 아래로 내려가지 않은 상태예요. 매수·매도 신호가 아니에요.'
-            : '선 아래에서 움직이던 종목이 그 선 근처까지 올라와 있고, 아직 그 위로 올라서지 않은 상태예요. 매수·매도 신호가 아니에요.'}
+          과거 통계예요. 매수·매도 신호가 아니에요.
         </Notice>
 
-        <Expandable title="어떤 종목을 골라 주나요?" palette={p}>
-          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-            다섯 가지를 모두 만족하는 종목만 골라요.{'\n'}
-            {'\n'}
-            1. 최근 20봉 중 70% 이상이 그 선 {side === 'support' ? '위' : '아래'}에 있었어요
-            (추세가 그 선에 정박해 있어야 지지·저항을 말할 수 있어요){'\n'}
-            2. 최근 5봉 안에 실제로 그 선에 닿았어요 (지금 시험 중인 종목만){'\n'}
-            3. 아직 확정적으로 {side === 'support' ? '무너지지' : '뚫리지'} 않았어요{'\n'}
-            4. 선 자체의 기울기가 {side === 'support' ? '하락 중이 아니에요' : '상승 중이 아니에요'}
-            {'\n'}
-            5. 3년 백테스트에서 그 선의 {word} 판정이 2회 이상, 성공률 50% 이상이에요
-          </Text>
-          <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 10 }}>
-            성공률은 오래된 일보다 최근 일에 더 큰 가중치를 줘서, 요즘 잘 지켜지는 선이
-            높게 나옵니다. 그래서 판정 횟수에 성공률을 곱해도 딱 떨어지지 않아요.
-          </Text>
-        </Expandable>
 
         {phase === 'boot' ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }}>
@@ -429,7 +408,7 @@ function LinesPage() {
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n조건에 맞는 종목이 나오면 여기 채워집니다.'
-                    : `지금 MA ${period} 선에서 ${word} 중인 종목이 없습니다.\n다른 기간이나 다른 시장을 살펴보세요.`}
+                    : `지금 MA ${period} 선에서 ${word} 중인 종목이 없어요.`}
                 </Text>
               </Card>
             ) : null}

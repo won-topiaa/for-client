@@ -18,7 +18,6 @@ import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import {
   Card,
   Chip,
-  Expandable,
   Footer,
   InlineToggle,
   Notice,
@@ -277,18 +276,6 @@ function RadarPage() {
 
   const data = analysis?.timeframes[tf];
   const recommended = useMemo(() => data?.recommended ?? [], [data]);
-  // ★ 최소 기간보다 짧은 후보(일봉·주봉 5·10) — 성적표 위에 '★ 대상 아님'을 적는다.
-  // 예전 서버 응답엔 minRecommendPeriod 가 없다 → 빈 목록 → 안내 생략.
-  const shortPeriods = useMemo(() => {
-    const min = data?.minRecommendPeriod ?? 0;
-    if (!(min > 0)) {
-      return [];
-    }
-    return (data?.stats ?? [])
-      .map((s) => s.period)
-      .filter((period) => period < min)
-      .sort((a, b) => a - b);
-  }, [data]);
   const visibleRecs = useMemo(
     () => (focusPeriod === null ? recommended : recommended.filter((r) => r.period === focusPeriod)),
     [recommended, focusPeriod]
@@ -365,7 +352,6 @@ function RadarPage() {
         {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
         <PageHeader
           title="내 종목 이평선"
-          subtitle="자주 지켜진 지지/저항 이평선을 백테스트로 찾아드려요"
           palette={p}
         />
 
@@ -480,9 +466,6 @@ function RadarPage() {
               }}
             />
           ) : null}
-          {compactSearch ? null : (
-            <Text style={{ fontSize: 12, color: p.faint }}>분석 기간: {LOOKBACK_LABEL}</Text>
-          )}
         </Card>
 
         {/* 1.3.5 차트 사진 분석 — 방금 본 종목이 미리 골라져 있다.
@@ -589,8 +572,6 @@ function RadarPage() {
                     </Text>
                     {focusPeriod !== null ? (
                       <TextButton label="전체 보기" palette={p} onPress={() => setFocusPeriod(null)} />
-                    ) : recommended.length > 1 ? (
-                      <Text style={{ fontSize: 12, color: p.faint }}>누르면 그 선만 보기</Text>
                     ) : null}
                   </View>
                   {recommended.map((rec, i) => {
@@ -667,8 +648,7 @@ function RadarPage() {
                   })}
                   {recommended.length === 0 ? (
                     <Text style={{ fontSize: 14, color: p.sub, paddingHorizontal: 20, paddingVertical: 12, ...lh(22) }}>
-                      추천할 만한 이평선을 찾지 못했습니다 (데이터·터치 부족
-                      {data.minRecommendPeriod ? ` · MA ${data.minRecommendPeriod}보다 짧은 선은 ★ 대상 아님` : ''})
+                      추천할 만한 이평선이 없어요.
                     </Text>
                   ) : null}
                 </Card>
@@ -745,8 +725,7 @@ function RadarPage() {
 
                 {/* 성공률을 '오를 확률'로 읽지 않게 — 결과 바로 아래 한 번만 */}
                 <Notice palette={p}>
-                  성공률은 과거에 이 선에서 몇 번 버텼는지를 센 통계예요. 앞으로도 그렇다는
-                  보장이나 매수 신호가 아닙니다.
+                  과거 통계예요. 매수·매도 신호가 아니에요.
                 </Notice>
 
                 {/* 숫자 자세히 — 기본은 접어 둔다 (분석 구간·반감기·전체 성적표) */}
@@ -794,13 +773,6 @@ function RadarPage() {
                     <Text style={{ fontSize: 15, fontWeight: '700', color: p.text, marginTop: 6 }}>
                       전체 후보 성적표
                     </Text>
-                    {shortPeriods.length > 0 ? (
-                      <Text style={{ fontSize: 13, color: p.sub, ...lh(19) }}>
-                        짧은 선(MA {shortPeriods.join('·')})은 ★ 대상이 아니에요. 자주 닿아 점수는 높게 나오지만
-                        판정 방식상 반등 판정 비율은 평균적으로 낮아서, {TF_LABEL[tf]}은 MA {data.minRecommendPeriod}부터
-                        추천해요.
-                      </Text>
-                    ) : null}
                     <ScoreTable
                       stats={data.stats ?? []}
                       recommended={recommended.map((r) => r.period)}
@@ -813,16 +785,6 @@ function RadarPage() {
           </>
         ) : null}
 
-        {!analysis && !loading && !errorMsg ? (
-          <Expandable title="어떻게 쓰나요?" palette={p}>
-            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
-              1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
-              2. 일봉·주봉·월봉별로 과거에 선에 닿은 뒤 반등 판정이 자주, 높은 비율로 난 이동평균선
-              2~3개를 백테스트로 찾아 차트에 그려드려요{'\n'}
-              3. 숫자는 지난 기록의 요약이에요. 앞으로 오를 확률이나 매수 신호가 아니에요
-            </Text>
-          </Expandable>
-        ) : null}
 
         <Footer palette={p} />
       </ScrollView>

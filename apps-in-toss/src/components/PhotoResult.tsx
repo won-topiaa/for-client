@@ -34,46 +34,6 @@ const TF_LABEL: Record<Timeframe, string> = { day: '일봉', week: '주봉', mon
 const TIMEFRAMES: Timeframe[] = ['day', 'week', 'month'];
 const AREA_ORDER = ['지지선', '추세', '모멘텀', '변동성', '거래량', '차트 모양'];
 
-/** 결과 화면 공통 질문 — 광고로 잠그지 않는다(답이 곧 오해를 막는 안내라서).
- *  경쟁 앱의 '무엇을 봐야 하나'(권유) 대신 '무엇을 재나 / 어떻게 골랐나'(사실). */
-function faqFor(supportPeriod: number | null): { q: string; a: string }[] {
-  const pick = supportPeriod
-    ? [
-        {
-          q: `${supportPeriod}일 평균선은 어떻게 골랐나요?`,
-          // 60% 는 최근에 무게를 둔 비율이다(서버 diagnosis.SUPPORT_MIN_RATE) — 화면의 횟수를 그대로
-          // 나누면 60%보다 낮게 나올 수 있어(운영 삼성전자 28/51), 그렇다고 밝힌다
-          a: '최근 3년 동안 주가가 위에서 닿은 횟수와, 그 뒤 선 위에서 마감한 비율을 함께 따져 골랐어요. 기간이 10일 이상인 선 가운데, 최근 기록에 무게를 더 두어 센 선 위 마감 비율이 60% 이상인 선만 골라요. 그래서 선 위·아래 마감 횟수를 그대로 나눈 값과는 다를 수 있어요. 횟수가 많은 선이 앞에 오게 계산해서, 비율이 가장 높은 선은 아닐 수 있어요. 지난 기록일 뿐, 앞으로도 그렇게 된다는 뜻은 아니에요.',
-        },
-      ]
-    : [];
-  return [
-    ...pick,
-    {
-      q: 'RSI·MACD는 각각 무엇을 재는 값인가요?',
-      a: 'RSI는 오른 폭과 내린 폭을 최근 날일수록 무게를 더 두어 평균 낸 뒤(기준 14일) 0~100으로 나타낸 값이에요. 50보다 크면 그 평균에서 오른 폭이 더 컸다는 뜻이에요. MACD는 최근 가격에 더 무게를 둔 12일 평균에서 26일 평균을 뺀 값이에요. 0보다 크면 짧은 기간 평균이 더 위에 있다는 뜻이에요.',
-    },
-    {
-      q: '지표가 대부분 ‘위’면 좋은 건가요?',
-      a: '지표는 지금 가격이 과거와 비교해 어디쯤 있는지를 보여 줄 뿐이에요. 좋다·나쁘다나 앞으로의 방향을 알려 주지는 않아요. 같은 상태에서도 과거에는 오른 때와 내린 때가 모두 있었어요.',
-    },
-    ...FAQ_TAIL,
-  ];
-}
-
-const FAQ_TAIL: { q: string; a: string }[] = [
-  {
-    q: '사진 속 숫자와 조금 달라요.',
-    a: '숫자는 사진에서 읽지 않고, 그 종목의 최신 종가 데이터로 다시 계산해요. 사진을 찍은 시점이나 증권 앱 설정(평균선 기간 등)에 따라 조금 다를 수 있어요.',
-  },
-];
-
-// '모양 → 이후 결과'라는 틀을 앱이 먼저 꺼내지 않는다(정책 검토) — 무엇을 하고 안 하는지만
-const PATTERN_FAQ = {
-  q: '이 모양 뒤의 움직임도 알려 주나요?',
-  a: '아니요. 이 앱은 차트가 교과서 속 생김새와 맞는지만 확인해요. 모양이 나온 뒤 주가가 어떻게 움직였는지는 세지 않아요.',
-};
-
 /** 파란 세로 막대 + 제목 — 카드 안의 섹션 머리. */
 function BarTitle({ title, palette: p, right }: { title: string; palette: Palette; right?: React.ReactNode }) {
   return (
@@ -116,41 +76,6 @@ function HelpDot({ open, palette: p, onPress, label }: { open: boolean; palette:
   );
 }
 
-/** 질문 행 — 누르면 답이 펼쳐진다. */
-function QaRow({ q, a, palette: p }: { q: string; a: string; palette: Palette }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <View style={{ borderTopWidth: 1, borderTopColor: p.border, borderStyle: 'dashed', paddingTop: 14, gap: 8 }}>
-      <Track name={LOG.photoFaq} text={q} enabled={!open}>
-        <TouchableOpacity
-          onPress={() => setOpen(!open)}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
-          activeOpacity={0.6}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-        >
-          <View
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 13,
-              backgroundColor: p.primaryBg,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 14, fontWeight: '800', color: p.primary }}>?</Text>
-          </View>
-          <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: p.text, ...lh(21) }}>{q}</Text>
-          <Chevron dir={open ? 'up' : 'down'} color={p.faint} size={8} />
-        </TouchableOpacity>
-      </Track>
-      {open ? (
-        <Text style={{ fontSize: 14, color: p.sub, ...lh(21), paddingLeft: 36 }}>{a}</Text>
-      ) : null}
-    </View>
-  );
-}
 
 /** 주요 지표 한 행 — 이름 (?) ··· 지금 상태 / 한 줄 풀이 / (펼치면) 뜻. */
 function IndicatorRow({ row, palette: p, first }: { row: DiagnosisRow; palette: Palette; first: boolean }) {
@@ -389,7 +314,6 @@ export function PhotoResult({
   const [detailTf, setDetailTf] = useState<Timeframe>(shownTf);
   const [shareFailed, setShareFailed] = useState(false);
   const rows = diag.timeframes[tf]?.rows ?? [];
-  const supportPeriod = Number((diag.timeframes.day?.rows ?? []).find((r) => r.key === 'support')?.term.match(/^(\d+)/)?.[1]) || null;
   const sentences = diag.timeframes[detailTf]?.sentences ?? [];
   // 제목은 엔진이 계산한 문장을 먼저(공유로도 나간다) — 서버도 같은 순서로 정한다
   const headline = diag.headline || ex.headline || `${who}의 지표를 모아 봤어요.`;
@@ -513,7 +437,6 @@ export function PhotoResult({
               ))}
             </View>
           ))}
-          <QaRow q={PATTERN_FAQ.q} a={PATTERN_FAQ.a} palette={p} />
         </Card>
       ) : null}
 
@@ -527,9 +450,6 @@ export function PhotoResult({
           {rows.map((r, i) => (
             <IndicatorRow key={`${tf}-${r.key}`} row={r} palette={p} first={i === 0} />
           ))}
-          <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
-            (?)를 누르면 그 지표가 무엇을 재는지 알려 드려요. 지표는 지금 상태를 보여 줄 뿐, 좋다·나쁘다를 뜻하지 않아요.
-          </Text>
         </Card>
       ) : null}
 
@@ -539,18 +459,11 @@ export function PhotoResult({
           <BarTitle title="평균선과 지금 주가의 거리" palette={p} />
           <Ladder ladder={ladder} palette={p} />
           <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
-            선의 값은 {result.asOf} 종가까지로 계산했어요. 날마다 바뀌어요.
+            {result.asOf} 종가 기준
           </Text>
         </Card>
       ) : null}
 
-      {/* 자주 묻는 질문 */}
-      <Card palette={p} style={{ gap: 14 }}>
-        <BarTitle title="자주 묻는 질문" palette={p} />
-        {faqFor(supportPeriod).map((f) => (
-          <QaRow key={f.q} q={f.q} a={f.a} palette={p} />
-        ))}
-      </Card>
 
       {/* 자세히 보기 — 엔진 원문(숫자 그대로). 지표를 아는 사람용 */}
       <Expandable title="자세히 보기 · 지표 원문" palette={p} logName={LOG.photoDetail}>

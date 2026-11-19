@@ -9,7 +9,6 @@ import { TabBar, TAB_BAR_SPACER } from '../components/TabBar';
 import {
   Card,
   Chip,
-  Expandable,
   Footer,
   IconChip,
   Notice,
@@ -270,7 +269,7 @@ function PatternGroupPage() {
         }}
       >
         {/* 뒤로 가기는 토스 상단바가, 다른 탭 이동은 하단 탭바가 맡는다 */}
-        <PageHeader title={group.title} subtitle={group.desc} palette={p} />
+        <PageHeader title={group.title} palette={p} />
 
         {/* 이 묶음의 패턴만 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -292,13 +291,9 @@ function PatternGroupPage() {
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>{current.label}</Text>
           </View>
           <Text style={{ fontSize: 14.5, color: p.sub, ...lh(23) }}>{current.plain}</Text>
-          <Expandable title="좀 더 자세히" palette={p} surface={p.sunken}>
-            <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>{current.detail}</Text>
-          </Expandable>
           {/* 패턴을 매수신호로 읽지 않게 — 설명과 같은 카드 안에 둔다 */}
           <Notice palette={p}>
-            패턴은 &apos;지금 이런 모양&apos;이라는 관찰일 뿐이에요. 모양이 나왔다고 그대로
-            간다는 보장은 없고, 매수·매도 신호가 아닙니다.
+            모양을 보여 줄 뿐, 매수·매도 신호가 아니에요.
           </Notice>
         </Card>
 
@@ -372,7 +367,7 @@ function PatternGroupPage() {
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
                     ? '남은 종목을 확인하는 중입니다…\n이 모양을 만드는 종목이 나오면 여기 채워집니다.'
-                    : `지금 ${current.label} 모양을 만들고 있는 종목이 없습니다.\n패턴은 매일 달라집니다 — 다른 패턴이나 다른 시장을 살펴보세요.`}
+                    : `지금 ${current.label} 모양을 만들고 있는 종목이 없어요.`}
                 </Text>
               </Card>
             ) : null}

@@ -15,9 +15,7 @@ import { TodayBrief } from '../components/TodayBrief';
 import {
   Card,
   Chevron,
-  Expandable,
   Footer,
-  InlineToggle,
   MenuRow,
   PageHeader,
   RowDivider,
@@ -27,7 +25,6 @@ import { CONTACT_EMAIL, PUSH_TIME_LABEL } from '../env';
 import { LOG } from '../analytics';
 import { isPushAvailable } from '../notify';
 import {
-  accentBg,
   GUTTER,
   RADIUS,
   usePalette,
@@ -211,41 +208,6 @@ function ScrollHint({
   );
 }
 
-/** 설명 카드 안의 항목 한 줄 — 옅은 색 아이콘 칩 + 제목 + 본문 */
-function Bullet({
-  glyph,
-  accent,
-  title,
-  body,
-  palette: p,
-}: {
-  glyph: string;
-  accent: AccentKey;
-  title: string;
-  body: string;
-  palette: Palette;
-}) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 12 }}>
-      <View
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 15,
-          backgroundColor: accentBg(p, accent),
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ fontSize: 15 }}>{glyph}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: p.text }}>{title}</Text>
-        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 3 }}>{body}</Text>
-      </View>
-    </View>
-  );
-}
 
 /**
  * 기능 카드 — 위쪽 행을 누르면 그 화면으로 가고, 아래 '설명 보기'를 누르면
@@ -262,7 +224,6 @@ function FeatureCard({
   accent,
   palette: p,
   onPress,
-  children,
 }: {
   title: string;
   desc: string;
@@ -270,9 +231,7 @@ function FeatureCard({
   accent: AccentKey;
   palette: Palette;
   onPress: () => void;
-  children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <Card palette={p} style={{ padding: 0 }}>
       <MenuRow
@@ -284,15 +243,6 @@ function FeatureCard({
         onPress={onPress}
         logName={LOG.openFeature}
       />
-      <RowDivider palette={p} inset={20} />
-      <InlineToggle
-        open={open}
-        label="설명"
-        of={title}
-        palette={p}
-        onPress={() => setOpen((v) => !v)}
-      />
-      {open ? <View style={{ padding: 20, paddingTop: 2, gap: 16 }}>{children}</View> : null}
     </Card>
   );
 }
@@ -384,17 +334,6 @@ function HomePage() {
             >
               나에게 맞는{'\n'}이평선
             </Text>
-            <Text
-              style={{
-                fontSize: 15,
-                color: p.sub,
-                textAlign: 'center',
-                marginTop: 14,
-                ...lh(23),
-              }}
-            >
-              종목마다 진짜 지켜온 선은 다릅니다
-            </Text>
           </IntroSection>
 
           {/* ── Intro 2: 이평선 레이더 ── */}
@@ -424,31 +363,13 @@ function HomePage() {
             >
               이평선 레이더
             </Text>
-            <Text
-              style={{
-                fontSize: 15,
-                color: p.sub,
-                textAlign: 'center',
-                marginTop: 14,
-                ...lh(23),
-              }}
-            >
-              {/* 두 줄 안에 들어가야 한다 — 시스템 글자 크기를 키우면 세 번째
-                  줄로 넘어가 가운데 정렬이 어색해진다. '이평선' 은 바로 위 제목이
-                  말해 주므로 뺀다. */}
-              일봉 3년 · 주봉 7년 · 월봉 전체{'\n'}백테스트로 검증된 선만 찾아드려요
-            </Text>
           </IntroSection>
           </>
         ) : null}
 
         {/* ── Main content ── */}
         <View style={{ paddingHorizontal: GUTTER, gap: 12 }}>
-          <PageHeader
-            title="이평선 레이더"
-            subtitle="종목마다 실제로 지켜진 이동평균선을 백테스트로 찾아드려요"
-            palette={p}
-          />
+          <PageHeader title="이평선 레이더" palette={p} />
 
           {/* 아침 알림이 약속한 내용은 여기 있어야 한다 — 스마트 발송은
               미니앱을 기본 진입점으로 열기 때문에, 알림을 누른 사람이
@@ -458,130 +379,42 @@ function HomePage() {
           {/* ── 기능 1: 내 종목 이평선 ── */}
           <FeatureCard
             title="내 종목 이평선"
-            desc="종목을 검색하면 그 종목이 실제로 지켜온 이평선을 찾아드려요"
+            desc="종목별 이평선 지지·저항 기록"
             glyph="📊"
             accent="blue"
             palette={p}
             onPress={() => navigation.navigate('/radar')}
-          >
-            <Bullet
-              glyph="🔍"
-              accent="blue"
-              title="종목을 검색하세요"
-              body="관심 종목의 이름이나 코드를 입력하면 자동으로 분석이 시작돼요. 한국·미국 주식 모두 가능합니다."
-              palette={p}
-            />
-            <Bullet
-              glyph="📊"
-              accent="blue"
-              title="핵심 이평선을 찾아드려요"
-              body="일봉 3년·주봉 7년·월봉 전체 기간을 백테스트해서, 이 종목에서 가장 자주 지지/저항 역할을 해온 이동평균선 2~3개를 골라줍니다."
-              palette={p}
-            />
-            <Bullet
-              glyph="💡"
-              accent="orange"
-              title="이렇게 살펴보세요"
-              body="남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요. 차트 마커로 과거 반응도 한눈에 볼 수 있어요."
-              palette={p}
-            />
-          </FeatureCard>
+          />
 
           {/* ── 기능 1-2: 차트 사진 분석 (1.3.5) ── */}
           <FeatureCard
             title="차트 사진 분석"
-            desc="차트 사진과 종목을 올리면 지표를 모두 모아 쉽게 설명해 드려요"
+            desc="차트 사진으로 지표 한눈에 보기"
             glyph="📷"
             accent="blue"
             palette={p}
             onPress={() => navigation.navigate('/photo')}
-          >
-            <Bullet
-              glyph="📷"
-              accent="blue"
-              title="사진과 종목을 올리세요"
-              body="증권 앱 차트 화면을 캡처하거나 찍어서 올리고, 어떤 종목인지 골라 주세요. 사진은 저장하지 않아요."
-              palette={p}
-            />
-            <Bullet
-              glyph="🧮"
-              accent="blue"
-              title="그 종목의 지표를 전부 계산해요"
-              body="지지선 · 이평선 배열 · 150일선 흐름 · 1년 범위 · RSI · MACD · 볼린저 밴드 · 변동성 · 거래량을 그 종목의 최신 데이터로 계산하고, 쌍바닥 · 쌍봉 같은 차트 모양은 보일 때만 알려 드려요."
-              palette={p}
-            />
-            <Bullet
-              glyph="💬"
-              accent="orange"
-              title="쉬운 말로 풀어 드려요"
-              body="사진에서 보이는 모양과 계산한 사실을 한 번에 읽을 수 있게 정리해요. 앞으로의 가격을 말하거나 사고팔기를 권하지 않아요."
-              palette={p}
-            />
-          </FeatureCard>
+          />
 
           {/* ── 기능 2: 오늘의 지지선 ── */}
           <FeatureCard
             title="오늘의 지지선"
-            desc="검증된 지지선에 오늘 가격이 닿은 종목만 모아 보여드려요"
+            desc="오늘 지지선에 닿은 종목"
             glyph="📍"
             accent="red"
             palette={p}
             onPress={() => navigation.navigate('/screener')}
-          >
-            <Bullet
-              glyph="🚨"
-              accent="red"
-              title="매일 주요 종목을 스캔해요"
-              body="국내 거래대금 상위 종목과 미국 대형주를 매일 자동으로 백테스트합니다. 종목을 하나하나 찾아볼 필요가 없어요."
-              palette={p}
-            />
-            <Bullet
-              glyph="📍"
-              accent="red"
-              title="오늘 지지선에 닿은 종목만 알려줘요"
-              body="3년 백테스트에서 지지 성공률 60% 이상, 반등 3회 이상인 검증된 이평선에 오늘 가격이 닿아 있는 종목만 골라줍니다."
-              palette={p}
-            />
-            <Bullet
-              glyph="💡"
-              accent="orange"
-              title="이렇게 살펴보세요"
-              body="장 마감 후 확인하면 오늘 검증된 지지선에 닿은 종목이 한눈에 보여요. 그 선에서 과거에 몇 번 버텼는지와 차트를 함께 살펴보세요. 사고팔 때를 알려 주는 신호는 아니에요."
-              palette={p}
-            />
-          </FeatureCard>
+          />
 
           {/* ── 기능 3: 차트 패턴 ── */}
           <FeatureCard
             title="차트 패턴"
-            desc="교과서 속 차트 모양을 지금 만들고 있는 종목을 찾아드려요"
+            desc="차트 모양별 종목"
             glyph="📐"
             accent="violet"
             palette={p}
             onPress={() => navigation.navigate('/patterns')}
-          >
-            <Bullet
-              glyph="📏"
-              accent="violet"
-              title="하락 추세선 돌파 · 상승 추세선 이탈"
-              body="점점 낮아지던 고점들을 이은 선 위에서(또는 높아지던 저점들을 이은 선 아래에서) 종가가 처음 마감한 종목을 찾아요."
-              palette={p}
-            />
-            <Bullet
-              glyph="📐"
-              accent="violet"
-              title="헤드앤숄더 · 쌍봉 · 삼각수렴 등 14가지"
-              body="쌍바닥 · 삼중천장 · 쐐기형 · 박스권 · 깃발형 · 컵앤핸들처럼 잘 알려진 차트 모양을 기하학적으로 맞춰 봐요."
-              palette={p}
-            />
-            <Bullet
-              glyph="💡"
-              accent="orange"
-              title="이렇게 살펴보세요"
-              body="차트에 패턴의 보조선(넥라인·추세선)을 같이 그려드려요. 모양이 맞는지 눈으로 확인하고 관심종목에 담아 두세요."
-              palette={p}
-            />
-          </FeatureCard>
+          />
 
           {/* ── 관심종목 · 아침 알림 ──
               한 카드에 메뉴 행으로 묶는다. 토스에서 부가 기능이 놓이는 자리와
@@ -589,7 +422,7 @@ function HomePage() {
           <Card palette={p} style={{ padding: 0 }}>
             <MenuRow
               title="맞춤 이평선"
-              desc="내가 고른 선이 지금 버티고 있는 종목 · 막고 있는 종목"
+              desc="내가 고른 이평선에 닿은 종목"
               glyph="📏"
               accent="blue"
               palette={p}
@@ -599,7 +432,7 @@ function HomePage() {
             <RowDivider palette={p} />
             <MenuRow
               title="관심종목"
-              desc="종목 오른쪽 위의 ☆ 를 누르면 여기에 모여요"
+              desc="☆ 로 담아 둔 종목"
               glyph="★"
               accent="orange"
               palette={p}
@@ -614,7 +447,7 @@ function HomePage() {
                 <RowDivider palette={p} />
                 <MenuRow
                   title="아침 시장 알림"
-                  desc={`${PUSH_TIME_LABEL}, 주요 지수와 공포탐욕지수를 한 줄로 보내 드려요`}
+                  desc={`${PUSH_TIME_LABEL} 시장 지수 한 줄`}
                   glyph="🔔"
                   accent="green"
                   palette={p}
@@ -625,19 +458,6 @@ function HomePage() {
             ) : null}
           </Card>
 
-          {/* ── 이평선이란? ── */}
-          <Expandable title="이동평균선이란?" palette={p}>
-            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
-              이동평균선(MA)은 과거 N일간의 평균 종가를 이은 선입니다.
-              주가가 이 선 근처에서 반등하면 &apos;지지&apos;, 뚫고 내려가면
-              &apos;이탈&apos;이라고 해요.
-            </Text>
-            <Text style={{ fontSize: 14, color: p.sub, ...lh(22), marginTop: 10 }}>
-              이 앱은 과거 시세를 백테스트해서, 종목마다 실제로 자주 지켜진
-              이평선을 자동으로 찾아줍니다. 남들이 많이 쓰는 선이 아닌, 이 종목에
-              맞는 선을 알 수 있어요.
-            </Text>
-          </Expandable>
 
           {/* ── 화면 테마 ──
               앱인토스 TDS 는 라이트만 안내하지만, 밤에 시세를 보는 사람에게는
@@ -652,20 +472,10 @@ function HomePage() {
               palette={p}
               onChange={(v) => setMode(v)}
             />
-            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
-              {mode === 'auto'
-                ? '휴대폰의 화면 설정을 따라가요.'
-                : mode === 'dark'
-                  ? '휴대폰 설정과 상관없이 어두운 화면으로 봐요.'
-                  : '휴대폰 설정과 상관없이 밝은 화면으로 봐요.'}
-            </Text>
           </Card>
           {/* ── 문의·협업 ── */}
           <Card palette={p} style={{ gap: 10 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }}>문의 · 협업</Text>
-            <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
-              문의사항이나 협업 제안은 아래 이메일로 편하게 연락 주세요.
-            </Text>
             <TouchableOpacity
               onPress={() =>
                 void Linking.openURL(

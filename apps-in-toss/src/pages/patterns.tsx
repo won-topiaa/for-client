@@ -35,7 +35,6 @@ function PatternsPage() {
         {/* 홈·관심종목 이동은 하단 탭바가 맡는다 */}
         <PageHeader
           title="차트 패턴"
-          subtitle="교과서 속 차트 모양을 지금 만들고 있는 종목을 찾아드려요"
           palette={p}
         />
 
@@ -59,8 +58,7 @@ function PatternsPage() {
 
         {/* 패턴을 매수신호로 읽지 않게 */}
         <Notice palette={p}>
-          패턴은 &apos;지금 이런 모양&apos;이라는 관찰일 뿐이에요. 모양이 나왔다고 그대로
-          간다는 보장은 없고, 매수·매도 신호가 아닙니다.
+          모양을 보여 줄 뿐, 매수·매도 신호가 아니에요.
         </Notice>
 
         <Footer palette={p} />

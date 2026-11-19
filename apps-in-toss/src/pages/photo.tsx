@@ -457,7 +457,6 @@ function PhotoPage() {
         <View style={{ flexShrink: 1, paddingRight: 8 }}>
           <PageHeader
             title="차트 사진 분석"
-            subtitle="차트 사진을 올리면 그 종목의 지표를 모두 모아 쉽게 설명해 드려요"
             palette={p}
           />
         </View>
