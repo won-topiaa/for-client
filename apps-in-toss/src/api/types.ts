@@ -124,6 +124,8 @@ export interface TouchesResponse {
   refreshing?: boolean;
   partial?: boolean;
   generatedAt?: string | number;
+  /** 후보 이평선 하한(= 일봉 ★ 추천 최소 기간, 서버 20). 예전 서버엔 없다(그땐 5일선만 뺐다). */
+  minPeriod?: number;
   matches?: TouchMatch[];
   totalMatches?: number;
   /** 닿은 종목 코드 전부 (matches 는 상위 몇 개뿐). 예전 서버는 보내지 않는다. */

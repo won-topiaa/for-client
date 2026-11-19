@@ -796,8 +796,9 @@ function RadarPage() {
                     </Text>
                     {shortPeriods.length > 0 ? (
                       <Text style={{ fontSize: 13, color: p.sub, ...lh(19) }}>
-                        짧은 선(MA {shortPeriods.join('·')})은 ★ 대상이 아니에요. 판정 방식상 짧은 선은 반등
-                        판정이 원래 적게 나와서, {TF_LABEL[tf]}은 MA {data.minRecommendPeriod}부터 추천해요.
+                        짧은 선(MA {shortPeriods.join('·')})은 ★ 대상이 아니에요. 자주 닿아 점수는 높게 나오지만
+                        판정 방식상 반등 판정 비율은 평균적으로 낮아서, {TF_LABEL[tf]}은 MA {data.minRecommendPeriod}부터
+                        추천해요.
                       </Text>
                     ) : null}
                     <ScoreTable
@@ -816,9 +817,9 @@ function RadarPage() {
           <Expandable title="어떻게 쓰나요?" palette={p}>
             <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
               1. 종목을 검색하거나 대표 종목을 누르세요{'\n'}
-              2. 일봉·주봉·월봉별로 가장 자주, 믿을 만하게 지지/저항 역할을 해온 이동평균선
+              2. 일봉·주봉·월봉별로 과거에 선에 닿은 뒤 반등 판정이 자주, 높은 비율로 난 이동평균선
               2~3개를 백테스트로 찾아 차트에 그려드려요{'\n'}
-              3. 남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요
+              3. 숫자는 지난 기록의 요약이에요. 앞으로 오를 확률이나 매수 신호가 아니에요
             </Text>
           </Expandable>
         ) : null}
