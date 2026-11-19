@@ -372,13 +372,6 @@ function screenStart(fontCss) {
         `<span class="chip${i === 0 ? ' on' : ''}">${esc(q.name)}</span>`).join('')}</div>
       <div style="background:${P.primary};color:#fff;border-radius:14px;text-align:center;
         font-size:23px;font-weight:800;padding:16px">분석하기</div>
-      <div class="card" style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:21px;font-weight:800">어떻게 쓰나요?</div>
-        <div class="small" style="font-size:18px;line-height:1.65">
-          1. 종목을 검색하거나 대표 종목을 누르세요<br>
-          2. 일·주·월봉별로 자주, 믿을 만하게 지지/저항이 된 이평선 2~3개를 백테스트로 찾아 차트에 그려드려요<br>
-          3. 남들이 쓰는 20·60일선이 아니라, 이 종목이 실제로 지켜온 선을 확인하세요</div>
-      </div>
     </div>
     <div class="foot">${esc(env.BRAND_NAME)} · 문의 ${esc(env.CONTACT_EMAIL)} · ⚠ ${esc(env.DISCLAIMER)}</div>
   `);

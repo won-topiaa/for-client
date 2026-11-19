@@ -110,26 +110,18 @@ function NotifyPage() {
             {brief.asOf ? (
               <Text style={{ fontSize: 12, color: p.faint }}>{brief.asOf} 기준</Text>
             ) : null}
-            {/* 알림엔 두 개만, 앱에선 전부 — 무엇이 더 있는지 켜기 전에 알 수 있게 */}
-            {brief.pushDropped && brief.pushDropped.length > 0 ? (
-              <Text style={{ fontSize: 13, color: p.sub, ...lh(20) }}>
-                {brief.pushDropped.join('·')}까지 보고 싶으면 알림을 눌러 앱에서 확인하세요.
-              </Text>
-            ) : null}
             {/* 옆의 pushDropped 처럼 존재 여부부터 본다. 타입에는 필수로 적혀
                 있지만 응답은 무검증 캐스팅이라, 서버가 이 필드를 빼는 순간
                 여기서 TypeError 가 나고 에러 바운더리가 앱 전체를 덮는다. */}
             {brief.missing && brief.missing.length > 0 ? (
               <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
-                오늘은 {brief.missing.join('·')} 값을 받지 못했어요. 못 받은 항목은 빈칸을 남기지
-                않고 문구에서 빠집니다.
+                오늘은 {brief.missing.join('·')} 값을 받지 못했어요.
               </Text>
             ) : null}
           </>
         ) : briefFailed ? (
           <Text style={{ fontSize: 15, color: p.sub, ...lh(23) }}>
-            미국 장이 열린 다음 날(화~토) 아침, 나스닥 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요. (나머지 지수는 알림을
-            눌러 앱에서 볼 수 있어요.)
+            나스닥 지수와 미국 공포탐욕지수를 한 줄로 보내 드려요.
           </Text>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -224,7 +216,7 @@ function NotifyPage() {
           />
           {watchedReady && !watchAlert.on && watched.length === 0 ? (
             <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-              먼저 관심종목을 담아 주세요. 종목 오른쪽 위의 ☆ 를 누르면 담깁니다.
+              먼저 관심종목을 ☆ 로 담아 주세요.
             </Text>
           ) : null}
           {watchAlert.on ? (
@@ -256,12 +248,6 @@ function NotifyPage() {
         <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
           · &apos;알림 끄기&apos;를 누르면 저장한 식별값을 지우고 발송 목록에서 빠져요. 토스에
           하신 알림 동의 자체는 토스 앱 설정에 남아 있어요.
-        </Text>
-        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-          · 지수는 시장 상황에 따라 값을 못 받는 날이 있어요. 그럴 땐 받은 항목만 보내 드려요.
-        </Text>
-        <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-          · 알림이 오지 않으면 토스 앱 설정 → 알림에서 이 미니앱 알림이 켜져 있는지 확인해 주세요.
         </Text>
         <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
           · 공포탐욕지수는 CNN Business 의 Fear &amp; Greed Index 수치를 그대로 전해 드리는

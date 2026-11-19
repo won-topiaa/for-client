@@ -251,8 +251,8 @@ function PatternGroupPage() {
     const shown = (b.matches ?? []).length;
     const total = b.totalMatches ?? 0;
     return (
-      `${b.scanned ?? 0}개 종목 ${b.partial ? '스캔 중' : '스캔 완료'} · ${current.label} ${total}개 발견` +
-      (total > shown ? ` (상위 ${shown}개 표시)` : '') +
+      `${b.scanned ?? 0}개 종목 · ${current.label} ${total}개` +
+      (total > shown ? ` · 상위 ${shown}개` : '') +
       (b.partial ? ' · 남은 종목 계속 확인 중…' : b.refreshing ? ' · 새 스캔 진행 중' : '')
     );
   };
@@ -366,7 +366,7 @@ function PatternGroupPage() {
               <Card palette={p}>
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
-                    ? '남은 종목을 확인하는 중입니다…\n이 모양을 만드는 종목이 나오면 여기 채워집니다.'
+                    ? '남은 종목을 확인하는 중이에요…'
                     : `지금 ${current.label} 모양을 만들고 있는 종목이 없어요.`}
                 </Text>
               </Card>

@@ -183,16 +183,10 @@ function Ladder({ ladder, palette: p }: { ladder: DiagnosisLadder; palette: Pale
  *  소개 문장은 실제로 그린 선에 맞춘다 — 모양이 없는데 '모양의 선을 그렸어요'라고 하지 않고,
  *  사진 속 종목이 달라 보일 때도 있으니 '같은 종목' 대신 종목 이름을 쓴다. */
 function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: string; palette: Palette }) {
-  const hasMa = chart.lines.some((l) => l.kind === 'ma');
-  const hasPat = chart.lines.some((l) => l.kind === 'pattern');
   const hasLevel = chart.lines.some((l) => l.kind === 'level');
-  const parts = [
-    hasMa ? '앱이 고른 평균선' : null,
-    hasPat ? '감지된 모양의 선' : null,
-    hasLevel ? '주가가 여러 번 방향을 바꾼 가격(가로 점선)' : null,
-  ].filter(Boolean);
   const n = chart.candles.length;
-  const intro = `${who}의 최근 ${n}거래일(약 ${Math.max(1, Math.round(n / 21))}개월) 일봉을 앱이 다시 그렸어요.${parts.length ? ` 그 위에 ${parts.join(', ')}을 겹쳐 그렸어요.` : ''}`;
+  // 사진이 아니라 앱이 다시 그린 차트라는 것만 한 줄로 (어떤 선인지는 아래 범례가 말한다)
+  const intro = `${who} · 최근 ${n}거래일 일봉`;
   // 평균선·모양 선은 색을 돌려 쓰고, 가로 가격선은 한 가지 무채색 점선 — 추세선과 섞여 보이지 않게
   const colors = [p.primary, p.ma[1] ?? p.warn, p.ma[2] ?? p.sub, p.ma[3] ?? p.faint];
   let ci = 0;
@@ -205,9 +199,7 @@ function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: st
   return (
     <Card palette={p} style={{ gap: 12 }}>
       <BarTitle title="선을 그린 차트" palette={p} />
-      <Text style={{ fontSize: 14, color: p.sub, ...lh(21) }}>
-        {intro}
-      </Text>
+      <Text style={{ fontSize: 13, color: p.faint }}>{intro}</Text>
       <CandleChart
         candles={chart.candles}
         lines={lines}
@@ -237,16 +229,12 @@ function PhotoChartCard({ chart, who, palette: p }: { chart: PhotoChart; who: st
         <Text style={{ fontSize: 13, color: p.faint }}>이 종목에는 겹쳐 그릴 선이 없어 캔들만 그렸어요.</Text>
       )}
       {hasLevel ? (
-        // 지난 사실만 — 선마다 '지지선/저항선'이라 이름 붙이지 않는다(지금 가격 아래·위의 이름 붙은 선은
-        // 손절가·목표가로 읽힌다). 흔히 부르는 이름은 용어 풀이로만 알려 준다.
+        // 지난 사실만 — '지지선/저항선'이라 이름 붙이지 않는다(지금 가격 아래·위의 이름 붙은 선은
+        // 손절가·목표가로 읽힌다).
         <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
-          가로 점선은 최근 1년 동안 주가가 여러 번 오르다 꺾이거나 내리다 돌아선 가격이에요. 증권 앱에서는
-          지지선·저항선이라고 불러요. 다음에도 그 가격에서 멈춘다는 뜻은 아니에요.
+          가로 점선: 최근 1년 주가가 여러 번 방향을 바꾼 가격. 다음에도 그 가격에서 멈춘다는 뜻은 아니에요.
         </Text>
       ) : null}
-      <Text style={{ fontSize: 12.5, color: p.faint, ...lh(18) }}>
-        사진 위에 직접 그리지 않은 건, 증권 앱마다 가격 눈금이 달라 선 위치가 어긋날 수 있어서예요.
-      </Text>
     </Card>
   );
 }

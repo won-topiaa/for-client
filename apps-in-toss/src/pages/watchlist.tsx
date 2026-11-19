@@ -163,8 +163,7 @@ function WatchlistPage() {
               아직 담은 종목이 없어요
             </Text>
             <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
-              &apos;내 종목 이평선&apos;이나 &apos;오늘의 지지선&apos; 화면에서 종목 오른쪽 위의 ☆
-              를 누르면 여기에 모입니다.
+              ☆ 를 누르면 여기에 모여요.
             </Text>
             <PrimaryButton
               label="종목 분석하러 가기"
@@ -181,7 +180,7 @@ function WatchlistPage() {
         ) : (
           <>
             <Text style={{ fontSize: 12, color: p.faint }}>
-              {items.length}개 · 누르면 이평선을 분석해요
+              {items.length}개
             </Text>
             {/* 한 장의 카드에 행을 쌓는다 — 토스의 목록과 같은 모양이라,
                 종목이 늘어도 화면이 카드 더미로 쪼개지지 않는다 */}
@@ -241,7 +240,7 @@ function WatchlistPage() {
               ))}
             </Card>
             <Text style={{ fontSize: 12.5, color: p.faint, ...lh(19) }}>
-              관심종목은 이 기기에만 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
+              관심종목은 이 기기에 저장돼요. 앱을 지우거나 기기를 바꾸면 목록도 사라집니다.
             </Text>
           </>
         )}

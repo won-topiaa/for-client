@@ -272,8 +272,8 @@ function ScreenerPage() {
     const shown = (b.matches ?? []).length;
     const total = b.totalMatches ?? 0;
     return (
-      `${b.scanned}개 종목 ${b.partial ? '확인 중' : '확인'} · 오늘 지지선 터치 ${total}개` +
-      (total > shown ? ` · ${shown}개 표시` : '') +
+      `${b.scanned}개 종목 · 오늘 지지선 터치 ${total}개` +
+      (total > shown ? ` · 상위 ${shown}개` : '') +
       (b.partial ? ' · 남은 종목 계속 확인 중…' : b.refreshing ? ' · 백그라운드에서 새 스캔 진행 중' : '')
     );
   };
@@ -331,7 +331,7 @@ function ScreenerPage() {
         {/* '닿음'을 매수 신호로 읽지 않게 — 카드마다 반복하면 잔소리가 되므로
             목록 위에 한 번만 둔다 */}
         <Notice palette={p}>
-          과거 통계예요. 매수·매도 신호가 아니에요.
+          최근에 무게를 둔 과거 통계예요. 매수·매도 신호가 아니에요.
         </Notice>
 
 
@@ -359,9 +359,7 @@ function ScreenerPage() {
                 }}
               />
             </View>
-            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
-              서버가 종목마다 3년 백테스트를 돌리는 중이에요 — 보통 1~2분이면 끝나요.
-            </Text>
+            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>보통 1~2분 걸려요.</Text>
           </Card>
         ) : null}
 
@@ -393,7 +391,7 @@ function ScreenerPage() {
               <Card palette={p}>
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
-                    ? '남은 종목을 확인하는 중입니다…\n오늘 지지선에 닿은 종목이 나오면 여기 채워집니다.'
+                    ? '남은 종목을 확인하는 중이에요…'
                     : '오늘 지지선에 닿은 종목이 없어요.'}
                 </Text>
               </Card>

@@ -279,8 +279,8 @@ function LinesPage() {
   const statusText = (b: LinesResponse): string => {
     const shown = list.length;
     return (
-      `${b.scanned ?? 0}개 종목 ${b.partial ? '확인 중' : '확인'} · MA ${period} ${word} ${total}개` +
-      (total > shown ? ` · ${shown}개 표시` : '') +
+      `${b.scanned ?? 0}개 종목 · MA ${period} ${word} ${total}개` +
+      (total > shown ? ` · 상위 ${shown}개` : '') +
       (b.partial ? ' · 남은 종목 계속 확인 중…' : b.refreshing ? ' · 새 스캔 진행 중' : '')
     );
   };
@@ -368,10 +368,7 @@ function LinesPage() {
                 }}
               />
             </View>
-            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>
-              처음 고른 기간은 서버가 한 번 훑어야 해요 — 보통 1~2분이면 끝나고, 그 뒤로는
-              하루 종일 바로 나옵니다.
-            </Text>
+            <Text style={{ fontSize: 13, color: p.faint, ...lh(20) }}>보통 1~2분 걸려요.</Text>
           </Card>
         ) : null}
 
@@ -407,7 +404,7 @@ function LinesPage() {
               <Card palette={p}>
                 <Text style={{ fontSize: 14, color: p.sub, ...lh(22) }}>
                   {body.partial
-                    ? '남은 종목을 확인하는 중입니다…\n조건에 맞는 종목이 나오면 여기 채워집니다.'
+                    ? '남은 종목을 확인하는 중이에요…'
                     : `지금 MA ${period} 선에서 ${word} 중인 종목이 없어요.`}
                 </Text>
               </Card>

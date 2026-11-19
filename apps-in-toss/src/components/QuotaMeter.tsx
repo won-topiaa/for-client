@@ -77,13 +77,14 @@ export function QuotaMeter({
         </Text>
       </View>
       {slots}
-      <Text style={{ fontSize: 13, color: done ? p.warnText : p.faint, ...lh(19) }}>
-        {network
-          ? '지금 연결된 인터넷(같은 와이파이·통신사 주소)에서 오늘 분석이 많아 잠시 쓸 수 없어요. 와이파이나 데이터를 바꿔 다시 해 보거나 내일 0시 이후에 다시 해 주세요.'
-          : done
-            ? `오늘 ${limit}번을 모두 썼어요. 내일 0시(한국 시간)에 다시 ${limit}번 쓸 수 있어요.`
-            : `하루 ${limit}번까지 쓸 수 있어요. 분석을 마칠 때마다 한 칸씩 줄고, 매일 0시에 다시 채워져요.`}
-      </Text>
+      {/* 평소에는 칸만 보여 준다 — 다 썼거나 막혔을 때만 이유를 적는다 */}
+      {network || done ? (
+        <Text style={{ fontSize: 13, color: p.warnText, ...lh(19) }}>
+          {network
+            ? '지금 연결된 인터넷(같은 와이파이·통신사 주소)에서 오늘 분석이 많아 잠시 쓸 수 없어요. 와이파이나 데이터를 바꿔 다시 해 보거나 내일 0시 이후에 다시 해 주세요.'
+            : `오늘 ${limit}번을 모두 썼어요. 내일 0시(한국 시간)에 다시 ${limit}번 쓸 수 있어요.`}
+        </Text>
+      ) : null}
     </View>
   );
 }
