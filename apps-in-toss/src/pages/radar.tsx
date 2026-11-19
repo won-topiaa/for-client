@@ -27,7 +27,7 @@ import {
   Segmented,
   TextButton,
 } from '../components/ui';
-import { LOG } from '../analytics';
+import { LOG, maybeTrack } from '../analytics';
 import { LOOKBACK_LABEL } from '../env';
 import { fmtRate } from '../format';
 import { lastAnalysis, pendingAnalyze } from '../store';
@@ -118,6 +118,11 @@ function RadarPage() {
   // 지지/저항/이탈/돌파 내역·전체 성적표는 이 토글을 켠 사람에게만 보여준다.
   // (초보는 숫자가 많으면 읽기를 포기하고, 전문가는 다 보고 싶어 한다)
   const [showStats, setShowStats] = useState(false);
+  // 결과를 한 번 보여 준 뒤에는 검색 영역을 접어 둔다. analysis 로 바로 판단하면
+  // 대표 종목을 누를 때마다(로딩 동안 analysis 가 비므로) 카드가 세 줄 칩 +
+  // 큰 버튼으로 펼쳐졌다가 다시 접히며 아래 내용이 두 번 출렁이고, 가로 칩 줄이
+  // 새로 그려지며 스크롤 위치도 처음으로 돌아간다.
+  const [searchFolded, setSearchFolded] = useState(false);
   const { items: watched, toggle: toggleWatch } = useWatchlist();
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,11 +183,17 @@ function RadarPage() {
       setAnalysis(body);
       setAnalyzed(item);
       setFocusPeriod(null);
-      // 떠났다 돌아왔을 때 즉시 되살릴 수 있게 남겨 둔다 (아래 복원 참고)
-      lastAnalysis.value = { symbol: item.symbol, info: item, body };
+      setSearchFolded(true);
+      // 떠났다 돌아왔을 때 즉시 되살릴 수 있게 남겨 둔다 (아래 복원 참고).
+      // 시세를 못 받아 세 봉 모두 실패한 응답(서버는 이걸 200 으로 준다)은
+      // 남기지 않는다 — 돌아올 때마다 실패 화면을 되살리게 된다.
+      const allFailed = TIMEFRAMES.every((t) => !body.timeframes[t] || body.timeframes[t]?.error);
+      lastAnalysis.value = allFailed ? null : { symbol: item.symbol, info: item, body };
     } catch (err) {
       if (seq === analyzeSeq.current) {
         setErrorMsg(err instanceof Error ? err.message : '분석에 실패했어요.');
+        // 보여 줄 결과가 없으니 검색 영역을 다시 펼친다 (분석하기 버튼으로 재시도)
+        setSearchFolded(false);
       }
     } finally {
       if (seq === analyzeSeq.current) {
@@ -216,6 +227,7 @@ function RadarPage() {
     }
     setAnalysis(saved.body as AnalyzeResponse);
     setAnalyzed(saved.info);
+    setSearchFolded(true);
     setSelected(saved.info);
     setQuery(`${saved.info.name} (${saved.info.symbol})`);
   }, []);
@@ -320,8 +332,9 @@ function RadarPage() {
     return { breakDown, breakUp };
   };
 
-  // 결과를 보여 주는 중이면 검색 영역을 접는다 (입력창 + 한 줄 대표 종목)
-  const compactSearch = !!analysis && !loading;
+  // 결과를 보여 준 뒤에는 검색 영역을 접는다 (입력창 + 한 줄 대표 종목).
+  // 접힌 동안에는 검색 결과를 고르면 바로 분석한다 — 대표 종목 칩과 같은 동작.
+  const compactSearch = searchFolded;
   const dayCandles = analysis?.timeframes.day?.candles;
 
   /* ---------- 렌더 ---------- */
@@ -368,33 +381,42 @@ function RadarPage() {
               사라진다 — 눌러 들어간 회색 면에 얹어 '고를 것들'로 보이게 한다 */}
           {suggests.length > 0 ? (
             <View style={{ backgroundColor: p.sunken, borderRadius: 12, overflow: 'hidden' }}>
+              {/* 접힌 상태(결과를 보는 중)에서는 고르는 순간 분석한다 — 이때는
+                  '분석하기' 버튼이 없으므로 전환 지표도 여기서 센다.
+                  key 는 바깥 Fragment 에 둔다 — 기록 래퍼가 씌워지면 안쪽 key 는 무시된다 */}
               {suggests.map((item, i) => (
-                <TouchableOpacity
-                  key={`${item.symbol}-${i}`}
-                  onPress={() => pick(item)}
-                  accessibilityRole="button"
-                  activeOpacity={0.6}
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingVertical: 13,
-                    paddingHorizontal: 14,
-                    borderTopWidth: i === 0 ? 0 : 1,
-                    borderTopColor: p.border,
-                  }}
-                >
-                  <Text
-                    style={{ fontSize: 15, color: p.text, flexShrink: 1, marginRight: 8 }}
-                    numberOfLines={1}
-                  >
-                    {item.name}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: p.faint, flexShrink: 0 }} numberOfLines={1}>
-                    {item.symbol}
-                    {item.market ? ` · ${item.market}` : ''}
-                  </Text>
-                </TouchableOpacity>
+                <React.Fragment key={`${item.symbol}-${i}`}>
+                  {maybeTrack(
+                    compactSearch ? LOG.analyze : undefined,
+                    '검색 결과',
+                    true,
+                    <TouchableOpacity
+                      onPress={() => pick(item, compactSearch)}
+                      accessibilityRole="button"
+                      activeOpacity={0.6}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingVertical: 13,
+                        paddingHorizontal: 14,
+                        borderTopWidth: i === 0 ? 0 : 1,
+                        borderTopColor: p.border,
+                      }}
+                    >
+                      <Text
+                        style={{ fontSize: 15, color: p.text, flexShrink: 1, marginRight: 8 }}
+                        numberOfLines={1}
+                      >
+                        {item.name}
+                      </Text>
+                      <Text style={{ fontSize: 13, color: p.faint, flexShrink: 0 }} numberOfLines={1}>
+                        {item.symbol}
+                        {item.market ? ` · ${item.market}` : ''}
+                      </Text>
+                    </TouchableOpacity>,
+                  )}
+                </React.Fragment>
               ))}
             </View>
           ) : null}
@@ -412,7 +434,7 @@ function RadarPage() {
                 <Chip
                   key={q.symbol}
                   label={q.name}
-                  active={analyzed?.symbol === q.symbol}
+                  active={(loading ? selected : analyzed)?.symbol === q.symbol}
                   palette={p}
                   onPress={() => pick(q, true)}
                 />
@@ -433,7 +455,7 @@ function RadarPage() {
           )}
           {/* 버튼은 '아직 분석하지 않은 종목을 골랐을 때'만 — 방금 본 종목을 다시
               분석하라는 버튼이 결과 위에 떠 있으면 할 일이 남은 것처럼 보인다 */}
-          {!compactSearch || (selected && selected.symbol !== analyzed?.symbol) ? (
+          {!compactSearch || (!loading && selected && selected.symbol !== analyzed?.symbol) ? (
             <PrimaryButton
               label="분석하기"
               disabled={!selected || loading}
@@ -451,8 +473,21 @@ function RadarPage() {
           )}
         </Card>
 
-        {/* 1.3.5 차트 사진 분석 — 방금 본 종목이 미리 골라져 있다 */}
-        <View style={{ alignItems: 'flex-end' }}>
+        {/* 1.3.5 차트 사진 분석 — 방금 본 종목이 미리 골라져 있다.
+            왼쪽 '다시 분석'은 검색 영역이 접혀 큰 버튼이 없을 때 지금 보는 종목을
+            새로 받는 길이다 (되살린 분석이 몇 시간 전 것일 수 있고, 일부 봉이
+            실패했을 수도 있다). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {compactSearch && analyzed && !loading ? (
+            <TextButton
+              label="↻ 다시 분석"
+              palette={p}
+              logName={LOG.analyze}
+              onPress={() => void runAnalysis(analyzed)}
+            />
+          ) : (
+            <View />
+          )}
           <TextButton
             label="차트 사진으로 설명 듣기 →"
             palette={p}
@@ -504,10 +539,20 @@ function RadarPage() {
             </Card>
 
             {!data || data.error ? (
-              <Card palette={p}>
-                <Text style={{ fontSize: 14, color: p.danger }}>
+              <Card palette={p} style={{ gap: 12 }}>
+                <Text style={{ fontSize: 14, color: p.danger, ...lh(21) }}>
                   {TF_LABEL[tf]} 분석 실패: {data?.error ?? '데이터 없음'}
                 </Text>
+                {analyzed ? (
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <TextButton
+                      label="다시 시도"
+                      palette={p}
+                      logName={LOG.analyze}
+                      onPress={() => void runAnalysis(analyzed)}
+                    />
+                  </View>
+                ) : null}
               </Card>
             ) : (
               <>
@@ -547,7 +592,10 @@ function RadarPage() {
                         onPress={() => setFocusPeriod(focused ? null : rec.period)}
                         accessibilityRole="button"
                         accessibilityState={{ selected: focused }}
-                        accessibilityLabel={`MA ${rec.period}, 지지 시험 ${rec.supportTests}회 중 ${rec.supportBounces}회 성공, 지지 성공률 ${fmtRate(rec.supportRate)}${focused ? ', 이 선만 보는 중' : ''}`}
+                        // 라벨을 직접 주면 자식 글자는 읽히지 않는다 — 화면에 보이는
+                        // 경고(표본 부족)와 펼친 내역을 라벨에도 그대로 싣는다
+                        accessibilityLabel={`MA ${rec.period}${rec.qualified ? '' : ', 표본 부족, 참고용'}, 지지 시험 ${rec.supportTests}회 중 ${rec.supportBounces}회 성공, 지지 성공률 ${fmtRate(rec.supportRate)}${showStats ? `, 지지 ${rec.supportBounces}, 저항 ${rec.resistanceBounces}, 이탈 ${breakDown}, 돌파 ${breakUp}` : ''}${focused ? ', 이 선만 보는 중' : ''}`}
+                        accessibilityHint={focused ? '누르면 전체 선 보기' : '누르면 이 선만 차트에 보기'}
                         activeOpacity={0.7}
                         style={{
                           paddingHorizontal: 20,
@@ -628,6 +676,8 @@ function RadarPage() {
                       flexDirection: 'row',
                       alignItems: 'center',
                       justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      rowGap: 8,
                       paddingHorizontal: 4,
                     }}
                   >
@@ -642,6 +692,8 @@ function RadarPage() {
                             accessibilityState={{ selected: on }}
                             accessibilityLabel={`최근 ${nb}봉 보기`}
                             activeOpacity={0.7}
+                            // 알약은 높이가 31pt 남짓 — 위아래로만 넓힌다 (옆 알약과 겹치지 않게)
+                            hitSlop={{ top: 7, bottom: 7 }}
                             style={{
                               paddingVertical: 7,
                               paddingHorizontal: 12,

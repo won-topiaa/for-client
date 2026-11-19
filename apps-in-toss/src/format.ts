@@ -11,6 +11,22 @@ export function fmtPrice(v: number): string {
   return v.toFixed(2);
 }
 
+/** 가격 변동폭 — 기준 가격이 화면에 보이는 자릿수와 맞춘다.
+ *
+ * fmtPrice 는 값 자체의 크기로 자릿수를 정한다(1,000 미만이면 소수 2자리). 변동폭을
+ * 그대로 넘기면 원화 종목의 700원 변동이 "700.00" 으로 찍힌다(원화엔 소수가 없다).
+ * 그래서 변동폭은 '그 가격(ref)'의 규칙을 따른다: 가격이 1,000 이상으로 정수로
+ * 보이면 변동폭도 정수, 아니면 소수 2자리. */
+export function fmtPriceDelta(delta: number, ref: number): string {
+  if (!Number.isFinite(delta) || !Number.isFinite(ref)) {
+    return '—';
+  }
+  if (Math.abs(ref) >= 1000) {
+    return Math.round(delta).toLocaleString('ko-KR');
+  }
+  return delta.toFixed(2);
+}
+
 /** 성공률 0~1 → "83%". 값이 없으면 "—" (fmtPrice 와 같은 규약).
  *
  * 유한성 검사가 중요하다: 서버 응답의 필드 이름이 바뀌면 여기로 undefined 가

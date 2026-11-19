@@ -78,17 +78,28 @@ const MatchCard = React.memo(function MatchCard({
           '선 대비'는 토스처럼 양수 빨강 · 음수 파랑. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <View style={{ flex: 1, paddingRight: 10 }}>
-          {/* 이름이 왼쪽 칸을 다 쓰게 MA 배지는 둘째 줄로 — 같은 줄에 두면 좁은
-              폰(320px)에서 '이수스페셜티케미컬'이 '이수…'로 잘린다 */}
-          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text }} numberOfLines={1}>
+          {/* 이름이 왼쪽 칸을 다 쓰게 MA 배지는 둘째 줄로. 좁은 폰(320px)에서는
+              오른쪽 가격 칸 때문에 왼쪽이 100pt 남짓이라, 이름은 두 줄까지 쓰고
+              둘째 줄(배지 · 코드 · 시장)은 자르지 않고 접어 내린다 — 종목 코드가
+              '02124…'로 잘리면 읽을 수가 없다. */}
+          <Text style={{ fontSize: 17, fontWeight: '700', color: p.text, ...lh(23) }} numberOfLines={2}>
             {m.name}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              columnGap: 6,
+              rowGap: 2,
+              marginTop: 4,
+            }}
+          >
             <Badge label={`MA ${m.period}`} palette={p} tone="primary" />
-            <Text style={{ fontSize: 13, color: p.faint, flexShrink: 1 }} numberOfLines={1}>
-              {m.symbol}
-              {m.market ? ` · ${m.market}` : ''}
-            </Text>
+            {/* 코드와 시장을 따로 둬서 줄이 바뀌어도 '105740 ·' / 'KOSDAQ' 처럼
+                중간에서 끊기지 않게 한다 */}
+            <Text style={{ fontSize: 13, color: p.faint, fontVariant: ['tabular-nums'] }}>{m.symbol}</Text>
+            {m.market ? <Text style={{ fontSize: 13, color: p.faint }}>· {m.market}</Text> : null}
           </View>
         </View>
         <View style={{ alignItems: 'flex-end', marginRight: 12 }}>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import type { Candle } from '../api/types';
-import { fmtDateShort, fmtPrice } from '../format';
+import { fmtDateShort, fmtPrice, fmtPriceDelta } from '../format';
 import type { Palette } from '../theme';
 import { StarButton } from './ui';
 
@@ -13,7 +13,10 @@ import { StarButton } from './ui';
  * 종목 화면을 읽는 데 익숙하다. 예전 카드는 이름과 코드만 있어서, 지금 가격이
  * 이평선보다 위인지 아래인지 보려면 차트까지 내려가야 했다.
  *
- * 가격은 일봉의 마지막 두 종가로 계산한다(서버가 끝난 봉만 보내므로 '종가 기준').
+ * 가격은 일봉의 마지막 두 종가로 계산한다. '종가'라고 적어도 되는 근거: 분석
+ * API 는 장이 끝나지 않은 오늘 봉을 떼어내고 보낸다(ma-radar app/service.py 의
+ * _strip_forming_bar — 마감 전에 받아 캐시한 표도 같은 규칙으로 뗀다). 서버가
+ * 그 처리를 빼면 이 문구도 '기준'으로 바꿔야 한다.
  * 일봉이 없거나 한 개뿐이면 등락 줄을 그리지 않는다 — 0% 를 지어내지 않는다.
  */
 export function StockHero({
@@ -70,7 +73,7 @@ export function StockHero({
             {Number.isFinite(diff) ? (
               <Text style={{ fontSize: 15, fontWeight: '600', color: changeColor, fontVariant: ['tabular-nums'] }}>
                 {arrow}
-                {fmtPrice(Math.abs(diff))} ({sign}
+                {fmtPriceDelta(Math.abs(diff), last.close)} ({sign}
                 {pct.toFixed(2)}%)
               </Text>
             ) : null}
