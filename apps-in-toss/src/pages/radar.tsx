@@ -277,6 +277,18 @@ function RadarPage() {
 
   const data = analysis?.timeframes[tf];
   const recommended = useMemo(() => data?.recommended ?? [], [data]);
+  // ★ 최소 기간보다 짧은 후보(일봉·주봉 5·10) — 성적표 위에 '★ 대상 아님'을 적는다.
+  // 예전 서버 응답엔 minRecommendPeriod 가 없다 → 빈 목록 → 안내 생략.
+  const shortPeriods = useMemo(() => {
+    const min = data?.minRecommendPeriod ?? 0;
+    if (!(min > 0)) {
+      return [];
+    }
+    return (data?.stats ?? [])
+      .map((s) => s.period)
+      .filter((period) => period < min)
+      .sort((a, b) => a - b);
+  }, [data]);
   const visibleRecs = useMemo(
     () => (focusPeriod === null ? recommended : recommended.filter((r) => r.period === focusPeriod)),
     [recommended, focusPeriod]
@@ -655,7 +667,8 @@ function RadarPage() {
                   })}
                   {recommended.length === 0 ? (
                     <Text style={{ fontSize: 14, color: p.sub, paddingHorizontal: 20, paddingVertical: 12, ...lh(22) }}>
-                      추천할 만한 이평선을 찾지 못했습니다 (데이터·터치 부족)
+                      추천할 만한 이평선을 찾지 못했습니다 (데이터·터치 부족
+                      {data.minRecommendPeriod ? ` · MA ${data.minRecommendPeriod}보다 짧은 선은 ★ 대상 아님` : ''})
                     </Text>
                   ) : null}
                 </Card>
@@ -781,6 +794,12 @@ function RadarPage() {
                     <Text style={{ fontSize: 15, fontWeight: '700', color: p.text, marginTop: 6 }}>
                       전체 후보 성적표
                     </Text>
+                    {shortPeriods.length > 0 ? (
+                      <Text style={{ fontSize: 13, color: p.sub, ...lh(19) }}>
+                        짧은 선(MA {shortPeriods.join('·')})은 ★ 대상이 아니에요. 판정 방식상 짧은 선은 반등
+                        판정이 원래 적게 나와서, {TF_LABEL[tf]}은 MA {data.minRecommendPeriod}부터 추천해요.
+                      </Text>
+                    ) : null}
                     <ScoreTable
                       stats={data.stats ?? []}
                       recommended={recommended.map((r) => r.period)}

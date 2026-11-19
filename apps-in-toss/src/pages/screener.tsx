@@ -340,7 +340,7 @@ function ScreenerPage() {
 
         <Expandable title="스캔 기준 · 지지 성공률이란?" palette={p}>
           <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21) }}>
-            {SCREENER_RULE_LABEL} 인정합니다. 5일선은 제외 — 단기선은 지지 신뢰도가 낮습니다.
+            {SCREENER_RULE_LABEL} 인정합니다. 5·10일선은 제외 — 이평선 분석에서 ★ 추천 대상이 아닌 짧은 선이에요.
           </Text>
           {/* 같은 수치를 화면마다 다른 이름으로 부르지 않는다. 뜻은 여기 한 번만 적는다. */}
           <Text style={{ fontSize: 13.5, color: p.sub, ...lh(21), marginTop: 10 }}>

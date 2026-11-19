@@ -72,6 +72,9 @@ export interface TimeframeReport {
   windowStart?: string | null;
   windowEnd?: string | null;
   halfLifeBars?: number;
+  /** ★ 추천 최소 기간(봉). 이보다 짧은 선은 표에만 나오고 ★ 를 받지 않는다. 0 = 없음.
+   *  서버: 일봉·주봉 20 · 월봉 0. 예전 서버 응답에는 없다 — 없으면 안내를 생략한다. */
+  minRecommendPeriod?: number;
   candles?: Candle[];
   recommended?: RecommendedMA[];
   stats?: MAStat[];
